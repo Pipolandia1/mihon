@@ -61,6 +61,10 @@ open class ReaderPageImageView @JvmOverloads constructor(
 
     private var bubbleZoomOverlay: BubbleZoomDebugOverlay? = null
 
+    /** The view Bubble Zoom can move, or null on the animated path where it must stay off. */
+    internal val bubbleZoomImageView: SubsamplingScaleImageView?
+        get() = pageView as? SubsamplingScaleImageView
+
     private var config: Config? = null
 
     var onImageLoaded: (() -> Unit)? = null
@@ -127,6 +131,12 @@ open class ReaderPageImageView @JvmOverloads constructor(
             scale == minScale
         ) {
             handler?.postDelayed(500) {
+                // The guard above ran half a second ago and this block re-checks nothing, so by
+                // now the camera may have been moved deliberately — by Bubble Zoom framing a
+                // box, or by the reader. Only auto-frame a page still sitting untouched at its
+                // fit scale, which is what the delayed zoom was always meant to do.
+                if (scale != minScale) return@postDelayed
+
                 val point = when (config!!.zoomStartPosition) {
                     ZoomStartPosition.LEFT -> if (forward) PointF(0F, 0F) else PointF(sWidth.toFloat(), 0F)
                     ZoomStartPosition.RIGHT -> if (forward) PointF(sWidth.toFloat(), 0F) else PointF(0F, 0F)

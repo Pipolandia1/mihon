@@ -5,6 +5,42 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
+ * What a navigation event did, from the reader's point of view.
+ *
+ * Three outcomes and not two, because the reader must treat the last one of a walk differently
+ * from an ordinary page turn: `config.navigateToPan` makes a tap pan the image instead of
+ * turning the page while the image can still be panned, and a page that has just been zoomed
+ * onto a bubble always can. Without [ENDED_WALK] the tap that should leave the page would drag
+ * the artwork sideways instead.
+ */
+enum class BubbleZoomStep {
+    /** Moved to another bubble. The reader must not also turn the page. */
+    CONSUMED,
+
+    /** The walk just ended. Turn the page, but do not pan. */
+    ENDED_WALK,
+
+    /** Nothing to do with bubbles. Behave exactly as upstream Mihon does. */
+    IGNORED,
+}
+
+/**
+ * Steps in reading order and reports what happened.
+ *
+ * [readingForward] translates the side of the screen that was tapped into reading order, which
+ * the caller knows and this class deliberately does not.
+ */
+fun BubbleZoomController.stepTowards(readingForward: Boolean): BubbleZoomStep {
+    val wasFocused = isFocused
+    val moved = if (readingForward) tryMoveNext() else tryMovePrevious()
+    return when {
+        moved -> BubbleZoomStep.CONSUMED
+        wasFocused -> BubbleZoomStep.ENDED_WALK
+        else -> BubbleZoomStep.IGNORED
+    }
+}
+
+/**
  * Decides which bubble, if any, the reader is looking at.
  *
  * It knows nothing about views, bitmaps, ML or Android: it publishes [state], and whatever draws
@@ -68,11 +104,13 @@ class BubbleZoomController {
      * for a page the reader already left harmless.
      */
     fun onBubblesReady(page: BubblePageKey, bubbles: List<BubbleDetection>) {
-        val current = mutableState.value
-        if (current !is BubbleZoomState.OnPage || current.page != page) return
-        val entry = (current as? BubbleZoomState.Detecting)?.entry ?: PageEntry.FORWARD
+        // Only ever answers a pending Detecting. A caller that repeats itself — and the page
+        // holder does, because it offers its bubbles on every state emission — must not rebuild
+        // Ready, or each delivery would silently rewind a walk already in progress.
+        val current = mutableState.value as? BubbleZoomState.Detecting ?: return
+        if (current.page != page) return
         val navigable = bubbles.filter { it.type != BubbleType.PANEL }
-        val index = if (entry == PageEntry.BACKWARD) navigable.lastIndex else -1
+        val index = if (current.entry == PageEntry.BACKWARD) navigable.lastIndex else -1
         mutableState.value = BubbleZoomState.Ready(page, navigable, index)
     }
 

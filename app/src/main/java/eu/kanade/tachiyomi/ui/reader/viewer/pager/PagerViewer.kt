@@ -12,6 +12,11 @@ import androidx.core.view.isVisible
 import androidx.viewpager.widget.ViewPager
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomController
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomStep
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.PageEntry
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.bubblePageKey
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.stepTowards
 import eu.kanade.tachiyomi.ui.reader.model.ChapterTransition
 import eu.kanade.tachiyomi.ui.reader.model.InsertPage
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
@@ -51,6 +56,12 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
      * Adapter of the pager.
      */
     private val adapter = PagerViewerAdapter(this)
+
+    /**
+     * Decides whether a navigation event steps between bubbles instead of turning the page.
+     * Owned here because this is the class that owns navigation; it holds no view and no scope.
+     */
+    val bubbleZoom = BubbleZoomController()
 
     /**
      * Currently active item. It can be a chapter page or a chapter transition.
@@ -224,6 +235,15 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
      * activity of the change and requests the preload of the next chapter if this is the last page.
      */
     private fun onReaderPageSelected(page: ReaderPage, allowPreload: Boolean, forward: Boolean) {
+        // Only the page becomes the subject here, with no bubbles: the state stays Detecting,
+        // which refuses every move, so navigation behaves exactly as upstream until the page
+        // holder confirms it has an image that can actually be zoomed. Handing the bubbles over
+        // at this point instead would make the controller swallow taps on pages that can never
+        // show one — an animated image, a failed download, or simply one still decoding.
+        bubbleZoom.activatePage(
+            page.bubblePageKey(),
+            if (forward) PageEntry.FORWARD else PageEntry.BACKWARD,
+        )
         val pages = page.chapter.pages ?: return
         logcat { "onReaderPageSelected: ${page.number}/${pages.size}" }
         activity.onPageSelected(page)
@@ -249,6 +269,9 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
      * preload of the destination chapter of the transition.
      */
     private fun onTransitionSelected(transition: ChapterTransition) {
+        // A transition has no page, so nothing is the subject; without this the page the reader
+        // just left would stay the subject with a half-finished walk.
+        bubbleZoom.deactivate()
         logcat { "onTransitionSelected: $transition" }
         val toChapter = transition.to
         if (toChapter != null) {
@@ -331,9 +354,14 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
      * Moves to the page at the right.
      */
     protected open fun moveRight() {
+        // The only place navigation branches. Tap zones, volume keys and DPAD all arrive here.
+        val endedBubbleWalk = bubbleZoom.stepTowards(readingForward = this !is R2LPagerViewer)
+        if (endedBubbleWalk == BubbleZoomStep.CONSUMED) return
         if (pager.currentItem != adapter.count - 1) {
             val holder = (currentPage as? ReaderPage)?.let(::getPageHolder)
-            if (holder != null && config.navigateToPan && holder.canPanRight()) {
+            if (holder != null && config.navigateToPan && endedBubbleWalk == BubbleZoomStep.IGNORED &&
+                holder.canPanRight()
+            ) {
                 holder.panRight()
             } else {
                 pager.setCurrentItem(pager.currentItem + 1, config.usePageTransitions)
@@ -345,9 +373,13 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
      * Moves to the page at the left.
      */
     protected open fun moveLeft() {
+        val endedBubbleWalk = bubbleZoom.stepTowards(readingForward = this is R2LPagerViewer)
+        if (endedBubbleWalk == BubbleZoomStep.CONSUMED) return
         if (pager.currentItem != 0) {
             val holder = (currentPage as? ReaderPage)?.let(::getPageHolder)
-            if (holder != null && config.navigateToPan && holder.canPanLeft()) {
+            if (holder != null && config.navigateToPan && endedBubbleWalk == BubbleZoomStep.IGNORED &&
+                holder.canPanLeft()
+            ) {
                 holder.panLeft()
             } else {
                 pager.setCurrentItem(pager.currentItem - 1, config.usePageTransitions)

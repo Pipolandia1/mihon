@@ -178,6 +178,22 @@ class BubbleZoomControllerTest {
     }
 
     @Test
+    fun `bubbles delivered again mid-walk do not rewind it`() {
+        // The page holder offers its bubbles on every state emission, so this happens on every
+        // single step. Rebuilding Ready here would pin the walk at the resting page forever and
+        // the reader could never turn the page.
+        val controller = BubbleZoomController()
+        controller.activatePage(pageOne, PageEntry.FORWARD)
+        controller.onBubblesReady(pageOne, bubbles(3))
+        controller.tryMoveNext()
+        controller.tryMoveNext()
+
+        controller.onBubblesReady(pageOne, bubbles(3))
+
+        assertEquals(1, controller.index)
+    }
+
+    @Test
     fun `bubbles arriving for a page the reader already left are ignored`() {
         val controller = controllerOn(pageOne, 3, PageEntry.FORWARD)
         controller.activatePage(pageTwo, PageEntry.FORWARD)
@@ -328,6 +344,63 @@ class BubbleZoomControllerTest {
         assertFalse(controller.tryMoveNext())
         assertFalse(controller.tryMovePrevious())
         assertNull(controller.state.value.focusFor(pageOne))
+    }
+
+    // endregion
+
+    // region stepTowards, which is what the reader calls
+
+    @Test
+    fun `stepTowards reports consumed while there are bubbles left`() {
+        val controller = controllerOn(pageOne, 2, PageEntry.FORWARD)
+
+        assertEquals(BubbleZoomStep.CONSUMED, controller.stepTowards(readingForward = true))
+        assertEquals(BubbleZoomStep.CONSUMED, controller.stepTowards(readingForward = true))
+    }
+
+    @Test
+    fun `stepTowards distinguishes the move that ends a walk from an ordinary page turn`() {
+        val controller = controllerOn(pageOne, 1, PageEntry.FORWARD)
+
+        // Not in a walk yet: the reader must behave exactly as upstream, panning included.
+        assertEquals(BubbleZoomStep.IGNORED, controller.stepTowards(readingForward = false))
+
+        controller.stepTowards(readingForward = true)
+
+        // The move that leaves the page. The reader turns the page but must NOT pan, because
+        // the page is still zoomed at the instant the tap is handled.
+        assertEquals(BubbleZoomStep.ENDED_WALK, controller.stepTowards(readingForward = true))
+        assertEquals(-1, controller.index)
+
+        // In the reader that event turned the page, so a new page is the subject by now. In
+        // isolation the same page is still held and at rest, so stepping forward re-enters its
+        // walk rather than reporting IGNORED.
+        assertEquals(BubbleZoomStep.CONSUMED, controller.stepTowards(readingForward = true))
+        assertEquals(0, controller.index)
+    }
+
+    @Test
+    fun `stepTowards is ignored on a page with no bubbles and before any page`() {
+        assertEquals(BubbleZoomStep.IGNORED, BubbleZoomController().stepTowards(true))
+        assertEquals(
+            BubbleZoomStep.IGNORED,
+            controllerOn(pageOne, 0, PageEntry.FORWARD).stepTowards(true),
+        )
+    }
+
+    @Test
+    fun `the backward walk leaves the page from rest, so it never reports ENDED_WALK`() {
+        // The asymmetry is the stop model, not an oversight: forwards the page is left FROM the
+        // last bubble, so that move both un-focuses and turns the page (ENDED_WALK). Backwards
+        // the page is left from the resting page, which was already reached by an ordinary
+        // CONSUMED step, so by then there is no zoom for the pan check to trip over.
+        val controller = controllerOn(pageOne, 2, PageEntry.BACKWARD)
+
+        assertEquals(BubbleZoomStep.CONSUMED, controller.stepTowards(readingForward = false))
+        assertEquals(0, controller.index)
+        assertEquals(BubbleZoomStep.CONSUMED, controller.stepTowards(readingForward = false))
+        assertEquals(-1, controller.index)
+        assertEquals(BubbleZoomStep.IGNORED, controller.stepTowards(readingForward = false))
     }
 
     // endregion

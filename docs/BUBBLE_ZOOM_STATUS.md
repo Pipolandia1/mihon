@@ -5,7 +5,7 @@
 
 ## Fase atual
 
-P5 concluída. Próxima: **P6 — integração com a navegação.**
+P6 concluída. Próxima: **P16 — overlay visual (card do balão), antecipada.**
 
 > **Ordem alterada pelo usuário (19/09/2026):** a **P16 (overlay visual / card do balão)**
 > sobe para logo depois da **P6**, antes de P7–P15. Motivo: a P4 move a câmera, mas a
@@ -15,6 +15,10 @@ P5 concluída. Próxima: **P6 — integração com a navegação.**
 > detector, cache e ordenação.
 >
 > Ordem nova: P5 → P6 → **P16** → P7 → P8 → P9 → … → P15 → P17 → P18.
+>
+> **Decisão do usuário para a P16 (19/09/2026): sem scrim.** O card do balão é erguido sobre
+> a página, mas o resto da página **continua visível**, sem escurecer. O prompt da P16 fala em
+> "scrim" ao tratar do tema claro/escuro; essa parte não se aplica.
 
 > O `docs/BUBBLE_ZOOM_ARCHITECTURE.md` precisa da sua revisão manual antes da P2.
 > Todas as fases seguintes dependem dele.
@@ -39,7 +43,7 @@ P5 concluída. Próxima: **P6 — integração com a navegação.**
 - [x] P3  debug overlay com 3 boxes hardcoded
 - [x] P4  focusOnBubble animado
 - [x] P5  BubbleZoomController + máquina de estados
-- [ ] P6  integração com moveToNext / moveToPrevious
+- [x] P6  integração com moveToNext / moveToPrevious
 - [ ] P7  preferência Bubble Zoom (off = vanilla)
 - [ ] P8  interface BubbleDetector + FakeBubbleDetector
 - [ ] P9  detector ONNX real + pipeline de imagem
@@ -56,6 +60,11 @@ P5 concluída. Próxima: **P6 — integração com a navegação.**
 ## Arquivos upstream modificados
 
 - `.gitignore` — acrescentadas as entradas do Bubble Zoom (shots, test-pages, `*.onnx`, `*.tflite`).
+- `ui/reader/viewer/pager/PagerViewer.kt` — **P6, aprovado.** Desvio único de navegação em
+  `moveRight`/`moveLeft`, `activatePage` no `onReaderPageSelected`, `deactivate` na transição
+  de capítulo.
+- `ui/reader/viewer/pager/PagerPageHolder.kt` — **P6, aprovado.** Coleta o `StateFlow` e
+  aplica o foco da própria página; cancela no `onDetachedFromWindow`.
 - `ui/reader/viewer/ReaderPageImageView.kt` — **P3, aprovado pelo usuário.** 7 linhas
   funcionais: anexa o overlay no caminho não-animado, remove no animado, e repassa
   `onScaleChanged`/`onCenterChanged`/`onImageLoaded` como `invalidate()`. Nenhuma lógica
@@ -78,6 +87,8 @@ Nenhum arquivo de código do upstream foi tocado. O baseline é Mihon `5848ffb4c
 - `app/src/test/java/eu/kanade/tachiyomi/ui/reader/bubblezoom/` — 44 testes JVM.
 - `bubblezoom/BubbleZoomDebugOverlay.kt` — overlay de depuração (fase P3), com o
   `const val BUBBLE_ZOOM_DEBUG = true` que o desliga.
+- `bubblezoom/BubbleZoomPagePresenter.kt` — projeta o estado na página (P6), e a extensão
+  `ReaderPage.bubblePageKey()`.
 - `bubblezoom/BubbleZoomState.kt` e `bubblezoom/BubbleZoomController.kt` — máquina de estados
   (P5), Kotlin puro, 28 testes JVM. Zero linhas upstream.
 - `bubblezoom/BubbleZoomConfig.kt` e `bubblezoom/BubbleZoomFocus.kt` — foco animado (P4).
@@ -163,7 +174,49 @@ Fechei os dois e **provei por mutação**: com o lookup invertido, exatamente os
 novos falham e nenhum outro. Vale repetir esse teste de mutação nas fases seguintes — uma
 suíte verde não diz nada sobre o que ela deixaria passar.
 
-## Avisos para a P6, levantados pelo painel da P5
+## O que a revisão da P6 achou, e o que ficou por fazer
+
+A revisão encontrou **um defeito crítico que eu tinha deixado passar**: `activatePage` era
+chamado com os três balões para toda página, então o controller consumia os três primeiros
+toques mesmo em páginas onde nada podia ser desenhado — imagem animada, download falho, ou
+ainda carregando. Em página animada era permanente. É a regressão de leitura normal que a
+regra 2 proíbe, e a causa foi eu ter posto a guarda na camada de apresentação.
+
+Corrigido movendo a guarda para a navegação: `activatePage` agora só torna a página o sujeito
+(estado `Detecting`, que recusa todo movimento), e o holder só oferece os balões quando tem
+uma image view pronta. Verificado com um GIF animado de verdade: um toque vira a página.
+
+**Ao corrigir, quebrei pior e só descobri porque verifiquei no emulador.** O `onBubblesReady`
+não checava o estado, e o coletor do holder o chama a cada emissão — então todo avanço era
+desfeito no mesmo instante e a página nunca virava. O conserto foi exigir `Detecting` no
+controller. Lição: verificação no aparelho não é formalidade de fim de fase.
+
+Também corrigido: o reenquadramento de 500 ms do `landscapeZoom`, que não reavaliava nada e
+arrastava a câmera para fora do balão. Agora ele desiste se a escala já não for a de encaixe.
+
+### Não corrigido, para a P7 decidir
+
+- **O `PageEntry` vem do `forward` do Mihon, que erra em fronteira de capítulo sem transição.**
+  O `forward` compara números de página locais ao capítulo, então ir da página 20 do capítulo 1
+  para a página 1 do capítulo 2 dá `false` — entrada BACKWARD numa página que deveria abrir
+  normal. Só acontece com "sempre mostrar transição de capítulo" desligado e o capítulo vizinho
+  já carregado. Precisa de decisão de desenho, não de remendo.
+- **Sem re-aplicação ao reanexar um holder.** O coletor é cancelado no detach e não reinicia.
+
+## Comportamentos observados na P6 que não são defeito, mas você deve saber
+
+- **Toques mais rápidos que ~300 ms são absorvidos** pelo detector de duplo-toque do Android
+  e não navegam. Medido: 12 toques em 259 ms produzem zero viradas; a 400 ms produzem
+  exatamente 2 viradas para 8 toques. Não corrompe estado. Acredito ser pré-existente do
+  Mihon (a `SubsamplingScaleImageView` sempre teve duplo-toque), **mas não verifiquei contra
+  um build vanilla**.
+- **Swipe com a página ampliada arrasta a imagem em vez de virar a página.** Comportamento do
+  Mihon para imagem deslocável. O estado não corrompe e o toque seguinte retoma a caminhada.
+- **Girar a tela devolve a página ao estado não-focado.** A página é preservada e não há
+  crash, mas você perde o balão em que estava. Causa: girar recria a activity, logo um
+  `BubbleZoomController` novo. Candidato a resolver na P11/P13 ou a simplesmente aceitar.
+
+## Avisos da P5 que a P6 consumiu
 
 - `config.navigateToPan` tem padrão **true**: o `moveRight` do Mihon faz pan em vez de virar
   a página enquanto a imagem puder ser arrastada, o que é sempre verdade logo após uma

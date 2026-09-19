@@ -7,6 +7,10 @@ import androidx.core.view.isVisible
 import eu.kanade.presentation.util.formattedMessage
 import eu.kanade.tachiyomi.databinding.ReaderErrorBinding
 import eu.kanade.tachiyomi.source.model.Page
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomDebugOverlay
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomPagePresenter
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.bubblePageKey
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.focusFor
 import eu.kanade.tachiyomi.ui.reader.model.InsertPage
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderPageImageView
@@ -62,8 +66,35 @@ class PagerPageHolder(
      */
     private var loadJob: Job? = null
 
+    /**
+     * Applies the controller's answer for THIS page. Keyed by page identity, never by adapter
+     * position: a right-to-left viewer reverses the adapter's list.
+     */
+    private val bubbleZoomKey = page.bubblePageKey()
+    private val bubbleZoomPresenter = BubbleZoomPagePresenter()
+    private var bubbleZoomJob: Job? = null
+
     init {
         loadJob = scope.launch { loadPageAndProcessStatus() }
+        bubbleZoomJob = scope.launch {
+            viewer.bubbleZoom.state.collect {
+                offerBubblesWhenReady()
+                bubbleZoomPresenter.apply(bubbleZoomImageView, it.focusFor(bubbleZoomKey))
+            }
+        }
+    }
+
+    /**
+     * Tells the controller this page can be walked, but only once there is an image able to
+     * zoom. Until then the controller stays in Detecting and refuses every move, so an animated
+     * page, a failed one or one still decoding navigates exactly like upstream Mihon.
+     *
+     * Called both when this page becomes the subject and when its image finishes loading,
+     * because those two can happen in either order.
+     */
+    private fun offerBubblesWhenReady() {
+        if (bubbleZoomImageView?.isReady != true) return
+        viewer.bubbleZoom.onBubblesReady(bubbleZoomKey, BubbleZoomDebugOverlay.DEBUG_DETECTIONS)
     }
 
     /**
@@ -74,6 +105,8 @@ class PagerPageHolder(
         super.onDetachedFromWindow()
         loadJob?.cancel()
         loadJob = null
+        bubbleZoomJob?.cancel()
+        bubbleZoomJob = null
     }
 
     private fun initProgressIndicator() {
@@ -253,6 +286,7 @@ class PagerPageHolder(
     override fun onImageLoaded() {
         super.onImageLoaded()
         progressIndicator?.hide()
+        offerBubblesWhenReady()
     }
 
     /**
