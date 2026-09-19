@@ -34,10 +34,10 @@ Read `docs/BUBBLE_ZOOM_STATUS.md` to learn what is already done.
 | Thing | Value |
 |---|---|
 | OS | Windows, Claude Code native, Bash tool backed by Git Bash |
-| Repo | `D:/Pipo/OneDrive/Documentos/Apps/Mihon Bubble Zoom/mihon` |
+| Repo | `D:/mihon` |
 | Android SDK | `D:/Android/Sdk` (`ANDROID_HOME`) |
 | JDK | `D:/Java/jdk-21.0.12.1+1` (`JAVA_HOME`) — Temurin **21**, per `.github/.java-version` |
-| Build output | `D:/mihon-build` — redirected out of OneDrive by `~/.gradle/init.d/mihon-build-dir.init.gradle.kts` |
+| Build output | `D:/mihon/build` — configuration cache is on, so a no-op incremental build takes ~4s |
 | Emulator AVD | `mihon_test` |
 | Screenshots | `tools/shots/` (gitignored) |
 | Test manga | pushed to the emulator's Mihon local source, see `tools/push-test-manga.ps1` |
@@ -69,7 +69,7 @@ Every phase that changes visible behavior ends with you driving the emulator and
 ```bash
 ./gradlew :app:assembleDebug
 # the build splits by ABI; x86_64 is the emulator, arm64-v8a a real phone
-adb install -r D:/mihon-build/app/outputs/apk/debug/app-x86_64-debug.apk
+adb install -r app/build/outputs/apk/debug/app-x86_64-debug.apk
 adb shell am force-stop app.mihon.dev
 adb shell am start -n app.mihon.dev/eu.kanade.tachiyomi.ui.main.MainActivity
 
