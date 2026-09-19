@@ -1,15 +1,20 @@
 package eu.kanade.tachiyomi.ui.reader.bubblezoom
 
-import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PointF
+import android.graphics.Rect
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.content.ContextCompat
 import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
+import eu.kanade.tachiyomi.ui.reader.viewer.pager.PagerPageHolder
 
 /**
  * Flip to false to take the debug overlay out of the reader entirely.
@@ -50,6 +55,69 @@ class BubbleZoomDebugOverlay private constructor(
     private val topLeft = PointF()
     private val bottomRight = PointF()
 
+    // TEMP P4: index into DEBUG_BOXES, or DEBUG_BOXES.size meaning "back to the page fit".
+    // Remove together with the receiver below when P6 wires real navigation.
+    private var debugFocusIndex = 0
+
+    /**
+     * TEMP P4: steps through the debug boxes, then back to the page's default fit.
+     *
+     * Triggered by a broadcast rather than a gesture, because every gesture on a page is
+     * already taken: single tap is navigation, double tap is the image view's own zoom, and
+     * long press is intercepted by [eu.kanade.tachiyomi.ui.reader.viewer.pager.Pager]'s
+     * GestureDetectorWithLongTap for the page-actions menu. Claiming one of those would mean
+     * touching navigation, which phase P4 is not allowed to do.
+     *
+     *     adb shell am broadcast -a eu.kanade.tachiyomi.BUBBLE_ZOOM_DEBUG_FOCUS
+     */
+    private val debugFocusReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            // Neighbouring pages are attached but not on screen; only the visible one reacts.
+            if (!isShown || !getGlobalVisibleRect(visibleRect)) return
+            if (!imageView.isReady) return
+
+            if (debugFocusIndex in DEBUG_BOXES.indices) {
+                // Captured before the first focus of a cycle, so the reset at the end of it
+                // puts the page back exactly where the reader left it.
+                if (savedScale == null) {
+                    savedScale = imageView.scale
+                    savedCenter = imageView.center
+                }
+                imageView.focusOnBubble(DEBUG_BOXES[debugFocusIndex])
+            } else {
+                val scale = savedScale
+                val center = savedCenter
+                if (scale != null && center != null) {
+                    imageView.resetBubbleZoom(scale, center)
+                }
+                savedScale = null
+                savedCenter = null
+            }
+            debugFocusIndex = (debugFocusIndex + 1) % (DEBUG_BOXES.size + 1)
+        }
+    }
+
+    private val visibleRect = Rect()
+
+    // TEMP P4: where the page was before the focus cycle started.
+    private var savedScale: Float? = null
+    private var savedCenter: PointF? = null
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        ContextCompat.registerReceiver(
+            context,
+            debugFocusReceiver,
+            IntentFilter(ACTION_DEBUG_FOCUS),
+            ContextCompat.RECEIVER_EXPORTED,
+        )
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        runCatching { context.unregisterReceiver(debugFocusReceiver) }
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
@@ -87,18 +155,30 @@ class BubbleZoomDebugOverlay private constructor(
         private const val STROKE_WIDTH_DP = 2f
         private val STROKE_COLOR = Color.argb(0xFF, 0xFF, 0x00, 0xAA)
 
+        /** TEMP P4: action that steps the debug focus. Removed together with the receiver. */
+        const val ACTION_DEBUG_FOCUS = "eu.kanade.tachiyomi.BUBBLE_ZOOM_DEBUG_FOCUS"
+
         /**
          * Adds an overlay over [imageView] inside [parent], or returns null when the overlay is
          * switched off. The caller keeps the returned instance only to invalidate it.
          */
-        @SuppressLint("ClickableViewAccessibility")
         fun attach(parent: ViewGroup, imageView: SubsamplingScaleImageView): BubbleZoomDebugOverlay? {
             if (!BUBBLE_ZOOM_DEBUG) return null
-            return BubbleZoomDebugOverlay(parent.context, imageView).also {
+            // ReaderPageImageView is not only used by the reader: MangaCoverDialog builds one to
+            // show a cover, and the webtoon viewer has its own holder. Without this check the
+            // debug boxes are painted over a manga cover, and the TEMP P4 broadcast animates it.
+            if (parent !is PagerPageHolder) return null
+            return BubbleZoomDebugOverlay(parent.context, imageView).also { overlay ->
                 // Not clickable and with no touch handling, so taps fall through to the image
                 // view underneath and normal reader navigation is untouched.
-                it.isClickable = false
-                parent.addView(it, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                overlay.isClickable = false
+                parent.addView(
+                    overlay,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                )
+                // TEMP P4: the focus trigger is a broadcast, registered by the overlay itself
+                // in onAttachedToWindow. See debugFocusReceiver.
             }
         }
 

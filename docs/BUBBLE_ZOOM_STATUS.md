@@ -5,7 +5,16 @@
 
 ## Fase atual
 
-P3 concluída. Próxima: **P4 — foco animado.**
+P4 concluída. Próxima: **P5 — BubbleZoomController + máquina de estados.**
+
+> **Ordem alterada pelo usuário (19/09/2026):** a **P16 (overlay visual / card do balão)**
+> sobe para logo depois da **P6**, antes de P7–P15. Motivo: a P4 move a câmera, mas a
+> experiência que define a feature é o balão recortado como card, e isso é a P16. Julgá-la
+> só no fim significaria descobrir tarde demais se o card não presta. Depois do P6 dá para
+> percorrer os três balões fixos com o dedo e sentir o resultado real antes de investir em
+> detector, cache e ordenação.
+>
+> Ordem nova: P5 → P6 → **P16** → P7 → P8 → P9 → … → P15 → P17 → P18.
 
 > O `docs/BUBBLE_ZOOM_ARCHITECTURE.md` precisa da sua revisão manual antes da P2.
 > Todas as fases seguintes dependem dele.
@@ -28,7 +37,7 @@ P3 concluída. Próxima: **P4 — foco animado.**
 - [x] P1  mapa técnico do reader (docs/BUBBLE_ZOOM_ARCHITECTURE.md)
 - [x] P2  BubbleBox / BubbleDetection / BubblePageResult + testes
 - [x] P3  debug overlay com 3 boxes hardcoded
-- [ ] P4  focusOnBubble animado
+- [x] P4  focusOnBubble animado
 - [ ] P5  BubbleZoomController + máquina de estados
 - [ ] P6  integração com moveToNext / moveToPrevious
 - [ ] P7  preferência Bubble Zoom (off = vanilla)
@@ -40,7 +49,7 @@ P3 concluída. Próxima: **P4 — foco animado.**
 - [ ] P13 cache em disco com modelVersion
 - [ ] P14 teclas de volume
 - [ ] P15 double tap
-- [ ] P16 BubbleZoomOverlayView
+- [ ] P16 BubbleZoomOverlayView  ← **antecipada: vem logo após a P6**
 - [ ] P17 debug HUD
 - [ ] P18 dataset de 30 páginas + tuning
 
@@ -69,6 +78,9 @@ Nenhum arquivo de código do upstream foi tocado. O baseline é Mihon `5848ffb4c
 - `app/src/test/java/eu/kanade/tachiyomi/ui/reader/bubblezoom/` — 44 testes JVM.
 - `bubblezoom/BubbleZoomDebugOverlay.kt` — overlay de depuração (fase P3), com o
   `const val BUBBLE_ZOOM_DEBUG = true` que o desliga.
+- `bubblezoom/BubbleZoomConfig.kt` e `bubblezoom/BubbleZoomFocus.kt` — foco animado (P4).
+  `focusOnBubble` e `resetBubbleZoom` são extension functions sobre a image view, então a
+  P4 saiu com **zero linhas upstream**.
 
 O redirecionamento de build do P0 (init script + junction `.gradle`) foi **removido** ao
 mover o repositório para fora do OneDrive. `D:/mihon-build` ficou órfão com ~1 GB e pode
@@ -104,9 +116,24 @@ ser apagado.
 - **Nunca editar `shared_prefs` por fora.** Tentei isso na P3 para mudar o tipo de escala e
   zerei as preferências do app, perdendo a pasta de armazenamento e caindo no onboarding.
   Use a UI de configurações do próprio app.
+- **Todo gesto sobre a página já tem dono.** Toque simples é navegação, double-tap é o zoom
+  da `SubsamplingScaleImageView`, e long-press é interceptado pelo `GestureDetectorWithLongTap`
+  do `Pager`, que abre o menu de ações de página. Por isso o gatilho temporário da P4 é um
+  broadcast: `adb shell am broadcast -a eu.kanade.tachiyomi.BUBBLE_ZOOM_DEBUG_FOCUS`.
+  A P6, que pode mexer em navegação, é quem deve resolver isso de verdade.
 - **Double tap e pinça não são verificáveis por automação.** Dois `adb shell input tap`
   nunca chegam perto o bastante no tempo. Toda fase que dependa de gesto de zoom
   (P15 em especial) precisa de verificação manual do usuário.
+- **`resetBubbleZoom` restaura o estado capturado, não um "padrão" recalculado.** O Mihon
+  enquadra página nova com `setScaleAndCenter(scale, canto)`, e o canto padrão resolve para
+  RIGHT (leitura RTL + `zoomStart` Auto, `PagerConfig:112-115`). Voltar ao centro geométrico
+  deixaria o leitor onde a página nunca esteve, sempre que ela transborda no `minScale`.
+- **O overlay só anexa quando o host é `PagerPageHolder`.** `MangaCoverDialog` também
+  constrói um `ReaderPageImageView`, então sem essa guarda as caixas de depuração eram
+  desenhadas sobre as capas de mangá — defeito introduzido na P3 e pego na revisão da P4.
+- **A escala alvo usa `min(por largura, por altura)`, não só a largura como o prompt da P4
+  dizia.** Medido em paisagem: só pela largura, o balão 0 ocuparia 137% da altura da tela.
+  O `min()` o deixa em 43%.
 - SystemUI deu ANR uma vez logo após o boot frio, sob carga. Não é do Mihon; some sozinho.
 - O adb do Nox (`D:\Program Files\Nox\bin\adb.exe`) pode disputar a porta 5037.
   Sintoma: `adb devices` vazio. Conserto: `adb kill-server`.
