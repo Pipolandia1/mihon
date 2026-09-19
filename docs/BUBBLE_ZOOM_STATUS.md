@@ -5,7 +5,7 @@
 
 ## Fase atual
 
-P4 concluída. Próxima: **P5 — BubbleZoomController + máquina de estados.**
+P5 concluída. Próxima: **P6 — integração com a navegação.**
 
 > **Ordem alterada pelo usuário (19/09/2026):** a **P16 (overlay visual / card do balão)**
 > sobe para logo depois da **P6**, antes de P7–P15. Motivo: a P4 move a câmera, mas a
@@ -38,7 +38,7 @@ P4 concluída. Próxima: **P5 — BubbleZoomController + máquina de estados.**
 - [x] P2  BubbleBox / BubbleDetection / BubblePageResult + testes
 - [x] P3  debug overlay com 3 boxes hardcoded
 - [x] P4  focusOnBubble animado
-- [ ] P5  BubbleZoomController + máquina de estados
+- [x] P5  BubbleZoomController + máquina de estados
 - [ ] P6  integração com moveToNext / moveToPrevious
 - [ ] P7  preferência Bubble Zoom (off = vanilla)
 - [ ] P8  interface BubbleDetector + FakeBubbleDetector
@@ -78,6 +78,8 @@ Nenhum arquivo de código do upstream foi tocado. O baseline é Mihon `5848ffb4c
 - `app/src/test/java/eu/kanade/tachiyomi/ui/reader/bubblezoom/` — 44 testes JVM.
 - `bubblezoom/BubbleZoomDebugOverlay.kt` — overlay de depuração (fase P3), com o
   `const val BUBBLE_ZOOM_DEBUG = true` que o desliga.
+- `bubblezoom/BubbleZoomState.kt` e `bubblezoom/BubbleZoomController.kt` — máquina de estados
+  (P5), Kotlin puro, 28 testes JVM. Zero linhas upstream.
 - `bubblezoom/BubbleZoomConfig.kt` e `bubblezoom/BubbleZoomFocus.kt` — foco animado (P4).
   `focusOnBubble` e `resetBubbleZoom` são extension functions sobre a image view, então a
   P4 saiu com **zero linhas upstream**.
@@ -131,6 +133,15 @@ ser apagado.
 - **O overlay só anexa quando o host é `PagerPageHolder`.** `MangaCoverDialog` também
   constrói um `ReaderPageImageView`, então sem essa guarda as caixas de depuração eram
   desenhadas sobre as capas de mangá — defeito introduzido na P3 e pego na revisão da P4.
+- **Duas contradições dentro do prompt da P5, resolvidas contra a letra dele.** (a)
+  `tryMovePrevious` do índice 0 devolve **true** e vai para -1, não false: a P6 exige que a
+  volta seja o reverso exato, e obedecer ao prompt apagaria a parada da página inteira,
+  deixando 3 paradas na volta contra 4 na ida. (b) "reseta o zoom" é resetar o **índice**;
+  traduzir isso em câmera é da apresentação, que é o que permite à P16 trocar o card sem
+  tocar no controller.
+- **`BubblePageKey` compara por identidade, não por valor.** Uma chave `(chapterId, pageIndex)`
+  colidiria entre uma página dividida e a própria metade dela, porque `InsertPage(parent)` é
+  construída com `parent.index` literal.
 - **A escala alvo usa `min(por largura, por altura)`, não só a largura como o prompt da P4
   dizia.** Medido em paisagem: só pela largura, o balão 0 ocuparia 137% da altura da tela.
   O `min()` o deixa em 43%.
@@ -139,6 +150,29 @@ ser apagado.
   Sintoma: `adb devices` vazio. Conserto: `adb kill-server`.
 - O emulador reclama que não acha o adb se a janela dele for aberta por um terminal
   iniciado antes de `ANDROID_HOME` existir. É inofensivo — só afeta a barra lateral dele.
+
+## Lição da revisão da P5
+
+Os dois achados que sobreviveram eram **lacunas de teste, não defeitos de código** — e um
+deles era uma asserção morta que eu mesmo escrevi (`assertEquals(first, ...let { _ -> first })`
+compara `first` consigo mesmo). Com ela, a metade positiva do contrato de igualdade de
+`BubblePageKey` nunca foi exercitada. O outro: nada afirmava **qual** balão o `focusFor`
+devolvia, só se era nulo.
+
+Fechei os dois e **provei por mutação**: com o lookup invertido, exatamente os dois testes
+novos falham e nenhum outro. Vale repetir esse teste de mutação nas fases seguintes — uma
+suíte verde não diz nada sobre o que ela deixaria passar.
+
+## Avisos para a P6, levantados pelo painel da P5
+
+- `config.navigateToPan` tem padrão **true**: o `moveRight` do Mihon faz pan em vez de virar
+  a página enquanto a imagem puder ser arrastada, o que é sempre verdade logo após uma
+  caminhada de balões. A P6 precisa ler `controller.isFocused` **antes** de chamar o
+  controller e pular a checagem de pan nesse evento.
+- `landscapeZoom` tem padrão **true** e posta um reenquadramento com 500 ms de atraso, que
+  arrastaria a câmera para fora de um balão em páginas largas.
+- Numa transição de capítulo não existe `ReaderPage`. Sem uma chamada a `deactivate()`, a
+  página que saiu continua sendo o sujeito.
 
 ## Próxima fase
 

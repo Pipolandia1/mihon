@@ -55,9 +55,12 @@ class BubbleZoomDebugOverlay private constructor(
     private val topLeft = PointF()
     private val bottomRight = PointF()
 
-    // TEMP P4: index into DEBUG_BOXES, or DEBUG_BOXES.size meaning "back to the page fit".
-    // Remove together with the receiver below when P6 wires real navigation.
-    private var debugFocusIndex = 0
+    // TEMP P5: the trigger now walks a real BubbleZoomController instead of indexing DEBUG_BOXES
+    // by hand, so the broadcast exercises the state machine rather than a parallel copy of it.
+    // The controller, the key and the receiver all go away when P6 wires real navigation.
+    private val debugController = BubbleZoomController()
+    private val debugPageKey = BubblePageKey(this)
+    private var debugActivated = false
 
     /**
      * TEMP P4: steps through the debug boxes, then back to the page's default fit.
@@ -76,14 +79,27 @@ class BubbleZoomDebugOverlay private constructor(
             if (!isShown || !getGlobalVisibleRect(visibleRect)) return
             if (!imageView.isReady) return
 
-            if (debugFocusIndex in DEBUG_BOXES.indices) {
-                // Captured before the first focus of a cycle, so the reset at the end of it
-                // puts the page back exactly where the reader left it.
+            if (!debugActivated) {
+                debugController.activatePage(debugPageKey, DEBUG_DETECTIONS, PageEntry.FORWARD)
+                debugActivated = true
+            }
+            if (!debugController.tryMoveNext()) {
+                // The walk ended. P6 turns the page here; there is no navigation yet, so the
+                // trigger simply starts over on the same page.
+                debugController.selectBubble(-1)
+            }
+
+            // The presentation is a pure projection of the state, which is the contract P16 will
+            // reuse to draw a card instead of moving the camera.
+            val focus = debugController.state.value.focusFor(debugPageKey)
+            if (focus != null) {
+                // Captured before the first focus of a walk, so the reset at the end of it puts
+                // the page back exactly where the reader left it.
                 if (savedScale == null) {
                     savedScale = imageView.scale
                     savedCenter = imageView.center
                 }
-                imageView.focusOnBubble(DEBUG_BOXES[debugFocusIndex])
+                imageView.focusOnBubble(focus.box)
             } else {
                 val scale = savedScale
                 val center = savedCenter
@@ -93,7 +109,6 @@ class BubbleZoomDebugOverlay private constructor(
                 savedScale = null
                 savedCenter = null
             }
-            debugFocusIndex = (debugFocusIndex + 1) % (DEBUG_BOXES.size + 1)
         }
     }
 
@@ -151,6 +166,11 @@ class BubbleZoomDebugOverlay private constructor(
             BubbleBox(0.15f, 0.31f, 0.28f, 0.16f),
             BubbleBox(0.58f, 0.67f, 0.26f, 0.15f),
         )
+
+        /** TEMP P5: [DEBUG_BOXES] as detections, so the debug walk feeds the real controller. */
+        private val DEBUG_DETECTIONS = DEBUG_BOXES.map {
+            BubbleDetection(box = it, confidence = 1f, type = BubbleType.TEXT)
+        }
 
         private const val STROKE_WIDTH_DP = 2f
         private val STROKE_COLOR = Color.argb(0xFF, 0xFF, 0x00, 0xAA)
