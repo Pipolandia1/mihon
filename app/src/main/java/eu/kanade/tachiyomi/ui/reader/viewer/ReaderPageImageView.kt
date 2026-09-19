@@ -35,6 +35,7 @@ import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView.SCALE_TYPE_
 import com.github.chrisbanes.photoview.PhotoView
 import eu.kanade.tachiyomi.data.coil.cropBorders
 import eu.kanade.tachiyomi.data.coil.customDecoder
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomDebugOverlay
 import eu.kanade.tachiyomi.ui.reader.viewer.webtoon.WebtoonSubsamplingImageView
 import eu.kanade.tachiyomi.util.system.animatorDurationScale
 import eu.kanade.tachiyomi.util.view.isVisibleOnScreen
@@ -58,6 +59,8 @@ open class ReaderPageImageView @JvmOverloads constructor(
 
     private var pageView: View? = null
 
+    private var bubbleZoomOverlay: BubbleZoomDebugOverlay? = null
+
     private var config: Config? = null
 
     var onImageLoaded: (() -> Unit)? = null
@@ -74,6 +77,7 @@ open class ReaderPageImageView @JvmOverloads constructor(
     open fun onImageLoaded() {
         onImageLoaded?.invoke()
         background = pageBackground
+        bubbleZoomOverlay?.invalidate()
     }
 
     @CallSuper
@@ -239,16 +243,18 @@ open class ReaderPageImageView @JvmOverloads constructor(
                 object : SubsamplingScaleImageView.OnStateChangedListener {
                     override fun onScaleChanged(newScale: Float, origin: Int) {
                         this@ReaderPageImageView.onScaleChanged(newScale)
+                        bubbleZoomOverlay?.invalidate()
                     }
 
                     override fun onCenterChanged(newCenter: PointF?, origin: Int) {
-                        // Not used
+                        bubbleZoomOverlay?.invalidate()
                     }
                 },
             )
             setOnClickListener { this@ReaderPageImageView.onViewClicked() }
         }
         addView(pageView, MATCH_PARENT, MATCH_PARENT)
+        bubbleZoomOverlay = BubbleZoomDebugOverlay.attach(this, pageView as SubsamplingScaleImageView)
     }
 
     private fun SubsamplingScaleImageView.setupZoom(config: Config?) {
@@ -365,6 +371,9 @@ open class ReaderPageImageView @JvmOverloads constructor(
             }
         }
         addView(pageView, MATCH_PARENT, MATCH_PARENT)
+        // The animated path has no view that can convert image coordinates, so there is no
+        // overlay here rather than one drawing in the wrong place.
+        BubbleZoomDebugOverlay.detach(this, bubbleZoomOverlay).also { bubbleZoomOverlay = null }
     }
 
     private fun setAnimatedImage(
