@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.ui.reader.bubblezoom
 
+import kotlin.math.roundToInt
+
 /** A rectangle in pixels, in whatever single space the caller is working in. */
 data class CardRect(val left: Float, val top: Float, val right: Float, val bottom: Float) {
     val width: Float get() = right - left
@@ -76,6 +78,33 @@ object BubbleCardGeometry {
         val magnification = cardScale / currentViewScale
         return magnification >= BubbleZoomConfig.CARD_MIN_MAGNIFICATION &&
             magnification <= BubbleZoomConfig.CARD_MAX_MAGNIFICATION
+    }
+
+    /**
+     * How far [BubbleMask] must grow its silhouette to take the bubble's own outline with it.
+     *
+     * The fill stops at the inside edge of the line, so the line has to be added back, and how
+     * many mask pixels it occupies is not something the mask can see. Only three numbers decide
+     * it: how thick the line is on the page, how much of the page the card covers, and that the
+     * mask is always [BubbleZoomConfig.MASK_LONG_SIDE_PX] on its long side.
+     *
+     * Sizing it off the mask's own dimensions instead, as a first attempt did, is wrong for a
+     * reason worth stating: the card is always framed to fill the same share of the viewport, so
+     * a small bubble is magnified harder and its line lands THICKER in the mask than a large
+     * bubble's, from the very same pen. The amount has to fall as the bubble grows, and the
+     * mask's dimensions barely move.
+     */
+    fun outlineGrowPasses(
+        maskLongSidePx: Int,
+        paddedLongSourcePx: Float,
+        pageWidthSourcePx: Float,
+    ): Int {
+        if (paddedLongSourcePx <= 0f || pageWidthSourcePx <= 0f || maskLongSidePx <= 0) return 1
+        val outlineSourcePx = BubbleZoomConfig.MASK_OUTLINE_PAGE_FRACTION * pageWidthSourcePx
+        val outlineMaskPx = outlineSourcePx * maskLongSidePx / paddedLongSourcePx
+        return (outlineMaskPx * BubbleZoomConfig.MASK_OUTLINE_GENEROSITY)
+            .roundToInt()
+            .coerceIn(1, BubbleZoomConfig.MASK_MAX_GROW_PASSES)
     }
 
     /**

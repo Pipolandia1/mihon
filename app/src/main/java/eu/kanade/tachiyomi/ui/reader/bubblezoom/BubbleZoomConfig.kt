@@ -64,4 +64,64 @@ object BubbleZoomConfig {
      */
     const val CARD_MIN_MAGNIFICATION = 1.1f
     const val CARD_MAX_MAGNIFICATION = 2.6f
+
+    /**
+     * Long side, in pixels, the capture is reduced to before [BubbleMask] traces its outline.
+     *
+     * Small enough that the whole trace is a fraction of a millisecond, and small enough that
+     * reducing to it averages screentone into flat grey instead of leaving a field of holes.
+     * The mask is drawn back up filtered, so the roughly threefold upscale is what gives the
+     * cut-out its antialiased edge rather than a staircase.
+     */
+    const val MASK_LONG_SIDE_PX = 192
+
+    /**
+     * Half-size of the seed patch at the middle of the mask, as a fraction of its smaller side.
+     *
+     * Large enough that its median cannot be a letter, small enough that it stays inside the
+     * bubble even when the padding was truncated against a page edge and the bubble is
+     * therefore off-centre in the card.
+     */
+    const val MASK_SEED_PATCH_FRACTION = 0.10f
+
+    /**
+     * Luminance distance, 0..1, within which a neighbouring pixel is still the same surface.
+     *
+     * This is what the bubble's outline has to beat to stop the fill. At the mask's resolution
+     * a five pixel outline on a 1600px page survives as about two pixels of near-black against
+     * white paper, a gap of roughly 0.9 — so there is a wide margin before a thin or a
+     * grey outline starts leaking, and leaking is refused rather than guessed at.
+     */
+    const val MASK_TOLERANCE = 0.18f
+
+    /**
+     * How thick a bubble's outline is, as a fraction of the page's width.
+     *
+     * Line weight belongs to the drawing, not to the balloon: the same pen draws a big bubble
+     * and a small one, so an outline is a constant fraction of the PAGE and not of the bubble.
+     * The synthetic test pages use five pixels on a page 1600 wide, which is where this comes
+     * from, and printed manga scanned at that width sits in the same place.
+     */
+    const val MASK_OUTLINE_PAGE_FRACTION = 0.003f
+
+    /**
+     * How far past the measured outline the silhouette grows anyway.
+     *
+     * The two errors are not symmetric. Growing too far shows a sliver of page around the
+     * bubble, which reads as a cut edge; growing too little saws through the bubble's own line
+     * and leaves a bare blob of paper floating. So it errs outwards.
+     */
+    const val MASK_OUTLINE_GENEROSITY = 1.5f
+
+    /** Ceiling on that growth, so a degenerate measurement cannot dilate the shape into a box. */
+    const val MASK_MAX_GROW_PASSES = 8
+
+    /** Below this fraction of the card the fill found a glyph or a texture, not a bubble. */
+    const val MASK_MIN_AREA_FRACTION = 0.10f
+
+    /** Above it the fill found the page: the bubble's outline was open, broken or absent. */
+    const val MASK_MAX_AREA_FRACTION = 0.92f
+
+    /** How far the cut-out's two-tone halo reaches past its edge, in dp. */
+    const val CARD_HALO_WIDTH_DP = 1f
 }

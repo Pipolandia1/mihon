@@ -168,4 +168,43 @@ class BubbleCardGeometryTest {
             )
         }
     }
+
+    @Test
+    fun `the silhouette grows by what the page says, not by what the mask happens to measure`() {
+        // 4.8 source pixels of outline on a 1600 wide page, seen through a mask whose long side
+        // is 192 across a padded box 470.4 source pixels tall, is 1.96 mask pixels; grown by
+        // half again, three passes. That is the number validated against all eighteen bubbles
+        // of the synthetic test pages.
+        val passes = BubbleCardGeometry.outlineGrowPasses(
+            maskLongSidePx = BubbleZoomConfig.MASK_LONG_SIDE_PX,
+            paddedLongSourcePx = padded.height * 2400f,
+            pageWidthSourcePx = 1600f,
+        )
+
+        assertEquals(3, passes)
+    }
+
+    @Test
+    fun `a larger bubble needs less growing, because the same pen drew it`() {
+        // The card is always framed to fill the same share of the viewport, so a small bubble
+        // is magnified harder and its outline lands THICKER in the mask. Sizing the growth off
+        // the mask's own dimensions, as the first attempt did, returns the same answer for both
+        // of these - which is exactly the bug this replaced.
+        val small = BubbleCardGeometry.outlineGrowPasses(192, 235f, 1600f)
+        val large = BubbleCardGeometry.outlineGrowPasses(192, 941f, 1600f)
+
+        assertEquals(6, small)
+        assertEquals(1, large)
+    }
+
+    @Test
+    fun `growing is clamped at both ends so a nonsense measurement cannot square off the shape`() {
+        assertEquals(1, BubbleCardGeometry.outlineGrowPasses(192, 0f, 1600f))
+        assertEquals(1, BubbleCardGeometry.outlineGrowPasses(192, 470f, 0f))
+        assertEquals(1, BubbleCardGeometry.outlineGrowPasses(0, 470f, 1600f))
+        assertEquals(
+            BubbleZoomConfig.MASK_MAX_GROW_PASSES,
+            BubbleCardGeometry.outlineGrowPasses(192, 40f, 1600f),
+        )
+    }
 }

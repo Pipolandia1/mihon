@@ -268,6 +268,153 @@ arrastava a câmera para fora do balão. Agora ele desiste se a escala já não 
 - Numa transição de capítulo não existe `ReaderPage`. Sem uma chamada a `deactivate()`, a
   página que saiu continua sendo o sujeito.
 
+---
+
+# E1 — recorte no formato exato do balão
+
+Não é fase do plano. É uma emenda de escopo pedida depois da P16 já commitada e vista no
+aparelho, e está registrada como **Emenda E1** em `docs/BUBBLE_ZOOM_SPEC.md`. A linha
+"segmentação precisa do contorno do balão" estava explicitamente **fora** do escopo, então a
+decisão foi do usuário, com os três caminhos e os custos de cada um postos na mesa. O
+escolhido: traçar o contorno dos próprios pixels, sem modelo.
+
+## O que existe agora
+
+`BubbleMask.kt`, Kotlin puro e sem nenhum import Android. Recebe os pixels do card já
+reduzidos e devolve uma silhueta, ou `null`. O caminho é: mediana de uma mancha central para
+achar o tom da superfície, preenchimento de quatro vizinhos a partir dali, recuperação do que
+ficou cercado, e crescimento para levar o contorno junto.
+
+Três decisões que valem estar escritas:
+
+- **A mediana, não o pixel do meio.** O centro exato de um balão cai numa letra tão facilmente
+  quanto no papel, e uma letra mandaria o preenchimento traçar a letra. Metade de uma mancha
+  não pode ser texto.
+- **Reduzir para 192px antes de traçar é parte do algoritmo, não otimização.** Reduzir é um
+  filtro passa-baixa: é o que faz retícula virar cinza chapado em vez de milhares de buracos.
+  De quebra, a máscara volta a ser desenhada filtrada, então a borda chega anti-serrilhada de
+  graça, e o traço inteiro custa uma fração de milissegundo.
+- **Recusa em vez de chutar.** Se o preenchimento alcança a borda, ele escapou por uma falha
+  no contorno e está segurando a página; se cobre menos de 10% achou uma letra; mais de 92%,
+  achou a página. Nos três casos o card volta ao retângulo da P16. Balão aberto, legenda sem
+  borda e balão do mesmo tom da arte caem todos aqui — degradação, não falha.
+
+O contorno é **só apresentação**. Vive e morre dentro do card, nunca é persistido, e
+`BubbleDetection` continua carregando só uma `BubbleBox` retangular normalizada. P8, P9 e P13
+seguem exatamente como estavam planejadas.
+
+## O que a revisão adversarial achou
+
+Quatro lentes, e cada achado passou por três agentes tentando refutá-lo. Dez achados, seis
+sobreviveram a 2 de 3 refutações. Todos corrigidos.
+
+- **A troca entre balões não animava nada, e isso vinha da P16.** `animateTo` construía o
+  animador a partir do campo `progress`, que já vale exatamente 1 depois de qualquer entrada
+  completa — então o segundo balão em diante animava de 1 para 1. O card que saía era
+  desenhado com opacidade `1 - progress`, isto é, zero, e o que entrava não tinha o pequeno
+  crescimento. Corte seco, não transição. Era justamente o ponto que o commit da P16 listou
+  como "não verificado, precisa de uma pessoa".
+- **Dois `dismiss()` seguidos matavam a esmaecida, e eles acontecem em todo arrasto.** Um pan
+  com o balão focado faz o holder chamar `onPageMoved()` e depois resetar o controller, cujo
+  novo estado chega ao presenter como um segundo dismiss. O segundo cancelava o primeiro, e
+  cancelar roda a callback do primeiro na hora — reciclando os bitmaps um quadro depois do
+  início de uma esmaecida de 180 ms, com eles ainda opacos na tela. Agora um campo `exiting`
+  lembra de quem já está saindo e o segundo dismiss não faz nada.
+- **O guarda de escape não tinha cobertura nenhuma.** Os dois testes que pareciam cobri-lo são
+  na verdade barrados pelo teto de área antes de chegarem lá — apagar `if (escaped) return
+  null` deixava a suíte inteira verde. O teste novo usa página de tinta, balão de papel e um
+  corredor vazando pela esquerda: escapa, mas cobre um terço do card, dentro da faixa legal.
+  **Provado por mutação:** com o guarda apagado, só ele fica vermelho.
+- **A duração era escalada duas vezes.** `animateTo` multiplicava por `animatorDurationScale`
+  e entregava a um `ValueAnimator`, que multiplica pelo mesmo ajuste internamente. Quadrático
+  num ajuste que o leitor pode mudar. Também vinha da P16.
+- **O crescimento era dimensionado pelo lado curto da máscara**, com a justificativa de que o
+  contorno é fração constante do balão. É falso: a mesma caneta desenha balão grande e balão
+  pequeno, então o contorno é fração constante da **página**. E como o card é sempre
+  enquadrado para ocupar a mesma parte da tela, um balão pequeno é ampliado mais e seu traço
+  cai mais **grosso** na máscara. Agora quem calcula é `BubbleCardGeometry.outlineGrowPasses`,
+  a partir da largura da página e do tamanho da caixa na origem. Provado por mutação também.
+
+Os outros quatro achados foram refutados: 2 ou 3 dos verificadores mostraram que o código já
+tratava o caso, ou que a alegação se apoiava em leitura errada de uma API do Android.
+
+## Verificação
+
+| | |
+|---|---|
+| Testes JVM | 100, zero falhas — 14 novos (86 antes da E1) |
+| Simulação nas 5 páginas de teste reais | **18 de 18 balões traçados**, zero recusas |
+| Cobertura do card pela silhueta | 0,46–0,58 (0,74 nos balões de canto, onde o padding trunca) |
+| Cantos do card | vazios, como tem de ser — não é retângulo |
+| Formas devolvidas | retângulo arredondado, elipse, retângulo arredondado — as do gerador |
+
+A simulação roda o algoritmo linha a linha em Python sobre os PNGs de verdade, então não é
+teste de fixture sintética: são os pixels que o aparelho vai ver.
+
+### No emulador
+
+Medido pela pegada do card, isto é, os pixels que mudam entre o estado sem card e com card.
+
+| | pegada | linha do topo | cantos (oitavos) |
+|---|---|---|---|
+| P16, retângulo | 653x671 | 613 de 653 | 0,97 / 0,97 / 0,33 / 0,24 |
+| E1, balão 0 (ret. arredondado) | 541x491 | 388 de 541 | 0,27 / 0,28 / 0,24 / 0,25 |
+| E1, balão 1 (elipse) | 548x471 | 81 de 548 | **0,00 / 0,00 / 0,00 / 0,00** |
+
+A pegada caiu de 653x671, que é a caixa acolchoada inteira, para 541x491, que é o balão em si
+(368x336 na origem, ampliado 1,46). O acolchoamento sumiu porque virou transparente, e na
+elipse os quatro cantos dão exatamente zero. Os 613 de 653 na linha do topo do build anterior
+eram a borda retangular atravessando o card inteiro.
+
+**Recusa verificada no aparelho.** Na página 4 os três boxes de debug caem em papel em branco,
+o preenchimento escapa, e o card volta a **653x671 com cantos 0,97** — o retângulo da P16, no
+mesmo build e na mesma sessão em que a página 1 dá forma.
+
+**Transição pega no meio do voo** com `animator_duration_scale 10`: a elipse de um balão
+saindo e o retângulo arredondado do outro entrando, os dois desenhados ao mesmo tempo, cada um
+na sua forma. Antes da correção isso era impossível de ver, porque o card que saía tinha
+opacidade zero desde o primeiro quadro. A saída também esmaece, e o retorno ao estado inicial
+bate **exatamente 0 pixel de diferença**.
+
+Sem crash em `logcat -b crash` em toda a sessão.
+
+### Custo, medido e não estimado
+
+25 amostras quentes, todas traçando forma, instrumentando o aparelho e revertendo depois:
+
+| | mediana | máximo |
+|---|---|---|
+| `BubbleMask.extract` | 2,3 ms | 4,0 ms |
+| recorte no alpha (`DST_IN`) | 2,8 ms | — |
+| captura da página (custo da P16) | ~8 ms | — |
+| **total por balão** | **14,9 ms** | 17,0 ms |
+
+Reduzir e ler os pixels custa 0,7 ms somados; o trabalho está todo no preenchimento.
+
+Duas coisas que só a medição mostrou, e que a minha aritmética tinha errado:
+
+- **As três primeiras chamadas da vida do processo custam 62, 30 e 16 ms**, contra 2,3 ms
+  quentes. É aquecimento do JIT, não o algoritmo. Na prática o primeiro balão de uma sessão
+  aparece uns 80 ms depois do toque; do segundo em diante, não.
+- **14,9 ms encosta no orçamento de 16,7 ms de um quadro**, e o `gfxinfo` durante a caminhada
+  deu 4 quadros atrasados em 40, pior caso 31 ms. Disso, ~8 ms são a captura da P16 e ~5 ms
+  são o que a E1 acrescentou. Num emulador x86_64; não medi em aparelho real, então não
+  afirmo que lá seja melhor, embora seja o provável.
+
+Não otimizei. Tirar traçado e recorte da thread principal salvaria ~5 ms dos 15, mas exigiria
+passar bitmaps entre threads — exatamente a classe de mudança que gerou os três defeitos de
+ciclo de vida de bitmap da P16. Se o solavanco for visível para você, aí vale pagar esse
+preço; a medida está aqui para essa decisão ser informada.
+
+## O que só uma pessoa responde
+
+- A silhueta lê como balão destacado ou como recorte mal feito sobre arte ocupada?
+- A auréola de duas tonalidades separa o card da página, agora que não há retângulo? Sem
+  scrim, ela é a única coisa que separa.
+- Com a transição consertada, balões consecutivos se transformam um no outro sem piscar?
+
 ## Próxima fase
 
-P1 — mapa técnico do reader. Usar plan mode, não deixar escrever código de app.
+P7 — a preferência de verdade. Com ela desligada, o app tem de ser Mihon vanilla: hoje o
+controller no `PagerViewer`, o desvio da navegação, o terço do meio, o coletor de estado, o
+`onImageMoved` e a guarda do `landscapeZoom` continuam todos ativos.

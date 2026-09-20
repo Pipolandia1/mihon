@@ -35,10 +35,37 @@ Inspiração: Bubble Zoom do Google Play Books.
 
 - OCR, tradução, TTS.
 - Webtoon / scroll contínuo.
-- Segmentação precisa do contorno do balão.
+- Segmentação precisa do contorno do balão **por modelo**. Ver a emenda E1 abaixo: o
+  contorno passou a existir, mas traçado dos próprios pixels, sem modelo.
 - Sincronização online.
 - Reconstrução ou reflow de texto.
 - Imagens animadas.
+
+### Emenda E1 — recorte no formato do balão
+
+Decidida pelo usuário depois da P16, com a P16 já commitada e vista no aparelho. A P16
+entregou o card como retângulo arredondado; o pedido foi que o recorte fosse no formato
+exato do balão.
+
+Três caminhos foram postos, e o escolhido foi o terceiro:
+
+1. Modelo de segmentação (`kitsumed/yolov8m_seg-speech-bubble`). É o único exato em
+   qualquer balão, mas é **GPL-3.0**: embarcado num APK distribuído, contamina a
+   distribuição, exatamente o aviso da seção de modelos. Recusado.
+2. Aproximação por elipse. Barato, nunca exato, e errado em balão de grito ou nuvem de
+   pensamento. Recusado.
+3. **Traçar o contorno dos pixels que o card já capturou.** Um balão é um contorno fechado
+   em volta de uma superfície de um tom só, então a forma se lê da própria página: enche a
+   partir do meio, para no contorno, recupera o que ficou cercado (a letra, o retículo) e
+   cresce o suficiente para levar o traço junto. Sem modelo, sem licença, sem tocar no
+   `BubbleDetection`, no contrato do detector nem no cache da P13.
+
+O que isso **não** muda: detecções continuam sendo `BubbleBox` retangular e normalizada. O
+contorno é presentation-only, vive e morre dentro do card, e nunca é persistido — as fases
+P8, P9 e P13 seguem como estavam.
+
+Onde não dá para traçar — balão aberto, legenda sem borda, balão do mesmo tom da arte em
+volta — o card recusa a silhueta e volta ao retângulo da P16. Degradação, não falha.
 
 ## 4. Definição de sucesso
 
