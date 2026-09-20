@@ -15,12 +15,14 @@ fun ReaderPage.bubblePageKey(): BubblePageKey = BubblePageKey(this)
 /**
  * Turns the controller's answer for one page into what that page shows.
  *
- * This is the whole presentation side of the contract: a bubble means frame it, null means go
- * back to where the reader left the page. Phase P16 replaces the body of [apply] with a lifted
- * card and keeps everything else, because the answer it consumes is the same.
+ * Two presentations, one decision per bubble. The preferred one lifts the bubble as a card and
+ * leaves the page where it is; when the card cannot be built — an animated page, an image not
+ * ready, a bubble partly off screen, a magnification outside the band where a frozen capture
+ * still adds detail — the phase P4 camera move takes over instead. The reader sees one or the
+ * other, never neither, and never both.
  *
- * One instance per page holder. It remembers the scale and centre from before the first frame
- * of a walk, which is what makes the page return to exactly where it was rather than to a
+ * One instance per page holder. It remembers the scale and centre from before the first camera
+ * move of a walk, so the page returns to exactly where the reader left it rather than to a
  * recomputed "default" that Mihon does not actually use.
  */
 class BubbleZoomPagePresenter {
@@ -28,18 +30,60 @@ class BubbleZoomPagePresenter {
     private var savedScale: Float? = null
     private var savedCenter: PointF? = null
 
+    /** Set while the card is up, so a page move made by the reader can drop a stale capture. */
+    private var card: BubbleZoomOverlayView? = null
+
+    fun attachCard(overlay: BubbleZoomOverlayView?) {
+        card = overlay
+    }
+
     fun apply(imageView: SubsamplingScaleImageView?, focus: BubbleDetection?) {
         if (imageView == null || !imageView.isReady) return
 
-        if (focus != null) {
-            if (savedScale == null) {
-                savedScale = imageView.scale
-                savedCenter = imageView.center
-            }
-            imageView.focusOnBubble(focus.box)
+        if (focus == null) {
+            card?.dismiss()
+            restoreCamera(imageView)
             return
         }
 
+        // The card is tried first and captures before anything is torn down, so a refusal here
+        // leaves whatever is already shown untouched.
+        if (card?.show(focus.box) == true) {
+            // A card means the page itself never moved, so there is nothing to restore later.
+            restoreCamera(imageView)
+            return
+        }
+
+        card?.dismiss()
+        if (savedScale == null) {
+            savedScale = imageView.scale
+            savedCenter = imageView.center
+        }
+        imageView.focusOnBubble(focus.box)
+    }
+
+    /**
+     * The reader moved the page themselves, so a frozen card no longer matches what is under it.
+     *
+     * The card goes, and the remembered camera is forgotten with it: the reader has taken over,
+     * and animating the page back to where Bubble Zoom found it would undo their own gesture.
+     * The caller is expected to reset the controller as well, so that what the model believes
+     * and what is on screen do not drift apart.
+     */
+    fun onPageMovedByUser() {
+        card?.onPageMoved()
+        savedScale = null
+        savedCenter = null
+    }
+
+    fun release() {
+        card?.clear()
+        card = null
+        savedScale = null
+        savedCenter = null
+    }
+
+    private fun restoreCamera(imageView: SubsamplingScaleImageView) {
         val scale = savedScale
         val center = savedCenter
         savedScale = null

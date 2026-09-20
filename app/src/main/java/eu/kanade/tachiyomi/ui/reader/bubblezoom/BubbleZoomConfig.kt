@@ -33,4 +33,35 @@ object BubbleZoomConfig {
 
     /** Duration of the animation back to the page's default fit. */
     const val RESET_DURATION_MS = 200L
+
+    /** How long the lifted card takes to appear, and to morph from one bubble to the next. */
+    const val CARD_ENTER_DURATION_MS = 200L
+
+    /** How long it takes to fade away. Slightly quicker, so dismissing feels responsive. */
+    const val CARD_EXIT_DURATION_MS = 180L
+
+    /** Gap kept between the card and the edge of the viewport, in dp. */
+    const val CARD_SCREEN_MARGIN_DP = 12f
+
+    /** Corner radius of the card, in dp. */
+    const val CARD_CORNER_RADIUS_DP = 8f
+
+    /** Elevation of the card, in dp. With no scrim this is what separates it from the page. */
+    const val CARD_ELEVATION_DP = 8f
+
+    /** Width of the hairline that keeps the card's edge readable over white paper, in dp. */
+    const val CARD_BORDER_WIDTH_DP = 1f
+
+    /**
+     * The card is only worth lifting inside this magnification band, measured against the scale
+     * the page is already at.
+     *
+     * Below the lower bound it would be barely larger than the bubble already on screen. Above
+     * the upper bound it stops adding detail: the capture is frozen at the tile resolution the
+     * page is being drawn at, while the P4 camera, by actually changing the view's scale, can
+     * cross a power-of-two threshold and have the library decode finer tiles. Past that point
+     * the camera genuinely shows more rather than merely bigger, so it takes over.
+     */
+    const val CARD_MIN_MAGNIFICATION = 1.1f
+    const val CARD_MAX_MAGNIFICATION = 2.6f
 }

@@ -123,7 +123,12 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
                 (event.rawY - viewPosition[1] + viewPositionRelativeToWindow[1]) / pager.height,
             )
             when (config.navigator.getAction(pos)) {
-                NavigationRegion.MENU -> activity.toggleMenu()
+                // The menu zone is the one tap region with no navigation meaning, so it is the
+                // only one that can dismiss a bubble without also turning the page. Dismissing
+                // takes precedence while a bubble is focused; the next tap opens the menu as
+                // usual. "Tap outside the card" cannot be built: the pager feeds its gesture
+                // detector unconditionally, so a tap consumed for dismissal would navigate too.
+                NavigationRegion.MENU -> if (bubbleZoom.isFocused) bubbleZoom.reset() else activity.toggleMenu()
                 NavigationRegion.NEXT -> moveToNext()
                 NavigationRegion.PREV -> moveToPrevious()
                 NavigationRegion.RIGHT -> moveRight()

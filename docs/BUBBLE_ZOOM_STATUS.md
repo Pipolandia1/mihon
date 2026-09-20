@@ -5,7 +5,7 @@
 
 ## Fase atual
 
-P6 concluída. Próxima: **P16 — overlay visual (card do balão), antecipada.**
+P16 concluída. Próxima: **P7 — preferência Bubble Zoom (off = vanilla).**
 
 > **Ordem alterada pelo usuário (19/09/2026):** a **P16 (overlay visual / card do balão)**
 > sobe para logo depois da **P6**, antes de P7–P15. Motivo: a P4 move a câmera, mas a
@@ -53,7 +53,7 @@ P6 concluída. Próxima: **P16 — overlay visual (card do balão), antecipada.*
 - [ ] P13 cache em disco com modelVersion
 - [ ] P14 teclas de volume
 - [ ] P15 double tap
-- [ ] P16 BubbleZoomOverlayView  ← **antecipada: vem logo após a P6**
+- [x] P16 BubbleZoomOverlayView  (antecipada, feita logo após a P6)
 - [ ] P17 debug HUD
 - [ ] P18 dataset de 30 páginas + tuning
 
@@ -87,7 +87,9 @@ Nenhum arquivo de código do upstream foi tocado. O baseline é Mihon `5848ffb4c
 - `app/src/test/java/eu/kanade/tachiyomi/ui/reader/bubblezoom/` — 44 testes JVM.
 - `bubblezoom/BubbleZoomDebugOverlay.kt` — overlay de depuração (fase P3), com o
   `const val BUBBLE_ZOOM_DEBUG = true` que o desliga.
-- `bubblezoom/BubbleZoomPagePresenter.kt` — projeta o estado na página (P6), e a extensão
+- `bubblezoom/BubbleZoomOverlayView.kt`, `BubbleCardGeometry.kt`, `BubbleZoomDebugBoxes.kt` —
+  o card erguido (P16). A geometria é Kotlin puro com testes JVM.
+- `bubblezoom/BubbleZoomPagePresenter.kt` — despachante card/câmera (P6 + P16), e a extensão
   `ReaderPage.bubblePageKey()`.
 - `bubblezoom/BubbleZoomState.kt` e `bubblezoom/BubbleZoomController.kt` — máquina de estados
   (P5), Kotlin puro, 28 testes JVM. Zero linhas upstream.
@@ -161,6 +163,45 @@ ser apagado.
   Sintoma: `adb devices` vazio. Conserto: `adb kill-server`.
 - O emulador reclama que não acha o adb se a janela dele for aberta por um terminal
   iniciado antes de `ANDROID_HOME` existir. É inofensivo — só afeta a barra lateral dele.
+
+## Defeitos da P16 achados pela revisão e corrigidos
+
+- **`doOnEnd` dispara também no `cancel()`.** Quando `show()` cancelava uma saída em curso, o
+  callback daquela saída rodava na hora e reciclava o bitmap que o `show()` acabara de
+  instalar, porque fechava sobre o **campo** e não sobre o bitmap que estava dispensando.
+  Sintoma: toque consumido, nada desenhado, balão pulado. O mesmo valia para o `outgoing`,
+  apagando a imagem do cross-fade. Corrigido comparando por identidade. Verificado no aparelho
+  com `animator_duration_scale 10`.
+- **Card e controller podiam desalinhar.** Se o card se dispensasse sozinho (pinça, duplo
+  toque), o controller continuava achando que havia foco, e o toque no terço do meio era gasto
+  desfocando algo invisível em vez de abrir o menu. Agora o holder reseta o controller junto, e
+  o presenter esquece a câmera salva para não desfazer o gesto do leitor.
+- **O reenquadramento do `landscapeZoom` reporta `ORIGIN_ANIM`**, igual às nossas animações, e
+  a guarda da P6 (`scale != minScale`) não o pega porque o caminho do card não mexe na escala.
+  Um card erguido agora veta esse reenquadramento.
+
+## O que a P16 apurou, e que contraria o que eu supunha
+
+**O card é tão nítido quanto o zoom de câmera.** Eu supunha que no encaixe só houvesse tiles
+de baixa resolução. Falso: com `setMinimumTileDpi(180)` e a tela a 420 dpi, o
+`fullImageSampleSize` dá 1 e a página inteira já está na memória em resolução plena (vale para
+páginas até ~1620 px de largura em viewport de 1080). O card é ampliação de 1,416× de pixels
+reais, e como o nível de tile é função da escala, câmera e card leem dos mesmos tiles.
+
+**"Dispensar com toque fora do card" é inconstruível.** O `dispatchTouchEvent` do `Pager`
+alimenta o detector de gestos incondicionalmente, então um toque consumido pelo card também
+navegaria: um dedo, duas ações. Decisão do usuário: o **terço do meio** dispensa enquanto há
+balão em foco, e o toque seguinte abre o menu. Uma linha no `PagerViewer`.
+
+**O card recusa e a câmera assume** quando: não há image view, a imagem não está pronta, o
+balão está parcialmente fora da tela, ou a magnificação sai da banda 1,1–2,6×. Acima da banda a
+câmera mostra genuinamente mais, porque ao mudar a escala ela faz a biblioteca decodificar
+tiles mais finos — coisa que uma captura congelada não pede. Verificado em paisagem: a página
+passou de 720 para 2205 px de largura, ou seja a câmera assumiu.
+
+**O card é uma captura congelada**, consequência direta da decisão de não escurecer: a página
+fica parada e visível, então se o leitor arrastar ou der pinça por baixo, o card vira mentira
+e é dispensado em vez de mostrar pixels velhos.
 
 ## Lição da revisão da P5
 

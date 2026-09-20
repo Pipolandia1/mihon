@@ -73,22 +73,6 @@ class BubbleZoomDebugOverlay private constructor(
 
     companion object {
 
-        /**
-         * The boxes phase P3 draws. They are the exact coordinates of the bubbles on page 1 of
-         * the synthetic test manga, so any misalignment on screen is measurable rather than a
-         * matter of opinion. See tools/test-pages/ground-truth.json.
-         */
-        val DEBUG_BOXES = listOf(
-            BubbleBox(0.62f, 0.08f, 0.23f, 0.14f),
-            BubbleBox(0.15f, 0.31f, 0.28f, 0.16f),
-            BubbleBox(0.58f, 0.67f, 0.26f, 0.15f),
-        )
-
-        /** The debug boxes as detections, which is what P6 feeds the controller until P8. */
-        val DEBUG_DETECTIONS = DEBUG_BOXES.map {
-            BubbleDetection(box = it, confidence = 1f, type = BubbleType.TEXT)
-        }
-
         private const val STROKE_WIDTH_DP = 2f
         private val STROKE_COLOR = Color.argb(0xFF, 0xFF, 0x00, 0xAA)
 

@@ -3,12 +3,15 @@ package eu.kanade.tachiyomi.ui.reader.viewer.pager
 import android.annotation.SuppressLint
 import android.content.Context
 import android.view.LayoutInflater
+import android.view.ViewGroup.LayoutParams
 import androidx.core.view.isVisible
+import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
 import eu.kanade.presentation.util.formattedMessage
 import eu.kanade.tachiyomi.databinding.ReaderErrorBinding
 import eu.kanade.tachiyomi.source.model.Page
-import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomDebugOverlay
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomOverlayView
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomPagePresenter
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.DEBUG_DETECTIONS
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.bubblePageKey
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.focusFor
 import eu.kanade.tachiyomi.ui.reader.model.InsertPage
@@ -73,6 +76,7 @@ class PagerPageHolder(
     private val bubbleZoomKey = page.bubblePageKey()
     private val bubbleZoomPresenter = BubbleZoomPagePresenter()
     private var bubbleZoomJob: Job? = null
+    private var bubbleZoomCard: BubbleZoomOverlayView? = null
 
     init {
         loadJob = scope.launch { loadPageAndProcessStatus() }
@@ -94,7 +98,7 @@ class PagerPageHolder(
      */
     private fun offerBubblesWhenReady() {
         if (bubbleZoomImageView?.isReady != true) return
-        viewer.bubbleZoom.onBubblesReady(bubbleZoomKey, BubbleZoomDebugOverlay.DEBUG_DETECTIONS)
+        viewer.bubbleZoom.onBubblesReady(bubbleZoomKey, DEBUG_DETECTIONS)
     }
 
     /**
@@ -107,6 +111,7 @@ class PagerPageHolder(
         loadJob = null
         bubbleZoomJob?.cancel()
         bubbleZoomJob = null
+        bubbleZoomPresenter.release()
     }
 
     private fun initProgressIndicator() {
@@ -286,8 +291,40 @@ class PagerPageHolder(
     override fun onImageLoaded() {
         super.onImageLoaded()
         progressIndicator?.hide()
+        ensureBubbleZoomCard()
         offerBubblesWhenReady()
     }
+
+    /**
+     * The card is a child of this holder, added once the page has an image view to capture
+     * from. It handles no touch, so navigation is untouched.
+     */
+    private fun ensureBubbleZoomCard() {
+        if (bubbleZoomCard != null) return
+        val image = bubbleZoomImageView ?: return
+        bubbleZoomCard = BubbleZoomOverlayView(context, image).also {
+            addView(it, LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+            bubbleZoomPresenter.attachCard(it)
+        }
+    }
+
+    /**
+     * A move the reader made themselves leaves the frozen card showing stale pixels.
+     *
+     * The controller is reset with it, or the model would still believe a bubble is focused
+     * while nothing is on screen — and the next middle-third tap would be spent un-focusing
+     * something invisible instead of opening the menu.
+     */
+    override fun onImageMoved(origin: Int) {
+        super.onImageMoved(origin)
+        if (origin == SubsamplingScaleImageView.ORIGIN_ANIM) return
+        if (!viewer.bubbleZoom.isFocused) return
+        bubbleZoomPresenter.onPageMovedByUser()
+        viewer.bubbleZoom.reset()
+    }
+
+    /** A lifted card vetoes the delayed landscape re-frame, which would slide the page under it. */
+    override fun isBubbleZoomPresenting(): Boolean = bubbleZoomCard?.isShowing == true
 
     /**
      * Called when an image fails to decode.

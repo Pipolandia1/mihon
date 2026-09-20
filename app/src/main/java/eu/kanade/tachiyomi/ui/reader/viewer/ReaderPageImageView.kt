@@ -94,6 +94,15 @@ open class ReaderPageImageView @JvmOverloads constructor(
         onScaleChanged?.invoke(newScale)
     }
 
+    /**
+     * Called whenever the image's scale or centre changed, with the library's origin so the
+     * caller can tell a move the reader made from one the app animated.
+     */
+    open fun onImageMoved(origin: Int) = Unit
+
+    /** Whether Bubble Zoom is showing something that the page must not move out from under. */
+    protected open fun isBubbleZoomPresenting(): Boolean = false
+
     @CallSuper
     open fun onViewClicked() {
         onViewClicked?.invoke()
@@ -134,8 +143,10 @@ open class ReaderPageImageView @JvmOverloads constructor(
                 // The guard above ran half a second ago and this block re-checks nothing, so by
                 // now the camera may have been moved deliberately — by Bubble Zoom framing a
                 // box, or by the reader. Only auto-frame a page still sitting untouched at its
-                // fit scale, which is what the delayed zoom was always meant to do.
-                if (scale != minScale) return@postDelayed
+                // fit scale, which is what the delayed zoom was always meant to do. A lifted
+                // card leaves the scale alone, so it has to veto separately or the page would
+                // slide out from under a frozen capture.
+                if (scale != minScale || isBubbleZoomPresenting()) return@postDelayed
 
                 val point = when (config!!.zoomStartPosition) {
                     ZoomStartPosition.LEFT -> if (forward) PointF(0F, 0F) else PointF(sWidth.toFloat(), 0F)
@@ -254,10 +265,12 @@ open class ReaderPageImageView @JvmOverloads constructor(
                     override fun onScaleChanged(newScale: Float, origin: Int) {
                         this@ReaderPageImageView.onScaleChanged(newScale)
                         bubbleZoomOverlay?.invalidate()
+                        onImageMoved(origin)
                     }
 
                     override fun onCenterChanged(newCenter: PointF?, origin: Int) {
                         bubbleZoomOverlay?.invalidate()
+                        onImageMoved(origin)
                     }
                 },
             )
