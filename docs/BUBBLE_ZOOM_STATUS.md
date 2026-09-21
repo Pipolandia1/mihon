@@ -182,6 +182,9 @@ ser apagado.
   Sintoma: `adb devices` vazio. Conserto: `adb kill-server`.
 - O emulador reclama que não acha o adb se a janela dele for aberta por um terminal
   iniciado antes de `ANDROID_HOME` existir. É inofensivo — só afeta a barra lateral dele.
+- Com `highQualityRenderer` (preferência base) ligado, `ReadingMode.toViewer` devolve um
+  `WebGpuViewer`, que não tem o Bubble Zoom: a preferência fica ligada e sem efeito, sem
+  aviso. Visto na P9 ao ler `ReadingMode.kt`; não afeta a configuração do emulador.
 
 ## Defeitos da P16 achados pela revisão e corrigidos
 
@@ -788,17 +791,133 @@ validada antes numa captura da P7 com resposta conhecida (IoU 0,96–0,97, a per
 Uma ressalva de medição: o card erguido cobre a caixa magenta do balão focado, então a página
 tem de estar sem foco para medir — a primeira passagem reportou FN=1 na página 01 por isso.
 
-**Não verificado: página de manga real.** Não há manga real no projeto e eu não baixo página
-com direitos autorais. O repositório do modelo publica três páginas de teste (Apache-2.0);
-aguarda decisão do usuário. Enquanto isso, "bom ou ruim" só está medido em páginas sintéticas,
-que são o caso fácil.
+## Verificado numa HQ real, e o que ela mudou no veredito
+
+O usuário pôs *Batman (2025-) #1* (DC; 31 páginas WEBP de 1988×3057, cinco spreads de
+3975×3057; fonte online) na biblioteca do emulador. É uma HQ ocidental, colorida, com
+letreiramento em inglês — fora da distribuição de um modelo treinado em manga, portanto um
+teste mais duro que as três páginas Apache-2.0 do próprio autor, e é o material que o usuário
+escolheu. Nenhuma página entrou no projeto: as capturas ficam em `tools/shots/p9-real-*`
+(gitignored), e o cache do capítulo foi copiado para o scratchpad da sessão só para a medição
+offline, e apagado depois.
+
+### Como se anda por uma HQ com o Bubble Zoom ligado
+
+Uma captura por página, em fit e sem foco, com a overlay de debug ligada. Para a frente,
+`DPAD_RIGHT` percorre os balões e só vira a página depois do último (313 pressões para 31
+páginas). Para trás, `ctrl+DPAD_LEFT` vira a página direto — `moveToPrevious()` sem foco é
+"página anterior" — e entra focando o último balão; um toque na zona central dispensa.
+`ctrl+DPAD_RIGHT` **não** vira: `moveToNext()` passa por `moveRight()`, onde está o gancho, e
+foca o balão 1 (25 pressões na página 4 até eu perceber). Duas falhas do arnês antes de haver
+resultado: o detector de "página nova" comparava o contador por diferença média e não via
+2→3, 5→6, 7→8 (glifos da mesma largura) — oito páginas puladas na primeira passada; e a
+página 1 estava com zoom quando cheguei, então os primeiros swipes só faziam pan. A leitura do
+que o modelo devolve foi feita **à mão, captura por captura**, porque uma HQ real não tem
+ground truth.
+
+### O que o detector encontrou, página a página
+
+Contei "regiões de texto que um leitor quereria percorrer": balões e legendas. Não contei
+onomatopeias, logos, placas nem indicia. Capa, anúncios, créditos e entrevista (1, 2, 9,
+29–31) ficam de fora: nelas o modelo caixa logos, créditos e texto de anúncio, que é texto e
+não diálogo, como se espera de um detector de texto. A coluna "1280" é offline (abaixo).
+
+| pág. | existem | achou (aparelho, 640) | nano @ 1280 | nota |
+|---|---|---|---|---|
+| 3 | 11 | 3 | 10 |  |
+| 4 | 6 | 6 | 6 |  |
+| 5 | 3 | 3 | 3 |  |
+| 6 | 11 | 8 | 8 | perde o balão grande 'HE BEGAN ECDYSIS' |
+| 7 | 16 | 9 | 12 | perde pilhas de balões encostados |
+| 8 | 10 | 3 | 1 | spread 3975 px |
+| 10 | 18 | 10 | 20 |  |
+| 11 | 11 | 11 | 12 |  |
+| 12 | 29 | 9 | 32 | enxame de 18 balões minúsculos: 1 achado |
+| 13 | 9 | 5 | 9 |  |
+| 14 | 11 | 8 | 10 |  |
+| 15 | 10 | 5 | 9 | 0 de 5 balões; só legendas; FP: placa |
+| 16 | 10 | 6 | 13 | FP: onomatopeia |
+| 17 | 8 | 6 | 9 |  |
+| 18 | 5 | 1 | 1 |  |
+| 19 | 11 | 9 | 11 |  |
+| 20 | 15 | 9 | 14 |  |
+| 21 | 12 | 6 | 10 |  |
+| 22 | 15 | 13 | 14 |  |
+| 23 | 6 | 2 | 7 | FP: uma nuvem |
+| 24 | 2 | 0 | — |  |
+| 25 | 12 | 5 | 10 | legendas em caixa preta |
+| 26 | 18 | 16 | 17 |  |
+| 27 | 12 | 2 | 8 | 0 de 7 balões |
+| 28 | 9 | 0 | — | spread de legendas: nada |
+| **25 páginas** | **280** | **155** | **253** | **55 % de recall no aparelho; 3 FP → precisão ≈ 98 %** |
+
+Nas sintéticas foi 18/18. Numa HQ real, à resolução e ao limiar de hoje, **o detector perde
+quase metade do que existe**. O que ele acha é certo (as caixas ficam no texto; três falsos
+positivos em 25 páginas); o que ele perde: pilhas de balões encostados, balões pequenos,
+spreads — e também balões grandes e comuns (p6 "HE BEGAN ECDYSIS…", p7 "HE'S BEEN EXPOSED…").
+Duas páginas com zero balão achado (15 e 27), e o spread de legendas (28) sem nada.
+
+### A alavanca não é o modelo, é a resolução de entrada
+
+Os dois exports aceitam entrada dinâmica (`['batch', 3, 'height', 'width']`), o que a ficha
+não diz. Rodei offline, com a mesma letterbox e o mesmo decodificador, sobre as 46 páginas do
+cache (as contagens offline ficam a ±1–3 das do aparelho, que decodifica reduzido):
+
+| config | detecções ≥ 0,25 nas 25 páginas de história | ms/página neste PC |
+|---|---|---|
+| nano @ 640 (o que está no aparelho) | 170 | 73 |
+| nano @ 1280 | 253 | 264 |
+| small @ 640 | 149 | 150 |
+| small @ 1280 | 244 | 638 |
+
+O modelo maior a 640 é **pior** que o nano a 640 na maioria das páginas; a 1280 os dois
+empatam. A diferença está no tamanho do texto no tensor: uma página de 1988 px a 640 reduz
+por 0,32, e um balão de 150 px vira 48 px com letras de 4 px; a 1280 dobra. Nas quatro
+páginas que renderizei com as duas escalas, as caixas extras a 1280 são balões reais: p15
+passa de 0/5 balões para 5/5; p12 (o enxame) de 9 para 32, todos certos; p3 de 2/10 para
+8/10; p27 de 2/7 para 4/7 (a página mais difícil, letreiramento leve). Falsos positivos que a
+1280 acrescenta nessas quatro: um letreiro de néon (p3) e um quadrinho pequeno (p15). A 1280
+também **perde** caixas que a 640 tinha (p8: 4→1, p4: 8→6, p26: 19→17); a união das duas
+escalas seria o melhor, e é decisão de desenho, não desta fase. Custo estimado no emulador:
+~600 ms/página (3,6× os 170 ms medidos), ainda dentro de "chega tarde" para página
+pré-carregada. `INPUT_SIZE = 640` é uma constante; mudá-la é uma linha e um teste, e fica
+para a P10 decidir junto com o limiar — a 1280, balões reais caem em 0,10–0,25 (p27, p3),
+então limiar e escala não se decidem separados.
+
+### O card da E1 nunca aparece numa HQ real
+
+Em todas as capturas focadas o que se vê é a câmera da P4 (a página ampliada), com a caixa de
+debug por cima; nas sintéticas o card erguido a cobria. Não é defeito: `show()` é recusado por
+`magnificationAllows`, que aceita 1,1–2,6× sobre a escala de fit, porque uma captura congelada
+dos tiles carregados para o fit não tem detalhe para mais que isso. As caixas do modelo são de
+texto, e sobre uma página de 1988 px vista em 1080 px pedem, na mediana, **4,2×** (297 caixas
+≥ 0,25; 15 % dentro da faixa). Crescendo as caixas até o balão (×1,6), 40 % entram; ×2, 54 %;
+×3, 65 %, mas aí 28 % caem abaixo do mínimo. Ou seja: a E1 que você pediu não é visível numa
+HQ real com a geometria de hoje, e a câmera da P4 é o caminho que serve — e funciona: foca,
+avança, vira a página. Decisão sua: subir `CARD_MAX_MAGNIFICATION` (card borrado), capturar
+de tiles mais finos (memória e latência), ou aceitar a câmera como o caminho das páginas
+reais e deixar o card para balões grandes.
+
+### Também visto
+
+- 46 páginas distintas detectadas em 127–304 ms (logcat), zero crashes, ao longo de ~400
+  pressões de tecla e ~390 capturas.
+- Um spread (3975 px) é uma página só, como a regra manda; a 640 é quase cego (p8: 3/10,
+  p28: 0/9).
+- Com `highQualityRenderer` ligado o leitor usa `WebGpuViewer`, onde o Bubble Zoom não existe
+  — a preferência fica silenciosamente sem efeito. Não é o caso desta configuração; está em
+  Problemas conhecidos.
 
 Testes JVM: 137 no pacote, 26 novos (11 no decodificador, o resto na sessão e no detector
 falso). O `FakeBubbleDetector` continua selecionável por preferência, para A/B no mesmo lugar.
 
 ## Próxima fase
 
-P10 — filtro de confiança e `BubbleDetectionConfig`. Já sabe três coisas: o piso é 0,25 e o
-0,35 da spec corta balão real; o modelo devolve texto e não balão, então `boxPadding` é a
-alavanca que faz o traçado da E1 alcançar o contorno; e `minBoxArea`/`maxBoxArea` têm
-distribuição medida nas páginas sintéticas para partir.
+P10 — filtro de confiança e `BubbleDetectionConfig`. Chega com cinco fatos, não três: o piso
+é 0,25 e o 0,35 da spec corta balão real; o modelo devolve texto e não balão, então
+`boxPadding` é a alavanca que faz o traçado da E1 alcançar o contorno — e também a que decide
+se o card entra na faixa de magnificação; `minBoxArea`/`maxBoxArea` têm distribuição medida
+nas páginas sintéticas; numa HQ real o recall a 640 é 55 % e a 1280 as caixas extras são
+balões, então `INPUT_SIZE` e o limiar se decidem juntos; e o card da E1 não aparece em página
+real com a geometria de hoje, o que é decisão do usuário antes de ser código.
+
