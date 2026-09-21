@@ -228,6 +228,10 @@ class ReaderPreferences(
     /** Draws each detected box over the page. Only meaningful while [bubbleZoom] is on. */
     val bubbleZoomDebug: Preference<Boolean> = preferenceStore.getBoolean("bubble_zoom_debug", false)
 
+    /** Answers with three fixed boxes instead of running the model, to compare the two. */
+    val bubbleZoomFakeDetector: Preference<Boolean> =
+        preferenceStore.getBoolean("bubble_zoom_fake_detector", false)
+
     // endregion
 
     enum class FlashColor {

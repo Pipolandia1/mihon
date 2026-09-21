@@ -38,6 +38,21 @@ class BubbleZoomDebugOverlay private constructor(
         )
     }
 
+    /**
+     * What is drawn: the page's current detections, whatever produced them.
+     *
+     * Until phase P9 this drew the three constants from P3, which was fine while those WERE
+     * the detections and silently useless the moment a real model replaced them - the overlay
+     * kept showing three fixed rectangles over pages with eight real boxes. Now the presenter
+     * hands over the controller's list for the page, so what is drawn is what will be walked.
+     */
+    var boxes: List<BubbleBox> = emptyList()
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
+        }
+
     // Reused across frames: onDraw runs on every pan and animation frame.
     private val topLeft = PointF()
     private val bottomRight = PointF()
@@ -51,7 +66,7 @@ class BubbleZoomDebugOverlay private constructor(
         val sourceHeight = imageView.sHeight.toFloat()
         if (sourceWidth <= 0f || sourceHeight <= 0f) return
 
-        for (box in DEBUG_BOXES) {
+        for (box in boxes) {
             // Normalized -> original image pixels -> view pixels. The second step is the image
             // view's job; this class must never reimplement it.
             imageView.sourceToViewCoord(box.x * sourceWidth, box.y * sourceHeight, topLeft)

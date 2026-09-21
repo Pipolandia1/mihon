@@ -53,7 +53,12 @@ class BubbleZoomPagePresenter {
         presentation: BubbleZoomPresentation,
         page: BubblePageKey,
     ) {
-        enabled = presentation.state !is BubbleZoomState.Disabled
+        // A page whose detection failed will never have a bubble to show, and the brief asks
+        // that a missing model read exactly as the feature being off. So for THAT page, it is:
+        // no card in the view tree, no boxes, and no veto on the reader's own re-framing.
+        val state = presentation.state
+        val dead = state is BubbleZoomState.Error && state.page == page
+        enabled = state !is BubbleZoomState.Disabled && !dead
         if (!enabled) {
             switchOff(host, imageView)
             return
@@ -61,7 +66,14 @@ class BubbleZoomPagePresenter {
         if (imageView == null || !imageView.isReady) return
 
         ensureCard(host, imageView)
-        applyBoxes(host, imageView, presentation.showBoxes)
+        // The overlay draws what the controller holds for THIS page - the real detections -
+        // and nothing when the page is not the subject or has not been detected yet.
+        val detected = (state as? BubbleZoomState.Ready)
+            ?.takeIf { it.page == page }
+            ?.bubbles
+            ?.map { it.box }
+            .orEmpty()
+        applyBoxes(host, imageView, presentation.showBoxes, detected)
         present(imageView, presentation.state.focusFor(page))
     }
 
@@ -159,14 +171,19 @@ class BubbleZoomPagePresenter {
         }
     }
 
-    private fun applyBoxes(host: ViewGroup, imageView: SubsamplingScaleImageView, show: Boolean) {
+    private fun applyBoxes(
+        host: ViewGroup,
+        imageView: SubsamplingScaleImageView,
+        show: Boolean,
+        detected: List<BubbleBox>,
+    ) {
         if (!show) {
             BubbleZoomDebugOverlay.detach(host, boxes)
             boxes = null
             return
         }
-        if (boxes != null) return
-        boxes = BubbleZoomDebugOverlay.attach(host, imageView)
+        val overlay = boxes ?: BubbleZoomDebugOverlay.attach(host, imageView).also { boxes = it }
+        overlay.boxes = detected
     }
 
     private fun restoreCamera(imageView: SubsamplingScaleImageView) {

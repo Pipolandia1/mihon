@@ -224,6 +224,9 @@ dependencies {
 
     // Compose
     implementation(libs.androidx.activity.compose)
+
+    // Bubble Zoom's on-device detector. The reader never sees this type: it talks to BubbleDetector.
+    implementation(libs.onnxruntime.android)
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.animation)

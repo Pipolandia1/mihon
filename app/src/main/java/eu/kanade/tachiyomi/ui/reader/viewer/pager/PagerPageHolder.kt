@@ -96,6 +96,7 @@ class PagerPageHolder(
      * that page inert until something else moved the state.
      */
     private fun applyBubbleZoom() {
+        if (bubbleZoomImageView?.isReady == true) viewer.bubbleZoom.pageReady(bubbleZoomKey)
         bubbleZoomPresenter.apply(
             this,
             bubbleZoomImageView,
@@ -196,11 +197,12 @@ class PagerPageHolder(
         try {
             val (source, isAnimated, background) = withIOContext {
                 val source = streamFn().use { process(item, Buffer().readFrom(it)) }
+                val isAnimated = ImageUtil.isAnimatedAndSupported(source)
                 // Here and nowhere else: these are the bytes the viewer is about to show,
                 // after any rotate or split, and the peek inside stops being readable the
-                // moment the viewer takes the source.
-                viewer.bubbleZoom.detect(bubbleZoomKey) { bubbleDetectionImage(source) }
-                val isAnimated = ImageUtil.isAnimatedAndSupported(source)
+                // moment the viewer takes the source. Not for an animated page, which has
+                // no view a bubble could be zoomed in.
+                if (!isAnimated) viewer.bubbleZoom.detect(bubbleZoomKey) { bubbleDetectionImage(source) }
                 val background = if (!isAnimated && viewer.config.automaticBackground) {
                     ImageUtil.chooseBackground(context, source.peek().inputStream())
                 } else {

@@ -1,8 +1,11 @@
 package eu.kanade.tachiyomi.ui.reader.bubblezoom
 
+import android.content.Context
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.detector.BubbleDetectionImage
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.detector.BubbleDetector
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.detector.FakeBubbleDetector
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.detector.OnnxBubbleDetector
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.detector.SwitchingBubbleDetector
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -19,6 +22,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import tachiyomi.core.common.preference.Preference
+import kotlin.coroutines.coroutineContext
 
 /**
  * Everything the reader is shown of the feature, behind the preference that switches it off.
@@ -75,6 +79,17 @@ class BubbleZoomSession(
      */
     private val detections = mutableMapOf<BubblePageKey, PageDetection>()
 
+    /**
+     * Pages whose holder has confirmed an image that can actually be zoomed.
+     *
+     * This is phase P6's guarantee, restored. A detection is delivered to the controller only
+     * for a page in this set; until then it waits in [detections]. Without it an animated page,
+     * which has no zoomable view, would enter Ready with real boxes, the presenter could draw
+     * nothing, and the next N taps would be swallowed - the critical regression P6 fixed, back
+     * the moment the detector became real. A page that failed to decode never joins either.
+     */
+    private val ready = mutableSetOf<BubblePageKey>()
+
     private class PageDetection(var job: Job? = null) {
         var bubbles: List<BubbleDetection>? = null
         var failure: Throwable? = null
@@ -121,6 +136,8 @@ class BubbleZoomSession(
     fun release() {
         detections.values.forEach { it.job?.cancel() }
         detections.clear()
+        ready.clear()
+        runCatching { detector.close() }
     }
 
     /** Whether the feature is running at all. The single question every gate asks. */
@@ -149,30 +166,49 @@ class BubbleZoomSession(
      * walk would start four detections of the same page.
      */
     fun detect(page: BubblePageKey, image: () -> BubbleDetectionImage?) {
-        if (!isEnabled) return
-        if (detections.containsKey(page)) return
+        // A detector that has already found it cannot work - no model, no native library - is
+        // not asked again, and no page's bytes are copied for it. The first page pays the one
+        // attempt that discovers this; every page after that costs what the feature costs off.
+        if (!isEnabled || !detector.available) return
+        // Read here, synchronously, on whatever thread the holder is decoding on: what the
+        // lambda peeks at is only valid before the viewer takes the source. Everything that
+        // touches this object's state happens on the main thread, below.
         val prepared = image() ?: return
 
-        val entry = PageDetection()
-        detections[page] = entry
         // On the viewer's scope, which PagerViewer.destroy() cancels. The page holder's own
         // scope is a MainScope that is never cancelled, so a job left there would outlive the
         // holder, the viewer, and the activity whose view it holds.
-        entry.job = scope.launch {
+        scope.launch {
+            if (detections.containsKey(page)) return@launch
+            val entry = PageDetection(job = coroutineContext[Job])
+            detections[page] = entry
             try {
                 val found = withContext(detectionDispatcher) { detector.detect(prepared) }
                 entry.bubbles = found
-                controller.onBubblesReady(page, found)
+                deliver(page)
             } catch (cancelled: CancellationException) {
                 // Not a failure, and rethrowing matters: onDetectionFailed is not narrowed to
                 // Detecting, so reporting a cancellation would write Error over a live Ready
                 // and silently end a walk already in progress.
                 throw cancelled
-            } catch (failure: Exception) {
+            } catch (failure: Throwable) {
+                // Throwable, because a real detector can fail with an Error - a native library
+                // that will not load, an allocation that does not fit - and from a job with no
+                // handler that is the process dying, with the feature on and only then. The
+                // page is marked failed and the reader navigates as upstream does.
                 entry.failure = failure
-                controller.onDetectionFailed(page, failure)
+                deliver(page)
             }
         }
+    }
+
+    /**
+     * The holder has an image that can be zoomed. Only now may this page's answer reach the
+     * controller. Idempotent; the holder calls it whenever it re-applies its state.
+     */
+    fun pageReady(page: BubblePageKey) {
+        if (!ready.add(page)) return
+        deliver(page)
     }
 
     /**
@@ -183,10 +219,12 @@ class BubbleZoomSession(
      * guarantees is that the answer is discarded, and that is the half that stays true in P9.
      */
     fun forget(page: BubblePageKey) {
+        ready.remove(page)
         detections.remove(page)?.job?.cancel()
     }
 
     private fun deliver(page: BubblePageKey) {
+        if (page !in ready) return
         val entry = detections[page] ?: return
         entry.bubbles?.let { controller.onBubblesReady(page, it) }
         entry.failure?.let { controller.onDetectionFailed(page, it) }
@@ -222,11 +260,19 @@ class BubbleZoomSession(
 fun BubbleZoomSession(
     preferences: ReaderPreferences,
     scope: CoroutineScope,
+    context: Context,
     currentPage: () -> BubblePageKey?,
 ): BubbleZoomSession = BubbleZoomSession(
     enabled = preferences.bubbleZoom,
     debug = preferences.bubbleZoomDebug,
     scope = scope,
+    // The real detector is the default; the fake stays one preference away so the two can
+    // be compared on the same page. The model is opened lazily, by its own first call.
+    detector = SwitchingBubbleDetector(
+        useFake = preferences.bubbleZoomFakeDetector,
+        fake = FakeBubbleDetector(),
+        real = OnnxBubbleDetector(context.applicationContext),
+    ),
     currentPage = currentPage,
 )
 

@@ -11,7 +11,7 @@ import java.io.InputStream
  * the whole point of the phase, and it is what lets the fake below and a real model in P9 be
  * swapped without a single call site changing.
  */
-interface BubbleDetector {
+interface BubbleDetector : AutoCloseable {
 
     /**
      * Identifies the detector **and the settings it ran with**, not the model alone.
@@ -22,6 +22,15 @@ interface BubbleDetector {
      * have returned.
      */
     val modelVersion: Int
+
+    /**
+     * Whether asking is worth anything. False once the detector has discovered it cannot work
+     * at all - no model file, a native library that will not load - so the session stops
+     * copying page bytes and launching jobs for it, and a reader with a broken detector costs
+     * exactly what one with the feature off costs. True for a detector that has nothing to
+     * discover, which is why it has a body here.
+     */
+    val available: Boolean get() = true
 
     /**
      * Finds the dialogue regions in [image], in coordinates normalized to that image.
@@ -40,6 +49,12 @@ interface BubbleDetector {
      * page the reader has already left.
      */
     suspend fun detect(image: BubbleDetectionImage): List<BubbleDetection>
+
+    /**
+     * Releases whatever the detector holds - a native session, reusable buffers. A no-op for
+     * a detector that holds nothing, which is why it has a body here.
+     */
+    override fun close() {}
 }
 
 /**

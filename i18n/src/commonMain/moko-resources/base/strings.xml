@@ -404,6 +404,7 @@
     <string name="pref_bubble_zoom">Bubble Zoom</string>
     <string name="pref_bubble_zoom_summary">Step through dialogue one bubble at a time, zooming into each</string>
     <string name="pref_bubble_zoom_debug">Show detected regions</string>
+    <string name="pref_bubble_zoom_fake_detector">Use fixed test boxes instead of the detector</string>
     <string name="pref_bubble_zoom_debug_summary">Draws a box over every region Bubble Zoom found, for checking alignment</string>
     <string name="pref_page_rotate_invert">Flip orientation of rotated wide pages</string>
     <string name="pref_double_tap_zoom">Double tap to zoom</string>

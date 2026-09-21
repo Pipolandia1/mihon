@@ -179,6 +179,10 @@ private fun ColumnScope.PagerViewerSettings(viewModel: ReaderSettingsViewModel) 
             label = stringResource(MR.strings.pref_bubble_zoom_debug),
             pref = viewModel.preferences.bubbleZoomDebug,
         )
+        CheckboxItem(
+            label = stringResource(MR.strings.pref_bubble_zoom_fake_detector),
+            pref = viewModel.preferences.bubbleZoomFakeDetector,
+        )
     }
 
     val dualPageSplitPaged by viewModel.preferences.dualPageSplitPaged.collectAsState()

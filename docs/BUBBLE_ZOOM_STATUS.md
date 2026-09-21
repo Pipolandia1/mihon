@@ -5,9 +5,9 @@
 
 ## Fase atual
 
-P8 concluída. Próxima: **P9 — detector ONNX real.**
+P9 concluída. Próxima: **P10 — filtro de confiança e BubbleDetectionConfig.**
 
-Ordem executada até aqui: P0 → P1 → P2 → P3 → P4 → P5 → P6 → **P16** → **E1** → P7 → P8.
+Ordem executada até aqui: P0 → P1 → P2 → P3 → P4 → P5 → P6 → **P16** → **E1** → P7 → P8 → P9.
 
 > **Ordem alterada pelo usuário (19/09/2026):** a **P16 (overlay visual / card do balão)**
 > sobe para logo depois da **P6**, antes de P7–P15. Motivo: a P4 move a câmera, mas a
@@ -48,7 +48,7 @@ Ordem executada até aqui: P0 → P1 → P2 → P3 → P4 → P5 → P6 → **P1
 - [x] P6  integração com moveToNext / moveToPrevious
 - [x] P7  preferência Bubble Zoom (off = vanilla)
 - [x] P8  interface BubbleDetector + FakeBubbleDetector
-- [ ] P9  detector ONNX real + pipeline de imagem
+- [x] P9  detector ONNX real + pipeline de imagem
 - [ ] P10 confidence filtering + BubbleDetectionConfig
 - [ ] P11 cache em memória + prefetch
 - [ ] P12 detecção de painéis + BubbleOrderResolver + testes
@@ -73,7 +73,23 @@ Ordem executada até aqui: P0 → P1 → P2 → P3 → P4 → P5 → P6 → **P1
   de Bubble Zoom mora aqui.
 - `gradle.properties` e `gradle/build-logic/gradle.properties` — `org.gradle.configuration-cache=true`.
 
-Nenhum arquivo de código do upstream foi tocado. O baseline é Mihon `5848ffb4c` sem alterações.
+**Esta lista está desatualizada desde a P6 e é mantida só como histórico.** O que vale é a
+medição contra o último commit upstream (`47fb48d2f`), refeita ao fim da P9:
+
+| arquivo | linhas + | linhas - |
+|---|---|---|
+| `build.gradle.kts` | +3 | -0 |
+| `SettingsReaderScreen.kt` | +12 | -0 |
+| `ReadingModePage.kt` | +17 | -0 |
+| `ReaderPreferences.kt` | +17 | -0 |
+| `ReaderPageImageView.kt` | +27 | -1 |
+| `PagerPageHolder.kt` | +71 | -0 |
+| `PagerViewer.kt` | +47 | -3 |
+| `libs.versions.toml` | +2 | -0 |
+| `strings.xml` | +5 | -0 |
+
+A regra do CLAUDE.md é ~15 linhas por classe upstream; `PagerPageHolder` e `PagerViewer`
+estão muito acima, e cada fase desde a P7 registra o número em vez de escondê-lo.
 
 ## Arquivos novos
 
@@ -106,8 +122,8 @@ ser apagado.
 ## Decisões tomadas
 
 - Runtime de ML: ONNX Runtime Mobile (decidido no plano; revisar se a latência não fechar em P9).
-- Modelo: _a definir em P9._
-- modelVersion atual: **-1**, reservado para o `FakeBubbleDetector` (P8). Um modelo real usa
+- Modelo: **Kiuyha/Manga-Bubble-YOLO yolo26n** (P9), Apache-2.0 na ficha, carimbo AGPL da ultralytics no arquivo — ver a seção da P9.
+- modelVersion atual: **1** para o detector ONNX (yolo26n a 640); **-1** reservado para o `FakeBubbleDetector`. Um modelo real usa
   valor positivo, para que o cache da P13 nunca sirva caixa de debug em página real.
 - SDK e JDK fora do OneDrive; código-fonte dentro (escolha do usuário).
 
@@ -656,9 +672,133 @@ modelo real virar quadro perdido; e `delay` é ponto de cancelamento, enquanto i
 não é — "cancelado no recycle" aqui significa "a resposta é descartada", que é a metade que
 sobrevive na P9.
 
+---
+
+# P9 — o detector real
+
+`Kiuyha/Manga-Bubble-YOLO`, variante nano (YOLO26n, 6 MB), rodando em ONNX Runtime 1.30.0 na
+CPU, a 640 de entrada. A primeira vez que as caixas saem da página em vez de uma constante.
+
+## A escolha do modelo, e a licença que não é o que a ficha diz
+
+Três candidatos na spec. O `kitsumed` é GPL-3.0 e devolve máscaras que não precisamos. O
+`ogkalu` é Apache-2.0 mas só tem `.pt` — exigiria exportar — e pesa 52 MB. O `Kiuyha` é
+Apache-2.0 na ficha, tem ONNX pronto com NMS **dentro do grafo** (uma etapa a menos para
+errar), saída documentada `(1, 300, 6)`, treino em Manga109 + Mangadex, mAP@50 0,947.
+
+**Mas os metadados dentro do `.onnx` dizem `AGPL-3.0 (ultralytics.com/license)`.** É o carimbo
+do framework de treino: a Ultralytics sustenta que pesos treinados com o pacote deles caem sob
+AGPL salvo licença Enterprise; o autor do repositório diz Apache-2.0. Ambiguidade conhecida e
+não resolvida. Para uso pessoal, irrelevante. Para distribuir o APK, reabre o aviso da spec — e
+as duas alternativas "Apache" têm o mesmo carimbo, porque também foram treinadas com
+ultralytics. A saída limpa seria treinar sem o pacote deles ou baixar o modelo fora do APK,
+ambas fora do V1. **Decisão do usuário, registrada aqui para não ser esquecida.**
+
+O runtime custa: **39 MB de `libonnxruntime.so` por ABI** (o split x86_64 ficou em 119,7 MB).
+Número para a P18 pesar quantização int8 ou LiteRT.
+
+## O layout do tensor foi confirmado, não lido de ficha
+
+O README não documenta o que as seis colunas significam — exatamente a lacuna que o plano
+manda não preencher com palpite. Confirmação empírica em três passos, no PC, antes de uma
+linha de Kotlin: (1) o script do próprio plano, que mostrou `dynamic: True` (640 roda),
+`end2end: True`, `names: {0: 'text'}`; (2) o modelo rodando nas cinco páginas sintéticas com
+`tools/verify-detector.py`, decodificando como `[x1, y1, x2, y2, score, cls]` em pixels da
+entrada letterboxada — **18 de 18 detecções dentro do balão conhecido, desvio de centro
+≤ 0,004**; (3) o decodificador Kotlin preso, por teste JVM, às linhas que o Python produziu.
+
+## O que o modelo devolve não é o balão
+
+`tools/diagnose-detector.py` separou duas hipóteses que o IoU sozinho confunde: geometria
+errada (caixas deslocadas) ou conteúdo diferente (caixas menores, centradas). **18/18 contidas
+na caixa-verdade, zero parcialmente fora.** O modelo enquadra a **região de texto**, não o
+contorno do balão: 31%–69% da área, IoU 0,3–0,7 contra a caixa do balão. É propriedade do
+modelo, não bug, e vira decisão de padding para a P10 — o traçado da E1 cresce do centro até
+o contorno, então uma caixa mais justa funciona se a área acolchoada alcançar o traço.
+
+640 contra 1280: mesmas detecções, um quinto do custo, e 1280 acrescentou falsos positivos
+numa página. O 640 da spec fica.
+
+## As três coisas que a integração real ensinou
+
+**As 300 linhas nunca são zero.** A primeira versão do decodificador guardava "tudo acima de
+zero", assumindo que as vagas sem detecção eram zeros. São candidatos a 0,0004–0,07. O
+aparelho percorreu **211 "balões"** numa página com oito. O teste não pegou porque **o fixture
+tinha sido filtrado em 0,25 antes de a suposição ser escrita** — um fixture filtrado pela mesma
+suposição que o código faz não testa a suposição. Agora o fixture são as 300 linhas cruas
+(`app/src/test/resources/bubblezoom/`), e `CONFIDENCE_THRESHOLD = 0.25` recupera exatamente o
+ground truth nas cinco páginas. **Aviso para a P10:** o 0,35 da spec cortaria um balão real de
+0,28 na página 03.
+
+**A overlay de debug desenhava as três constantes da P3.** Ninguém a religou ao controller
+desde então, e foi invisível enquanto as constantes *eram* as detecções. Agora desenha a
+lista do controller para a página.
+
+**O sweep de mutação e o bug do aparelho eram o mesmo buraco por dois lados.** A única
+mutação sobrevivente foi "linhas com score zero não são mais descartadas" — sobreviveu porque
+o fixture tinha zeros literais que o `clampedOrNull` derrubava sozinho. Com o fixture real, a
+mutação equivalente morre por três testes. Zero buracos.
+
+## Duas instruções do brief não seguidas, por fato de código
+
+O escopo de detecção é o do viewer (P8 já tinha estabelecido por quê: o do holder nunca é
+cancelado). E o tempo de inferência vai para o logcat, não para `BubblePageResult` — nada
+constrói esse tipo ainda; a P11 é onde resultados passam a ser guardados.
+
+## A revisão adversarial morreu, e o que ela deixou eu julguei à mão
+
+35 de 37 agentes caíram no limite de sessão. Desta vez o agregador separa "não julgado" de
+"descartado", e os onze não-julgados foram lidos contra o código. Seis eram reais:
+
+- **`close()` correndo com inferência em voo vazava a sessão ORT.** O `if (closed)` rodava
+  dentro do `withLock`, antes do `unlock`; o `tryLock()` do `close()` falhava; os dois lados
+  desistiam. Agora quem encontra `closed` com a trava livre libera — de fora do lock.
+- **`Error` não é `Exception`.** `UnsatisfiedLinkError` da lib nativa e `OutOfMemoryError`
+  escapavam das duas redes e matavam o processo, só com a feature ligada. Ambas pegam
+  `Throwable` agora (rethrow de `CancellationException`).
+- **Páginas animadas voltaram a engolir toques.** A P8 removeu o `offerBubblesWhenReady` da
+  P7 e com ele a garantia da P6. Um GIF recebia detecções reais, entrava em `Ready`, e os
+  toques eram consumidos sem nada desenhado. Restaurado como `pageReady(page)`: a resposta só
+  chega ao controller depois que o holder confirma uma imagem zoomável. E GIF não é detectado.
+- **Página de 1200px decodificava em resolução plena** — o caso comum de scanlation. Agora
+  `FULL_DECODE_BELOW = 1.5`: acima de 960px de lado longo, meia resolução com leve upscale.
+- **Modelo ausente não era "exatamente como desligado".** `Error` não é `Disabled`: o card
+  ficava anexado e o veto ao reenquadramento ativo. Agora um `Error` da própria página desmonta
+  as views, e `BubbleDetector.available` faz a sessão parar de copiar bytes para um detector
+  que já sabe que não funciona.
+- `SessionOptions` nunca fechada; mapa de detecções mutado da thread IO. Ambos corrigidos.
+
+## Verificado no aparelho
+
+Uma captura por toque ao longo do capítulo, com `tools/measure-walk.py` identificando cada
+página por correlação com os PNGs sintéticos (contar toques falhou duas vezes: a página de
+transição existe, e entrar para trás foca o último balão).
+
+| página | existem | detectados | casados | FP | FN | dentro do balão | IoU |
+|---|---|---|---|---|---|---|---|
+| 01 | 3 | 3 | 3 | 0 | 0 | 3/3 | 0,63 · 0,59 · 0,44 |
+| 02 | 8 | 8 | 8 | 0 | 0 | 8/8 | 0,71–0,73 ×4 · 0,32–0,35 ×4 |
+| 03 | 3 | 3 | 3 | 0 | 0 | 3/3 | 0,43 · 0,42 · 0,38 |
+| 04 | 0 | 0 | 0 | 0 | 0 | — | — |
+| 05 | 4 | 4 | 4 | 0 | 0 | 4/4 | 0,44–0,45 |
+
+**18/18, zero FP, zero FN, 18/18 dentro do balão.** Inferência **150–206 ms** por página no
+emulador x86_64 (logcat), mais a decodificação. Zero crashes. A ferramenta de medição foi
+validada antes numa captura da P7 com resposta conhecida (IoU 0,96–0,97, a perda é o traço).
+Uma ressalva de medição: o card erguido cobre a caixa magenta do balão focado, então a página
+tem de estar sem foco para medir — a primeira passagem reportou FN=1 na página 01 por isso.
+
+**Não verificado: página de manga real.** Não há manga real no projeto e eu não baixo página
+com direitos autorais. O repositório do modelo publica três páginas de teste (Apache-2.0);
+aguarda decisão do usuário. Enquanto isso, "bom ou ruim" só está medido em páginas sintéticas,
+que são o caso fácil.
+
+Testes JVM: 137 no pacote, 26 novos (11 no decodificador, o resto na sessão e no detector
+falso). O `FakeBubbleDetector` continua selecionável por preferência, para A/B no mesmo lugar.
+
 ## Próxima fase
 
-P9 — detector real em ONNX, e a primeira vez que as caixas vêm da página em vez de uma
-constante. Duas coisas já estão prontas para ele: a porta `BubbleBox.clampedOrNull`, que o
-detector falso já atravessa de propósito, e a `modelVersion` reservada em -1, para que o cache
-da P13 nunca sirva caixa de debug em página real.
+P10 — filtro de confiança e `BubbleDetectionConfig`. Já sabe três coisas: o piso é 0,25 e o
+0,35 da spec corta balão real; o modelo devolve texto e não balão, então `boxPadding` é a
+alavanca que faz o traçado da E1 alcançar o contorno; e `minBoxArea`/`maxBoxArea` têm
+distribuição medida nas páginas sintéticas para partir.

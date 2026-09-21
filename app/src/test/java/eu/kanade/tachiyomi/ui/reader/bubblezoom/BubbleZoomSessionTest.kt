@@ -29,7 +29,7 @@ import java.io.ByteArrayInputStream
  *
  * Every test here is a claim about what the reader sees rather than about how the session is
  * put together: that with the preference off the app is upstream Mihon, and that a page becomes
- * walkable only once a detector has actually answered for it.
+ * walkable only once a detector has answered for it AND its holder has an image to zoom.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class BubbleZoomSessionTest {
@@ -53,15 +53,17 @@ class BubbleZoomSessionTest {
 
         assertFalse(preferences.bubbleZoom.get())
         assertFalse(preferences.bubbleZoomDebug.get())
+        assertFalse(preferences.bubbleZoomFakeDetector.get())
     }
 
     @Test
     fun `off means navigation never branches`() = sessionTest(enabled = false) { fixture ->
         // Exactly the sequence the reader performs on every page: announce it, hand over the
-        // bytes, then navigate. Upstream Mihon has no branch here at all, so every step has to
-        // come back IGNORED or the pan check in moveRight would be skipped.
+        // bytes, confirm the image, then navigate. Upstream Mihon has no branch here at all, so
+        // every step has to come back IGNORED or the pan check in moveRight would be skipped.
         fixture.session.activatePage(page, PageEntry.FORWARD)
         fixture.supply(page)
+        fixture.ready(page)
         advanceUntilIdle()
 
         assertFalse(fixture.session.isEnabled)
@@ -72,9 +74,9 @@ class BubbleZoomSessionTest {
 
     @Test
     fun `off means the page's bytes are never even read`() = sessionTest(enabled = false) { fixture ->
-        // From P9 building the image means copying a page's bytes and reading its header, on
-        // the very thread that is about to display it. Work that is switched off must not be
-        // started and then discarded.
+        // Building the image means copying a page's bytes and reading its header, on the very
+        // thread that is about to display it. Work that is switched off must not be started and
+        // then discarded.
         fixture.supply(page)
         advanceUntilIdle()
 
@@ -107,6 +109,7 @@ class BubbleZoomSessionTest {
     @Test
     fun `a page is not walkable until the detector has answered for it`() = sessionTest { fixture ->
         fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
         fixture.supply(page)
 
         // Mid-detection. This is the phase's own promise: the page is on screen and a tap does
@@ -123,6 +126,7 @@ class BubbleZoomSessionTest {
     @Test
     fun `the answer waits for the latency the detector declares`() = sessionTest(latencyMs = 300) { fixture ->
         fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
         fixture.supply(page)
 
         advanceTimeBy(299)
@@ -134,9 +138,8 @@ class BubbleZoomSessionTest {
 
     @Test
     fun `however often the holder asks, a page is detected once`() = sessionTest { fixture ->
-        // The page holder reaches detect() from a collector that runs on every state change,
-        // including every single bubble step. Unguarded, a three-bubble walk would start four
-        // detections of the same page - and in P9 that is four inferences.
+        // Unguarded, a page handed over twice would be inferred twice, and inference is the
+        // expensive thing in this whole feature.
         repeat(4) { fixture.supply(page) }
         advanceUntilIdle()
 
@@ -148,6 +151,7 @@ class BubbleZoomSessionTest {
         // The bytes and the selection arrive from different places in either order. A page that
         // decoded while the reader was still approaching has its answer ready before the
         // controller has heard of it, and onBubblesReady only ever answers a pending Detecting.
+        fixture.ready(page)
         fixture.supply(page)
         advanceUntilIdle()
 
@@ -157,8 +161,37 @@ class BubbleZoomSessionTest {
     }
 
     @Test
+    fun `an answer for a page whose image never became zoomable is never delivered`() = sessionTest { fixture ->
+        // An animated page has no view a bubble could be zoomed in, and a page that failed to
+        // decode has none either. Phase P6's critical fix was that such a page never swallows
+        // taps; a real detector would happily find text in a GIF's first frame, so the holder's
+        // word that it has a zoomable image is the only thing standing between the two.
+        fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.supply(page)
+        advanceUntilIdle()
+
+        assertEquals(BubbleZoomStep.IGNORED, fixture.session.stepTowards(readingForward = true))
+        assertFalse(fixture.session.isFocused)
+    }
+
+    @Test
+    fun `the holder's word arriving after the answer delivers it`() = sessionTest { fixture ->
+        // The other order: detection finished first, the image became ready later. Neither
+        // side may assume it is last.
+        fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.supply(page)
+        advanceUntilIdle()
+        assertEquals(BubbleZoomStep.IGNORED, fixture.session.stepTowards(readingForward = true))
+
+        fixture.ready(page)
+
+        assertEquals(BubbleZoomStep.CONSUMED, fixture.session.stepTowards(readingForward = true))
+    }
+
+    @Test
     fun `forgetting a page discards the answer it was still waiting for`() = sessionTest(latencyMs = 300) { fixture ->
         fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
         fixture.supply(page)
         fixture.session.forget(page)
 
@@ -172,6 +205,7 @@ class BubbleZoomSessionTest {
         failure = IllegalStateException("model exploded"),
     ) { fixture ->
         fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
         fixture.supply(page)
         advanceUntilIdle()
 
@@ -183,8 +217,45 @@ class BubbleZoomSessionTest {
     }
 
     @Test
+    fun `a detector that fails with an Error does not take the reader down with it`() = sessionTest(
+        failure = OutOfMemoryError("no room for a page"),
+    ) { fixture ->
+        // A real detector can fail with an Error, not an Exception: the native library refusing
+        // to load, an allocation that does not fit. From a job with no handler that is the
+        // process dying - with the feature on, and only then. It has to land as a failed page.
+        fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
+        fixture.supply(page)
+        advanceUntilIdle()
+
+        assertEquals(BubbleZoomStep.IGNORED, fixture.session.stepTowards(readingForward = true))
+    }
+
+    @Test
+    fun `a detector that cannot work at all is not asked again, and no page is prepared for it`() = sessionTest(
+        failure = IllegalStateException("no model"),
+        availableAfterFailure = false,
+    ) { fixture ->
+        // The first page pays the one attempt that discovers the detector is broken. After
+        // that a reader with a broken detector has to cost exactly what one with the feature
+        // off costs: no bytes copied, no jobs launched.
+        fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.supply(page)
+        advanceUntilIdle()
+        assertEquals(1, fixture.detector.calls)
+
+        fixture.preparations = 0
+        fixture.supply(other)
+        advanceUntilIdle()
+
+        assertEquals(0, fixture.preparations, "a page was prepared for a detector known to be broken")
+        assertEquals(1, fixture.detector.calls)
+    }
+
+    @Test
     fun `an answer for a page the reader never selected is refused`() = sessionTest { fixture ->
         fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(other)
         fixture.supply(other)
         advanceUntilIdle()
 
@@ -212,6 +283,7 @@ class BubbleZoomSessionTest {
         // is not running would be exactly the kind of cost "off is vanilla" forbids.
         fixture.preference.set(true)
         fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
         fixture.supply(page)
         advanceUntilIdle()
 
@@ -221,6 +293,7 @@ class BubbleZoomSessionTest {
     @Test
     fun `switching off mid-walk gives navigation straight back to the reader`() = sessionTest { fixture ->
         fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
         fixture.supply(page)
         advanceUntilIdle()
         fixture.session.stepTowards(readingForward = true)
@@ -273,24 +346,28 @@ class BubbleZoomSessionTest {
         val detector: RecordingDetector,
         val preference: FakePreference<Boolean>,
     ) {
-        var prepared = false
-            private set
+        var preparations = 0
+        val prepared: Boolean get() = preparations > 0
 
         /** Stands in for the page holder handing over the bytes it is about to display. */
         fun supply(key: BubblePageKey) = session.detect(key) {
-            prepared = true
+            preparations++
             BubbleDetectionImage(1600, 2400) { ByteArrayInputStream(ByteArray(0)) }
         }
+
+        /** Stands in for the page holder confirming it has a ready, zoomable image. */
+        fun ready(key: BubblePageKey) = session.pageReady(key)
     }
 
     private fun sessionTest(
         enabled: Boolean = true,
         latencyMs: Long = 0,
         failure: Throwable? = null,
+        availableAfterFailure: Boolean = true,
         body: suspend TestScope.(Fixture) -> Unit,
     ) = runTest {
         val preference = FakePreference("bubble_zoom", enabled)
-        val detector = RecordingDetector(found, latencyMs, failure)
+        val detector = RecordingDetector(found, latencyMs, failure, availableAfterFailure)
         val session = BubbleZoomSession(
             enabled = preference,
             debug = FakePreference("bubble_zoom_debug", false),
@@ -307,16 +384,22 @@ class BubbleZoomSessionTest {
         private val bubbles: List<BubbleDetection> = emptyList(),
         private val latencyMs: Long = 0,
         private val failure: Throwable? = null,
+        private val availableAfterFailure: Boolean = true,
     ) : BubbleDetector {
         var calls = 0
             private set
+        private var broken = false
 
         override val modelVersion: Int = 7
+        override val available: Boolean get() = !broken
 
         override suspend fun detect(image: BubbleDetectionImage): List<BubbleDetection> {
             calls++
             if (latencyMs > 0) delay(latencyMs)
-            failure?.let { throw it }
+            failure?.let {
+                if (!availableAfterFailure) broken = true
+                throw it
+            }
             return bubbles
         }
     }

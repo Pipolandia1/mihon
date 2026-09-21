@@ -22,3 +22,6 @@ tools/test-pages/
 bubble-test-pages/
 *.onnx
 *.tflite
+
+# Python tooling under tools/
+__pycache__/
