@@ -168,6 +168,19 @@ private fun ColumnScope.PagerViewerSettings(viewModel: ReaderSettingsViewModel) 
         pref = viewModel.preferences.navigateToPan,
     )
 
+    val bubbleZoom by viewModel.preferences.bubbleZoom.collectAsState()
+    CheckboxItem(
+        label = stringResource(MR.strings.pref_bubble_zoom),
+        pref = viewModel.preferences.bubbleZoom,
+    )
+
+    if (bubbleZoom) {
+        CheckboxItem(
+            label = stringResource(MR.strings.pref_bubble_zoom_debug),
+            pref = viewModel.preferences.bubbleZoomDebug,
+        )
+    }
+
     val dualPageSplitPaged by viewModel.preferences.dualPageSplitPaged.collectAsState()
     CheckboxItem(
         label = stringResource(MR.strings.pref_dual_page_split),

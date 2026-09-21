@@ -35,7 +35,6 @@ import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView.SCALE_TYPE_
 import com.github.chrisbanes.photoview.PhotoView
 import eu.kanade.tachiyomi.data.coil.cropBorders
 import eu.kanade.tachiyomi.data.coil.customDecoder
-import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomDebugOverlay
 import eu.kanade.tachiyomi.ui.reader.viewer.webtoon.WebtoonSubsamplingImageView
 import eu.kanade.tachiyomi.util.system.animatorDurationScale
 import eu.kanade.tachiyomi.util.view.isVisibleOnScreen
@@ -59,8 +58,6 @@ open class ReaderPageImageView @JvmOverloads constructor(
 
     private var pageView: View? = null
 
-    private var bubbleZoomOverlay: BubbleZoomDebugOverlay? = null
-
     /** The view Bubble Zoom can move, or null on the animated path where it must stay off. */
     internal val bubbleZoomImageView: SubsamplingScaleImageView?
         get() = pageView as? SubsamplingScaleImageView
@@ -81,7 +78,6 @@ open class ReaderPageImageView @JvmOverloads constructor(
     open fun onImageLoaded() {
         onImageLoaded?.invoke()
         background = pageBackground
-        bubbleZoomOverlay?.invalidate()
     }
 
     @CallSuper
@@ -100,7 +96,12 @@ open class ReaderPageImageView @JvmOverloads constructor(
      */
     open fun onImageMoved(origin: Int) = Unit
 
-    /** Whether Bubble Zoom is showing something that the page must not move out from under. */
+    /**
+     * Whether Bubble Zoom is holding this page — a lifted card, or a camera framed on a bubble.
+     *
+     * Always false here and overridden only by the pager's page holder, so with the feature off
+     * every caller below behaves exactly as upstream Mihon's does.
+     */
     protected open fun isBubbleZoomPresenting(): Boolean = false
 
     @CallSuper
@@ -140,13 +141,12 @@ open class ReaderPageImageView @JvmOverloads constructor(
             scale == minScale
         ) {
             handler?.postDelayed(500) {
-                // The guard above ran half a second ago and this block re-checks nothing, so by
-                // now the camera may have been moved deliberately — by Bubble Zoom framing a
-                // box, or by the reader. Only auto-frame a page still sitting untouched at its
-                // fit scale, which is what the delayed zoom was always meant to do. A lifted
-                // card leaves the scale alone, so it has to veto separately or the page would
-                // slide out from under a frozen capture.
-                if (scale != minScale || isBubbleZoomPresenting()) return@postDelayed
+                // The guard above ran half a second ago and this block re-checks nothing, so
+                // by now Bubble Zoom may have framed a box or lifted a card, and the page would
+                // slide out from under it. Both cases are the one question below, which is
+                // false whenever the feature is off — so this stays upstream's behaviour rather
+                // than quietly tightening it for everyone.
+                if (isBubbleZoomPresenting()) return@postDelayed
 
                 val point = when (config!!.zoomStartPosition) {
                     ZoomStartPosition.LEFT -> if (forward) PointF(0F, 0F) else PointF(sWidth.toFloat(), 0F)
@@ -264,12 +264,10 @@ open class ReaderPageImageView @JvmOverloads constructor(
                 object : SubsamplingScaleImageView.OnStateChangedListener {
                     override fun onScaleChanged(newScale: Float, origin: Int) {
                         this@ReaderPageImageView.onScaleChanged(newScale)
-                        bubbleZoomOverlay?.invalidate()
                         onImageMoved(origin)
                     }
 
                     override fun onCenterChanged(newCenter: PointF?, origin: Int) {
-                        bubbleZoomOverlay?.invalidate()
                         onImageMoved(origin)
                     }
                 },
@@ -277,7 +275,6 @@ open class ReaderPageImageView @JvmOverloads constructor(
             setOnClickListener { this@ReaderPageImageView.onViewClicked() }
         }
         addView(pageView, MATCH_PARENT, MATCH_PARENT)
-        bubbleZoomOverlay = BubbleZoomDebugOverlay.attach(this, pageView as SubsamplingScaleImageView)
     }
 
     private fun SubsamplingScaleImageView.setupZoom(config: Config?) {
@@ -394,9 +391,6 @@ open class ReaderPageImageView @JvmOverloads constructor(
             }
         }
         addView(pageView, MATCH_PARENT, MATCH_PARENT)
-        // The animated path has no view that can convert image coordinates, so there is no
-        // overlay here rather than one drawing in the wrong place.
-        BubbleZoomDebugOverlay.detach(this, bubbleZoomOverlay).also { bubbleZoomOverlay = null }
     }
 
     private fun setAnimatedImage(

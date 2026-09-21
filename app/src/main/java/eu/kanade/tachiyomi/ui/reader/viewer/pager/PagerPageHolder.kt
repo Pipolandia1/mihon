@@ -9,10 +9,9 @@ import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
 import eu.kanade.presentation.util.formattedMessage
 import eu.kanade.tachiyomi.databinding.ReaderErrorBinding
 import eu.kanade.tachiyomi.source.model.Page
-import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomOverlayView
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomPagePresenter
-import eu.kanade.tachiyomi.ui.reader.bubblezoom.DEBUG_DETECTIONS
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.bubblePageKey
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.detector.bubbleDetectionImage
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.focusFor
 import eu.kanade.tachiyomi.ui.reader.model.InsertPage
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
@@ -76,29 +75,33 @@ class PagerPageHolder(
     private val bubbleZoomKey = page.bubblePageKey()
     private val bubbleZoomPresenter = BubbleZoomPagePresenter()
     private var bubbleZoomJob: Job? = null
-    private var bubbleZoomCard: BubbleZoomOverlayView? = null
 
     init {
         loadJob = scope.launch { loadPageAndProcessStatus() }
+        // Collected even with the feature off, because this is also the path that takes the
+        // views away and gives the page its camera back when it is switched off mid-read. The
+        // flow is a StateFlow combination that never emits again while off, so the cost of the
+        // subscription is one suspended coroutine and nothing else.
         bubbleZoomJob = scope.launch {
-            viewer.bubbleZoom.state.collect {
-                offerBubblesWhenReady()
-                bubbleZoomPresenter.apply(bubbleZoomImageView, it.focusFor(bubbleZoomKey))
-            }
+            viewer.bubbleZoom.presentation.collect { applyBubbleZoom() }
         }
     }
 
     /**
-     * Tells the controller this page can be walked, but only once there is an image able to
-     * zoom. Until then the controller stays in Detecting and refuses every move, so an animated
-     * page, a failed one or one still decoding navigates exactly like upstream Mihon.
+     * Shows whatever the session currently says for this page.
      *
-     * Called both when this page becomes the subject and when its image finishes loading,
-     * because those two can happen in either order.
+     * Called from the collector and again when the image finishes decoding, because the two
+     * arrive in either order and the presenter can do nothing until there is an image. Without
+     * the second call, switching the feature on while a page was still decoding would leave
+     * that page inert until something else moved the state.
      */
-    private fun offerBubblesWhenReady() {
-        if (bubbleZoomImageView?.isReady != true) return
-        viewer.bubbleZoom.onBubblesReady(bubbleZoomKey, DEBUG_DETECTIONS)
+    private fun applyBubbleZoom() {
+        bubbleZoomPresenter.apply(
+            this,
+            bubbleZoomImageView,
+            viewer.bubbleZoom.presentation.value,
+            bubbleZoomKey,
+        )
     }
 
     /**
@@ -111,7 +114,10 @@ class PagerPageHolder(
         loadJob = null
         bubbleZoomJob?.cancel()
         bubbleZoomJob = null
-        bubbleZoomPresenter.release()
+        bubbleZoomPresenter.release(this)
+        // The pager destroys holders rather than reusing them, so this is the one and only
+        // recycle hook: a detection still running for this page has nobody left to answer.
+        viewer.bubbleZoom.forget(bubbleZoomKey)
     }
 
     private fun initProgressIndicator() {
@@ -190,6 +196,10 @@ class PagerPageHolder(
         try {
             val (source, isAnimated, background) = withIOContext {
                 val source = streamFn().use { process(item, Buffer().readFrom(it)) }
+                // Here and nowhere else: these are the bytes the viewer is about to show,
+                // after any rotate or split, and the peek inside stops being readable the
+                // moment the viewer takes the source.
+                viewer.bubbleZoom.detect(bubbleZoomKey) { bubbleDetectionImage(source) }
                 val isAnimated = ImageUtil.isAnimatedAndSupported(source)
                 val background = if (!isAnimated && viewer.config.automaticBackground) {
                     ImageUtil.chooseBackground(context, source.peek().inputStream())
@@ -291,21 +301,7 @@ class PagerPageHolder(
     override fun onImageLoaded() {
         super.onImageLoaded()
         progressIndicator?.hide()
-        ensureBubbleZoomCard()
-        offerBubblesWhenReady()
-    }
-
-    /**
-     * The card is a child of this holder, added once the page has an image view to capture
-     * from. It handles no touch, so navigation is untouched.
-     */
-    private fun ensureBubbleZoomCard() {
-        if (bubbleZoomCard != null) return
-        val image = bubbleZoomImageView ?: return
-        bubbleZoomCard = BubbleZoomOverlayView(context, image).also {
-            addView(it, LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
-            bubbleZoomPresenter.attachCard(it)
-        }
+        applyBubbleZoom()
     }
 
     /**
@@ -317,14 +313,16 @@ class PagerPageHolder(
      */
     override fun onImageMoved(origin: Int) {
         super.onImageMoved(origin)
+        bubbleZoomPresenter.invalidateBoxes()
         if (origin == SubsamplingScaleImageView.ORIGIN_ANIM) return
         if (!viewer.bubbleZoom.isFocused) return
         bubbleZoomPresenter.onPageMovedByUser()
         viewer.bubbleZoom.reset()
     }
 
-    /** A lifted card vetoes the delayed landscape re-frame, which would slide the page under it. */
-    override fun isBubbleZoomPresenting(): Boolean = bubbleZoomCard?.isShowing == true
+    /** A lifted card or a framed camera vetoes the delayed landscape re-frame. */
+    override fun isBubbleZoomPresenting(): Boolean =
+        bubbleZoomPresenter.isHoldingThePage(bubbleZoomImageView)
 
     /**
      * Called when an image fails to decode.

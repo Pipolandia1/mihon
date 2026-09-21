@@ -12,11 +12,10 @@ import androidx.core.view.isVisible
 import androidx.viewpager.widget.ViewPager
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
-import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomController
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomSession
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomStep
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.PageEntry
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.bubblePageKey
-import eu.kanade.tachiyomi.ui.reader.bubblezoom.stepTowards
 import eu.kanade.tachiyomi.ui.reader.model.ChapterTransition
 import eu.kanade.tachiyomi.ui.reader.model.InsertPage
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
@@ -58,10 +57,14 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
     private val adapter = PagerViewerAdapter(this)
 
     /**
-     * Decides whether a navigation event steps between bubbles instead of turning the page.
-     * Owned here because this is the class that owns navigation; it holds no view and no scope.
+     * Decides whether a navigation event steps between bubbles instead of turning the page, and
+     * is also the gate the preference switches: with Bubble Zoom off every call below is a
+     * no-op and this class behaves exactly as upstream Mihon's does.
+     *
+     * The current page is passed as a lambda because switching the feature on mid-read has to
+     * give the walk a subject, and the reader only announces a page when it selects one.
      */
-    val bubbleZoom = BubbleZoomController()
+    val bubbleZoom = BubbleZoomSession(readerPreferences, scope) { (currentPage as? ReaderPage)?.bubblePageKey() }
 
     /**
      * Currently active item. It can be a chapter page or a chapter transition.

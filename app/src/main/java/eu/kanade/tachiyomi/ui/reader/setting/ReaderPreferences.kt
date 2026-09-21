@@ -217,6 +217,19 @@ class ReaderPreferences(
 
     // endregion
 
+    // region Bubble Zoom
+
+    /**
+     * Off by default, and off must mean the reader is indistinguishable from upstream Mihon:
+     * no overlay attached, no state collected, no navigation branch taken.
+     */
+    val bubbleZoom: Preference<Boolean> = preferenceStore.getBoolean("bubble_zoom", false)
+
+    /** Draws each detected box over the page. Only meaningful while [bubbleZoom] is on. */
+    val bubbleZoomDebug: Preference<Boolean> = preferenceStore.getBoolean("bubble_zoom_debug", false)
+
+    // endregion
+
     enum class FlashColor {
         BLACK,
         WHITE,

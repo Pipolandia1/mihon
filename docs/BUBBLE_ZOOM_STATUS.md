@@ -5,7 +5,9 @@
 
 ## Fase atual
 
-P16 concluída. Próxima: **P7 — preferência Bubble Zoom (off = vanilla).**
+P8 concluída. Próxima: **P9 — detector ONNX real.**
+
+Ordem executada até aqui: P0 → P1 → P2 → P3 → P4 → P5 → P6 → **P16** → **E1** → P7 → P8.
 
 > **Ordem alterada pelo usuário (19/09/2026):** a **P16 (overlay visual / card do balão)**
 > sobe para logo depois da **P6**, antes de P7–P15. Motivo: a P4 move a câmera, mas a
@@ -44,8 +46,8 @@ P16 concluída. Próxima: **P7 — preferência Bubble Zoom (off = vanilla).**
 - [x] P4  focusOnBubble animado
 - [x] P5  BubbleZoomController + máquina de estados
 - [x] P6  integração com moveToNext / moveToPrevious
-- [ ] P7  preferência Bubble Zoom (off = vanilla)
-- [ ] P8  interface BubbleDetector + FakeBubbleDetector
+- [x] P7  preferência Bubble Zoom (off = vanilla)
+- [x] P8  interface BubbleDetector + FakeBubbleDetector
 - [ ] P9  detector ONNX real + pipeline de imagem
 - [ ] P10 confidence filtering + BubbleDetectionConfig
 - [ ] P11 cache em memória + prefetch
@@ -105,7 +107,8 @@ ser apagado.
 
 - Runtime de ML: ONNX Runtime Mobile (decidido no plano; revisar se a latência não fechar em P9).
 - Modelo: _a definir em P9._
-- modelVersion atual: _n/a_
+- modelVersion atual: **-1**, reservado para o `FakeBubbleDetector` (P8). Um modelo real usa
+  valor positivo, para que o cache da P13 nunca sirva caixa de debug em página real.
 - SDK e JDK fora do OneDrive; código-fonte dentro (escolha do usuário).
 
 ## Correções ao plano original descobertas no P0
@@ -413,8 +416,249 @@ preço; a medida está aqui para essa decisão ser informada.
   scrim, ela é a única coisa que separa.
 - Com a transição consertada, balões consecutivos se transformam um no outro sem piscar?
 
+---
+
+# P7 — a preferência
+
+Duas preferências de leitor, `bubbleZoom` e `bubbleZoomDebug`, ambas falsas por padrão, e a
+regra 2 do projeto virando verdade: com a primeira desligada o app é Mihon vanilla.
+
+## O desenho
+
+Uma classe, `BubbleZoomSession`, é tudo que o leitor enxerga da feature. Ela possui o
+controller, as duas preferências e a decisão de quando uma página pode ser percorrida; as
+classes upstream só chamam através dela. É isso que faz "desligado é vanilla" ser verificável
+lendo **um** arquivo em vez de auditando três.
+
+O `BubbleZoomController` ficou como estava — puro, sem preferência e sem escopo — porque a
+máquina de estados dele tem 33 testes que teriam de ganhar dependência de Android para dizer
+qualquer coisa. E a sessão recebe `Preference<Boolean>`, não `ReaderPreferences`, com uma
+função-fábrica para o chamador: é o que permite exercitar o toggle inteiro na JVM.
+
+O `BubbleZoomPagePresenter` passou a ser dono de **todas** as views da feature, o card e a
+overlay de debug. O holder nunca mais precisa lembrar de tirá-las.
+
+## Cinco armadilhas que a investigação pegou antes de eu escrever código
+
+- **A overlay de debug não conseguia alternar ao vivo onde estava.**
+  `prepareNonAnimatedImageView` retorna cedo quando a view já existe, então o `attach` só
+  acontecia uma vez na vida da página. Mover a posse para o presenter foi o que resolveu.
+- **`ReaderPageImageView` não pode ler preferências.** `MangaCoverDialog` e `WebtoonAdapter`
+  também a constroem. Tirar a overlay de lá resolveu isso de vez — e aposentou o guarda
+  `parent !is PagerPageHolder` que a P4 teve de acrescentar por causa disso.
+- **`presenter.release()` não era o botão de desligar.** Limpava o card e nunca chamava
+  `restoreCamera`, então desligar a preferência com uma página enquadrada pela câmera da P4
+  deixava ela ampliada num balão que ninguém mais via.
+- **Ligar sozinho deixava o leitor morto até a próxima virada de página.** `enable()` só chega
+  a `Idle`, e o leitor anuncia uma página exatamente uma vez, quando a seleciona.
+- **A metade `scale != minScale` da guarda do `landscapeZoom` era divergência não-portão.**
+  Agora é uma pergunta só, `isBubbleZoomPresenting()`, que responde `false` com a feature
+  desligada — devolvendo o comportamento original do Mihon, que a P6 tinha apertado para todos.
+
+## Três defeitos que os juízes acharam no meu código já escrito
+
+- **Um listener de SharedPreferences por página, com a feature desligada.** `presentation` era
+  um `Flow` frio e `Preference.changes()` é um `callbackFlow`, então cada `PagerPageHolder`
+  registrava o seu próprio, criado e destruído a cada virada de página, até três vivos. Agora é
+  um `stateIn` no escopo do viewer: uma assinatura para o leitor inteiro, que é o que o
+  `PagerConfig` faz com as doze preferências dele.
+- **Ligar durante a decodificação deixava a página inerte.** O `apply` retorna cedo sem imagem
+  pronta, e o `onImageLoaded` só invalidava as caixas. Agora existe `applyBubbleZoom()`,
+  chamado dos dois lados, porque eles chegam em qualquer ordem.
+- **O interruptor não existia dentro do leitor**, e sem ele o requisito da fase é
+  inexercitável: se o único lugar é Ajustes do app, você tem de *sair* do leitor para alternar.
+  `landscapeZoom`, `navigateToPan` e `cropBorders` estão nos dois lugares; agora Bubble Zoom
+  também.
+
+## Onde o interruptor aparece
+
+Em dois lugares, como os análogos dele:
+
+- **Ajustes → Leitor → grupo "Pager"**, no fim, com subtítulo, e o de debug acinzentado
+  enquanto o principal estiver desligado.
+- **Engrenagem dentro do leitor → Reading mode**, logo depois de "Pan wide images", e o de
+  debug só existe na lista quando o principal está marcado — o mesmo aninhamento do
+  `dualPageSplit`.
+
+## Verificado no aparelho
+
+| | OFF (padrão) | ON |
+|---|---|---|
+| Views da feature (`dumpsys activity top`) | **nenhuma** | `BubbleZoomOverlayView` |
+| Pixels magenta | 0 | 0 com debug off, 1477 com debug on |
+| Páginas em 8 toques | **6** | 3 |
+
+O `dumpsys` é a prova estrutural: desligado, nenhuma view da feature **existe**. Não é "existe
+e não desenha".
+
+O toggle ao vivo funciona nos dois sentidos, pelo engrenagem de dentro do leitor. Ligar pegou
+na página já aberta, sem virar página. A overlay de debug ligou ao vivo — o caso que não
+funcionava antes. Desligar removeu todas as views e devolveu um toque por página. Sem crash.
+
+A caminhada, medida toque a toque: sem foco → balão de cima → do meio → de baixo → vira a
+página. E entrar numa página **indo para trás** aterrissa no último balão, que é o
+comportamento desenhado na P5 — isso explicou um desencontro que eu quase reportei como bug.
+
+## Um caminho que não dá para testar à mão
+
+Desligar a preferência **com um card levantado** é inalcançável pela UI: para chegar nos
+ajustes você toca no terço do meio, que primeiro solta o foco. É a mesma restrição da P16 que
+tornou "tocar fora para dispensar" impossível — e significa que nenhum leitor real alcança esse
+estado. O `switchOff` restaura a câmera mesmo assim, por precaução.
+
+## A revisão adversarial desta fase não é confiável
+
+Ela reportou zero achados confirmados, e esse número **não vale**. Oito dos 34 agentes morreram
+no limite de sessão, e eram exatamente os verificadores dos achados sobre os meus testes:
+"The suite cannot see the deletion of…" (os três refutadores), "Three of the ten tests pin no
+session behaviour…" (os três), "'off by default' is in a test name but…", e um sobre o caminho
+de desligar. Achado sem nenhum voto caía em "dismissed" no meu script de agregação, então ele
+contou como descartado o que nunca foi julgado.
+
+Isso foi resolvido por conta própria, com sweep de mutação sobre o `BubbleZoomSession` — cinco
+mutações, uma por comportamento que os testes alegam prender.
+
+### O sweep de mutação, e duas lições sobre o próprio arnês
+
+**As duas primeiras execuções do sweep não invocaram o Gradle uma única vez.** A causa é
+Windows: `subprocess.run(shell=True)` abre o **cmd.exe**, não o bash, e lá `export` não é
+comando e `./gradlew` não é programa. A primeira versão do script então imprimiu "as cinco
+mutações sobreviveram", que teria sido um relatório inteiramente falso.
+
+O que salvou foi a aritmética, não a ferramenta: uma das mutações remove literalmente a guarda
+que um dos testes afirma existir, então "sobreviveu" era impossível. **Regra para esta base:
+resultado bom demais ou ruim demais merece checagem do arnês antes de virar conclusão.** O
+script agora distingue "a suíte rodou e não pegou" de "a rodada nem chegou nos testes", que era
+o que ele confundia.
+
+Com o arnês consertado, o resultado real:
+
+| mutação | morta por |
+|---|---|
+| semente síncrona removida | *(nada — ver abaixo)* |
+| ligar não reativa a página já aberta | `switching on mid-read gives the walk the page…` |
+| `offerBubbles` não recusa enquanto desligado | `off means the bubbles are never even asked for` |
+| caixas de debug não forçadas a off com a feature | `the debug boxes are forced off whenever…` |
+| desligar não desabilita o controller | duas, incluindo `switching off mid-walk…` |
+
+**A semente síncrona sobreviveu, e o buraco era real.** Os testes usavam
+`UnconfinedTestDispatcher`, que roda o `launchIn` na hora da construção — apagando exatamente a
+janela de um tick que a semente existe para fechar. No aparelho o `MainScope()` usa
+`Dispatchers.Main`, que despacha no tick seguinte, e o leitor seleciona a primeira página dentro
+dele. O teste novo usa `StandardTestDispatcher`, que não roda nada até o escalonador avançar,
+e mata a mutação.
+
+Dois testes foram acrescentados nessa conta. O outro é sobre o nome: `off by default…` montava
+a sessão com `enabled = false` na mão, então nunca tocava no padrão de verdade e teria passado
+igual com um padrão `true`. Agora há um que constrói `ReaderPreferences(InMemoryPreferenceStore())`
+e afirma que as duas nascem falsas, e o antigo perdeu a parte do nome que não cumpria.
+
+Doze testes na sessão, 112 no pacote, **zero buracos de cobertura no sweep**.
+
+## Resíduo conhecido, dito em vez de escondido
+
+- **`PagerPageHolder` está em +62 linhas sobre o upstream**, quatro vezes a regra de ~15 do
+  CLAUDE.md. A P7 encolheu o arquivo (era +71) e ele continua bem acima. `ReaderPageImageView`
+  caiu de +34 para +28.
+- **Um coletor suspenso por page holder, mesmo desligado.** É o preço do requisito de alternar
+  sem reiniciar, e é também o único caminho que desmonta as views quando a preferência cai no
+  meio da leitura. Sendo um StateFlow que não emite mais enquanto desligado, o custo é um
+  coroutine suspenso e nada mais.
+- **`onImageMoved` continua sendo encaminhado de `onCenterChanged`**, que o upstream deixava
+  vazio. Com a feature desligada ele chama `invalidateBoxes()` sobre um campo nulo e retorna.
+  Comportamento idêntico; não é byte a byte.
+
+---
+
+# P8 — a abstração do detector
+
+`BubbleDetector` com `modelVersion` e `suspend detect(image)`, um `FakeBubbleDetector` que
+responde as três caixas conhecidas depois de fingir que pensa, e o pipeline inteiro ligado.
+Nada acima da interface sabe de onde vêm as caixas — nem que existe um detector falso.
+
+## Três decisões que a investigação impôs
+
+**`page.stream` é a fonte errada, e errar aqui é silencioso.** O `process()` do holder pode
+girar uma página larga noventa graus ou cortar uma dupla ao meio antes de exibir, e o
+`InsertPage` copia o stream do pai literalmente — então a metade direita de uma dupla,
+perguntada pelos próprios bytes, devolve a dupla inteira. Um detector alimentado dali retorna
+frações perfeitamente válidas do retângulo errado, e nada estoura. Os bytes certos são o
+`okio.Buffer` em voo dentro do `setImage()`, e só ali: o okio invalida o `peek()` assim que a
+view drena a fonte.
+
+**O `BubbleDetectionImage` não carrega `Bitmap`.** Decodificar no chamador é a segunda cópia em
+resolução plena que as regras proíbem, e o chamador não sabe em que resolução o modelo quer
+trabalhar. Carregando *como ler os bytes*, o detector decodifica uma vez, no tamanho dele.
+De quebra mantém `Bitmap` fora do tipo, o que deixa tudo acima dele testável na JVM — este
+projeto não tem Robolectric nem `returnDefaultValues`, então um campo `Bitmap` bastaria para
+derrubar qualquer teste que encostasse no tipo.
+
+**As dimensões vêm dos bytes, não da view.** Elas concordam, mas a view ainda não está pronta
+no instante em que os bytes existem, e esperar significaria reconciliar dois fatos que chegam
+em lugares e momentos diferentes. `inJustDecodeBounds` lê um cabeçalho e não aloca pixel nenhum.
+
+## Duas instruções do brief que não foram seguidas
+
+**"O controller agora pergunta ao detector" não é implementável.** O `activatePage` é chamado
+de `PagerViewer.onReaderPageSelected`, antes de qualquer decodificação — a imagem não existe
+nesse instante, e aparece depois, em outro objeto. Somado a isso, dar escopo e `Bitmap` ao
+controller quebra 33 testes JVM e torna a classe não-testável. A orquestração ficou na sessão,
+que já tem escopo. A máquina de estados continua indo `Idle → Detecting → Ready/Error` como o
+brief manda; o que mudou foi quem faz a chamada.
+
+**"Escopo atado ao page holder" vazaria a activity.** O `PagerPageHolder.scope` é um
+`MainScope()` que **nunca** é cancelado — `onDetachedFromWindow` cancela dois jobs pelo nome.
+Um terceiro job lançado ali sobreviveria ao holder, ao pager, ao viewer e à activity, segurando
+um `FrameLayout` → `context` → `ReaderActivity`. O `PagerViewer.scope` é cancelado em
+`destroy()`, e é lá que a detecção roda. O cancelamento no recycle continua existindo: o holder
+chama `forget(page)` no `onDetachedFromWindow`.
+
+## Por que a resposta precisa poder esperar
+
+Os bytes e a seleção da página chegam de lugares diferentes, em qualquer ordem. Uma página que
+decodificou enquanto o leitor ainda estava duas páginas atrás tem a resposta pronta antes de o
+controller ter ouvido falar dela — e o `onBubblesReady` só responde um `Detecting` pendente.
+Sem um lugar para esperar, essa resposta seria descartada e a página ficaria inerte enquanto o
+leitor estivesse nela. Daí o mapa por página na sessão, limitado pelo pager (`offscreenPageLimit`
+é 1, três páginas vivas) e não por política. **Não é o cache da P11 e não pode virar um aqui.**
+
+## Limitação conhecida, e é uma regressão
+
+Ligar a preferência no meio da leitura **não traz bolhas para a página que já está na tela** —
+só para a próxima que chegar. Guardar os bytes de três páginas para uma feature desligada é
+exatamente o custo que "desligado é vanilla" proíbe, então a captura não acontece enquanto
+desligado, e quando liga não há o que detectar para a página corrente. A P7 verificou o
+comportamento contrário no aparelho, quando as caixas eram uma constante disponível na hora.
+A P11, que guarda resultados e não bytes, é onde isso se resolve de verdade.
+
+## Verificação
+
+| | |
+|---|---|
+| Testes JVM | 122, zero falhas — 22 novos (16 na sessão, 6 no detector falso) |
+| ktlint, compilação, APK | passam |
+
+O sweep de mutação matou quatro das seis na primeira passada. **Uma das duas sobreviventes era
+mutação quebrada, não buraco:** a P3 inseriu uma linha morta antes do comentário e deixou o
+`deliver(page)` real intacto, medindo nada. Refeita com âncora correta, morre pelo teste certo.
+Segunda vez nesta sessão que o arnês de mutação mente, em disfarce diferente — vale reler a
+regra escrita na P7.
+
+A sobrevivente real é a P6, reportar uma detecção cancelada como falha. É invisível pela
+superfície pública: o `forget` remove a entrada antes, e de fora `Detecting` e `Error` dão o
+mesmo `IGNORED`. Engolir `CancellationException` é erro de concorrência estruturada, não de
+comportamento, e está registrado em vez de tapado com um teste que só existiria para matar a
+mutação.
+
+Dois avisos que o detector falso **não** prova, e que P9 vai encontrar: um `delay` não segura
+thread nenhuma, então um `withContext(Dispatchers.Default)` faltando fica invisível até um
+modelo real virar quadro perdido; e `delay` é ponto de cancelamento, enquanto inferência nativa
+não é — "cancelado no recycle" aqui significa "a resposta é descartada", que é a metade que
+sobrevive na P9.
+
 ## Próxima fase
 
-P7 — a preferência de verdade. Com ela desligada, o app tem de ser Mihon vanilla: hoje o
-controller no `PagerViewer`, o desvio da navegação, o terço do meio, o coletor de estado, o
-`onImageMoved` e a guarda do `landscapeZoom` continuam todos ativos.
+P9 — detector real em ONNX, e a primeira vez que as caixas vêm da página em vez de uma
+constante. Duas coisas já estão prontas para ele: a porta `BubbleBox.clampedOrNull`, que o
+detector falso já atravessa de propósito, e a `modelVersion` reservada em -1, para que o cache
+da P13 nunca sirva caixa de debug em página real.

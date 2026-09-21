@@ -199,6 +199,7 @@ object SettingsReaderScreen : SearchableSettings {
         val imageScaleType by imageScaleTypePref.collectAsState()
         val dualPageSplit by dualPageSplitPref.collectAsState()
         val rotateToFit by rotateToFitPref.collectAsState()
+        val bubbleZoom by readerPreferences.bubbleZoom.collectAsState()
 
         return Preference.PreferenceGroup(
             title = stringResource(MR.strings.pager_viewer),
@@ -276,6 +277,17 @@ object SettingsReaderScreen : SearchableSettings {
                     preference = readerPreferences.dualPageRotateToFitInvert,
                     title = stringResource(MR.strings.pref_page_rotate_invert),
                     enabled = rotateToFit,
+                ),
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = readerPreferences.bubbleZoom,
+                    title = stringResource(MR.strings.pref_bubble_zoom),
+                    subtitle = stringResource(MR.strings.pref_bubble_zoom_summary),
+                ),
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = readerPreferences.bubbleZoomDebug,
+                    title = stringResource(MR.strings.pref_bubble_zoom_debug),
+                    subtitle = stringResource(MR.strings.pref_bubble_zoom_debug_summary),
+                    enabled = bubbleZoom,
                 ),
             ),
         )

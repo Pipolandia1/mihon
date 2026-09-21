@@ -9,14 +9,6 @@ import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
 import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
-import eu.kanade.tachiyomi.ui.reader.viewer.pager.PagerPageHolder
-
-/**
- * Flip to false to take the debug overlay out of the reader entirely.
- *
- * Phase P7 replaces this with a real preference; until then this is the only switch.
- */
-const val BUBBLE_ZOOM_DEBUG = true
 
 /**
  * Draws [DEBUG_BOXES] on top of the page image, to prove that normalized coordinates survive
@@ -77,15 +69,15 @@ class BubbleZoomDebugOverlay private constructor(
         private val STROKE_COLOR = Color.argb(0xFF, 0xFF, 0x00, 0xAA)
 
         /**
-         * Adds an overlay over [imageView] inside [parent], or returns null when the overlay is
-         * switched off. The caller keeps the returned instance only to invalidate it.
+         * Adds an overlay over [imageView] inside [parent].
+         *
+         * Only [BubbleZoomPagePresenter] calls this, and only while the debug preference is on,
+         * so there is no switch here any more. That also retires the guard this used to carry
+         * against being attached to a manga cover: the presenter belongs to a page holder and
+         * to nothing else, where before any ReaderPageImageView could reach it — and
+         * MangaCoverDialog builds one of those.
          */
-        fun attach(parent: ViewGroup, imageView: SubsamplingScaleImageView): BubbleZoomDebugOverlay? {
-            if (!BUBBLE_ZOOM_DEBUG) return null
-            // ReaderPageImageView is not only used by the reader: MangaCoverDialog builds one to
-            // show a cover, and the webtoon viewer has its own holder. Without this check the
-            // debug boxes are painted over manga covers.
-            if (parent !is PagerPageHolder) return null
+        fun attach(parent: ViewGroup, imageView: SubsamplingScaleImageView): BubbleZoomDebugOverlay {
             return BubbleZoomDebugOverlay(parent.context, imageView).also { overlay ->
                 // Not clickable and with no touch handling, so taps fall through to the image
                 // view underneath and normal reader navigation is untouched.
