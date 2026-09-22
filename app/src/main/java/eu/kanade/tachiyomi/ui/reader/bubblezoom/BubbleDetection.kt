@@ -12,6 +12,14 @@ data class BubbleDetection(
     val box: BubbleBox,
     val confidence: Float,
     val type: BubbleType,
+    /**
+     * The balloon's silhouette over [box], when whatever found it knew the shape.
+     *
+     * Null from a detector that only boxes things, which is every detector this feature had
+     * before amendment E4 and is still the fake one. The card then falls back to tracing the
+     * shape out of the page's own pixels, and to a rectangle when that cannot be done either.
+     */
+    val shape: BubbleShape? = null,
 ) {
 
     init {

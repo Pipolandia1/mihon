@@ -137,11 +137,45 @@ object BubbleZoomConfig {
     /** Ceiling on that growth, so a degenerate measurement cannot dilate the shape into a box. */
     const val MASK_MAX_GROW_PASSES = 8
 
-    /** Below this fraction of the card the fill found a glyph or a texture, not a bubble. */
-    const val MASK_MIN_AREA_FRACTION = 0.10f
+    /**
+     * How far past the detected box to look for the balloon, as a fraction of the box's own
+     * smallest side. Amendment E3.
+     *
+     * The detector boxes the TEXT, so the balloon around it is not in the detection at all: at
+     * the padding the card is framed with, the balloon's outline is cut off by the capture and
+     * the fill runs out through the open end — measured on a real comic, nine balloons of nine
+     * refused. The silhouette is therefore traced in a region far larger than the card will be,
+     * and then the silhouette decides what the card shows. 1.2 was measured: the balloon then
+     * covers 10 to 15 percent of the search region, comfortably inside it, and going further
+     * buys nothing because what still fails fails for another reason.
+     */
+    const val MASK_SEARCH_PADDING = 1.2f
 
-    /** Above it the fill found the page: the bubble's outline was open, broken or absent. */
-    const val MASK_MAX_AREA_FRACTION = 0.92f
+    /**
+     * How much of the search region's border the fill may touch before it counts as a leak.
+     *
+     * A tail is allowed to run out of the region — it is a few pixels wide and cutting it off
+     * costs the silhouette nothing anyone can see. A fill that has escaped into the page takes
+     * a whole side with it. Measured on a real comic: the silhouettes that were right touched
+     * 0 to 0.6 percent of the perimeter, and every one that had leaked touched more than 20.
+     */
+    const val MASK_MAX_LEAK_FRACTION = 0.05f
+
+    /**
+     * Most of the search region the silhouette may cover before it is the page rather than the
+     * balloon. With [MASK_SEARCH_PADDING] a real balloon measured 10 to 15 percent, and a fill
+     * that had escaped measured 33 to 48.
+     */
+    const val MASK_MAX_SEARCH_AREA_FRACTION = 0.35f
+
+    /**
+     * How much of the detected text the silhouette must cover to be that balloon's silhouette.
+     *
+     * The one guard that says "this shape belongs to the text we found" rather than merely
+     * "this shape is bubble-sized". Measured between 68 and 81 percent for every silhouette
+     * that was right — the gap to 100 is the lettering itself, where the fill stops.
+     */
+    const val MASK_MIN_TEXT_COVERAGE = 0.5f
 
     /** How far the cut-out's two-tone halo reaches past its edge, in dp. */
     const val CARD_HALO_WIDTH_DP = 1f

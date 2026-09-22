@@ -71,6 +71,51 @@ object BubbleCardGeometry {
     }
 
     /**
+     * Where the detected text sits inside the search region, in mask pixels.
+     *
+     * The silhouette has to be asked whether it holds the text it was found for; the text's box
+     * and the search region are both fractions of the page, so this is arithmetic rather than
+     * geometry. Clamped into the grid, and never empty.
+     */
+    fun textWithin(
+        text: BubbleBox,
+        search: BubbleBox,
+        maskWidth: Int,
+        maskHeight: Int,
+    ): BubbleMask.MaskRect {
+        val left = ((text.x - search.x) / search.width * maskWidth).toInt().coerceIn(0, maskWidth - 1)
+        val top = ((text.y - search.y) / search.height * maskHeight).toInt().coerceIn(0, maskHeight - 1)
+        val right = ((text.right - search.x) / search.width * maskWidth)
+            .roundToInt()
+            .coerceIn(left + 1, maskWidth)
+        val bottom = ((text.bottom - search.y) / search.height * maskHeight)
+            .roundToInt()
+            .coerceIn(top + 1, maskHeight)
+        return BubbleMask.MaskRect(left, top, right, bottom)
+    }
+
+    /**
+     * The page-space box a silhouette occupies: what amendment E3 frames the card with.
+     *
+     * [bounds] are mask pixels inside [search], which is itself a fraction of the page, so this
+     * maps one into the other. The result is the balloon as the trace found it — not the text's
+     * box, and not an arbitrary padding of it.
+     */
+    fun boxOfSilhouette(
+        bounds: BubbleMask.MaskRect,
+        search: BubbleBox,
+        maskWidth: Int,
+        maskHeight: Int,
+    ): BubbleBox? {
+        if (maskWidth <= 0 || maskHeight <= 0) return null
+        val x = search.x + search.width * bounds.left / maskWidth
+        val y = search.y + search.height * bounds.top / maskHeight
+        val width = search.width * bounds.width / maskWidth
+        val height = search.height * bounds.height / maskHeight
+        return BubbleBox.clampedOrNull(x, y, width, height)
+    }
+
+    /**
      * The padded balloon as integer source pixels, for a region decoder.
      *
      * Clamped to the image and never empty: a region decoder throws on an empty rectangle, and

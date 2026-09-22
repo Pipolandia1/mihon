@@ -40,7 +40,8 @@ import java.nio.FloatBuffer
  *  3. Pack it as an NCHW float tensor, RGB, 0..1.
  *  4. Run. The session is created once, lazily, and lives until [close]; a [Mutex] means one
  *     inference at a time, so the reusable buffers are never shared.
- *  5. Decode through [YoloEndToEndDecoder], which normalizes and clamps.
+ *  5. Decode through [YoloSegDecoder]: suppress the duplicates the export does not,
+ *     normalize and clamp the boxes, and build each balloon's mask from the prototypes.
  *  6. Recycle the decoded page immediately. Only the boxes survive.
  *
  * A missing model, a native library that will not load, or an allocation that fails is not a
@@ -125,12 +126,21 @@ class OnnxBubbleDetector(
         }
 
         val started = System.nanoTime()
-        val rows = run(session, tensor)
+        val output = run(session, tensor)
         val elapsedMs = (System.nanoTime() - started) / 1_000_000
 
-        val found = YoloEndToEndDecoder.decode(rows, letterbox)
+        val found = YoloSegDecoder.decode(
+            output = output.boxes,
+            anchors = output.anchors,
+            prototypes = output.prototypes,
+            gridWidth = output.gridWidth,
+            gridHeight = output.gridHeight,
+            letterbox = letterbox,
+        )
         logcat(LogPriority.INFO) {
-            "BubbleZoom detect ${image.width}x${image.height} -> ${found.size} boxes in ${elapsedMs}ms"
+            val shaped = found.count { it.shape != null }
+            "BubbleZoom detect ${image.width}x${image.height} -> ${found.size} bubbles " +
+                "($shaped shaped) in ${elapsedMs}ms"
         }
         return found
     }
@@ -227,15 +237,43 @@ class OnnxBubbleDetector(
         return tensor
     }
 
-    private fun run(session: OrtSession, tensor: FloatBuffer): FloatArray {
+    /** What one inference of a segmentation export comes back with, in plain arrays. */
+    private class SegOutput(
+        val boxes: FloatArray,
+        val anchors: Int,
+        val prototypes: FloatArray,
+        val gridWidth: Int,
+        val gridHeight: Int,
+    )
+
+    private fun run(session: OrtSession, tensor: FloatBuffer): SegOutput {
         val env = OrtEnvironment.getEnvironment()
         val shape = longArrayOf(1, 3, inputSize.toLong(), inputSize.toLong())
         OnnxTensor.createTensor(env, tensor, shape).use { input ->
             session.run(mapOf(inputName!! to input)).use { result ->
-                val output = result.get(0) as OnnxTensor
+                // Two outputs, and their order in the graph is the contract: `[1, 37, anchors]`
+                // then `[1, 32, mh, mw]`. Read from the tensors' own shapes rather than assumed,
+                // so a re-export with a different grid cannot quietly produce wrong masks.
+                val boxes = result.get(0) as OnnxTensor
+                val protos = result.get(1) as OnnxTensor
+                val boxShape = boxes.info.shape
+                val protoShape = protos.info.shape
+                if (boxShape.size != 3 || protoShape.size != 4) {
+                    throw IOException("unexpected segmentation output: ${boxShape.toList()} ${protoShape.toList()}")
+                }
+                if (boxShape[1].toInt() != YoloSegDecoder.COLUMNS) {
+                    throw IOException("expected ${YoloSegDecoder.COLUMNS} columns, got ${boxShape[1]}")
+                }
                 // floatBuffer is documented as a COPY, so it survives the result being closed.
-                val buffer = output.floatBuffer ?: throw IOException("model output is not float")
-                return FloatArray(buffer.remaining()).also { buffer.get(it) }
+                val boxBuffer = boxes.floatBuffer ?: throw IOException("model output is not float")
+                val protoBuffer = protos.floatBuffer ?: throw IOException("model output is not float")
+                return SegOutput(
+                    boxes = FloatArray(boxBuffer.remaining()).also { boxBuffer.get(it) },
+                    anchors = boxShape[2].toInt(),
+                    prototypes = FloatArray(protoBuffer.remaining()).also { protoBuffer.get(it) },
+                    gridWidth = protoShape[3].toInt(),
+                    gridHeight = protoShape[2].toInt(),
+                )
             }
         }
     }

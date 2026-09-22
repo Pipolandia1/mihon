@@ -28,12 +28,15 @@ import kotlin.math.abs
  * exactly as it takes it from the image view.
  *
  * Swipes step the way a tap on the edge does — through `moveToNext` / `moveToPrevious`, which
- * already know the reading direction and already turn the page after the last bubble. They are
- * Bubble Zoom's ONLY while a card is up. Play Books does take a vertical swipe on a page with no
- * card — measured: it turns the page and then walks into its bubbles — but doing the same here
- * would mean a flick down turning the page backwards in a horizontal pager, where upstream Mihon
- * does nothing at all with a vertical drag on a page at fit. The card is what the reader asked
- * for with a double tap, and it is what this may take gestures for.
+ * already know the reading direction, already turn the page after the last bubble, and already
+ * enter the page arrived at backwards on its last bubble. That is the walk Play Books does, and
+ * on the user's instruction this feature does it too: with a card up always, and on a resting
+ * page whose image cannot pan vertically, where the library does nothing with a vertical drag
+ * and the gesture is therefore free. A page that can pan keeps its pan, and a double tap that
+ * became the library's quick scale is never also read as a swipe.
+ *
+ * It is a divergence from upstream Mihon, which does nothing at all with a vertical drag on a
+ * page at fit, and it is deliberate: see amendment E2 in docs/BUBBLE_ZOOM_SPEC.md.
  */
 class BubbleZoomGestures(
     private val host: View,
@@ -60,6 +63,14 @@ class BubbleZoomGestures(
     /** True from the second tap's DOWN that activated or deactivated a balloon until its UP. */
     private var swallowingTap = false
 
+    /**
+     * Whether a double tap was recognised in this gesture, whatever came of it.
+     *
+     * The library's quick scale is a double tap that then drags, and its drag is vertical by
+     * definition. Without this, letting go of one would both zoom the page and step a bubble.
+     */
+    private var doubleTapped = false
+
     private var downX = 0f
     private var downY = 0f
     private var flingVelocityY = 0f
@@ -69,6 +80,7 @@ class BubbleZoomGestures(
         host.context,
         object : GestureDetector.SimpleOnGestureListener() {
             override fun onDoubleTap(e: MotionEvent): Boolean {
+                doubleTapped = true
                 // On the card itself: down, whatever the page happens to hold under it. The card
                 // is nearly three times the balloon and routinely covers its neighbours, so
                 // asking the page would jump to one of those instead of dismissing — which is
@@ -102,6 +114,7 @@ class BubbleZoomGestures(
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 swallowingTap = false
+                doubleTapped = false
                 flingVelocityY = 0f
                 pointers = 1
                 downX = ev.x
@@ -130,12 +143,30 @@ class BubbleZoomGestures(
             }
             return true
         }
-        // With no card up, nothing here is Bubble Zoom's: the gesture is the reader's and the
-        // library's, exactly as upstream.
+        // No card, so this is only ever observed: the image view has already done nothing with
+        // a vertical drag on a page it cannot pan, and the pager's detector does not read a drag
+        // as a tap. Returning false keeps every gesture the reader's and the library's.
+        if (ev.actionMasked == MotionEvent.ACTION_UP && pointers == 1 && restingPageCannotPan()) {
+            stepIfSwipe(ev)
+        }
         return false
     }
 
+    /**
+     * Whether this page is detected, at rest, and short enough that the library will not pan it.
+     *
+     * Asked before taking a swipe on a page with no card: a page the reader can pan keeps its
+     * pan, because taking that would be a regression in ordinary reading rather than a feature.
+     */
+    private fun restingPageCannotPan(): Boolean {
+        if (!session.hasBubbles(page)) return false
+        val view = imageView() ?: return false
+        if (!view.isReady || view.sHeight <= 0) return false
+        return view.scale * view.sHeight <= view.height + 1f
+    }
+
     private fun stepIfSwipe(ev: MotionEvent) {
+        if (doubleTapped) return
         val dx = ev.x - downX
         val dy = ev.y - downY
         val dragged = abs(dy) >= swipeMinDistancePx && abs(dy) > abs(dx)

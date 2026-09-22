@@ -166,6 +166,12 @@ class BubbleZoomSession(
         return ready.page == page && ready.focusedIndex >= 0
     }
 
+    /** Whether [page] is the subject, detected, and has at least one bubble to walk. */
+    fun hasBubbles(page: BubblePageKey): Boolean {
+        val ready = controller.state.value as? BubbleZoomState.Ready ?: return false
+        return ready.page == page && ready.bubbles.isNotEmpty()
+    }
+
     /** The bytes [page] is displayed from, while its holder lives. Null before detection. */
     fun imageFor(page: BubblePageKey): BubbleDetectionImage? = detections[page]?.image
 

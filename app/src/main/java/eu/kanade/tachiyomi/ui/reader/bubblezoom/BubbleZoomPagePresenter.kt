@@ -150,7 +150,7 @@ class BubbleZoomPagePresenter(private val session: BubbleZoomSession) {
         if (focus == shown && card?.isShowing == true) return
         cancelDecode()
 
-        val token = card?.show(focus.box)
+        val token = card?.show(focus)
         if (token == null) {
             // Nothing to show, and since E2 there is no second path. The focus is left where it
             // is on purpose: un-focusing here would put the walk back at the resting page, the
@@ -169,7 +169,7 @@ class BubbleZoomPagePresenter(private val session: BubbleZoomSession) {
     /** Replaces the card's replayed tiles with the balloon decoded from the page's own bytes. */
     private fun sharpen(page: BubblePageKey, token: CardToken) {
         val image = session.imageFor(page) ?: return
-        val region = BubbleCardGeometry.regionOf(token.padded, image.width, image.height) ?: return
+        val region = BubbleCardGeometry.regionOf(token.sourceBox, image.width, image.height) ?: return
         val sample = BubbleCardGeometry.sampleSize(region, token.widthPx.toFloat(), token.heightPx.toFloat())
         decode = session.scope.launch {
             // Written from inside the IO block rather than returned from it: a cancelled

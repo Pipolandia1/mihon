@@ -7,6 +7,36 @@ package eu.kanade.tachiyomi.ui.reader.bubblezoom
 object BubbleDetectionConfig {
 
     /**
+     * The segmentation model's confidence floor. Amendment E4.
+     *
+     * Same number the box detector uses, and for the same reason: measured against pages whose
+     * balloons are known, 0.25 recovers them and the spec's 0.35 cuts real ones.
+     */
+    const val SEG_CONFIDENCE_THRESHOLD = 0.25f
+
+    /**
+     * How much two boxes may overlap before the weaker is dropped.
+     *
+     * This export has no NMS in its graph — a page of eight balloons comes back as forty-three
+     * anchors over the floor — so the number matters here in a way it did not for the
+     * end-to-end box export. 0.5 is ultralytics' own default and reproduces, on real rows from
+     * a real page, exactly the eight balloons that are on it.
+     */
+    const val SEG_NMS_IOU = 0.5f
+
+    /**
+     * How much finer than the model's own grid the balloon's mask is resolved.
+     *
+     * The prototypes are a quarter of the input on each side, so a balloon's mask arrives about
+     * fifty cells across and the card stretches it eight times — which reads as a soft band of
+     * page around the balloon rather than as a cut edge. The mask is refined by interpolating
+     * the model's LOGITS and thresholding after, which puts the edge where the model's own
+     * confidence crosses a half instead of on a grid line, and costs four taps per cell against
+     * the thirty-two multiplies the combination already pays.
+     */
+    const val SEG_MASK_REFINEMENT = 4
+
+    /**
      * How long [eu.kanade.tachiyomi.ui.reader.bubblezoom.detector.FakeBubbleDetector] pretends
      * to think, in milliseconds.
      *
@@ -29,7 +59,7 @@ object BubbleDetectionConfig {
     const val FAKE_MODEL_VERSION = -1
 
     /** Where the model lives. Gitignored; supplied per build, never committed. */
-    const val MODEL_ASSET = "bubble_detector.onnx"
+    const val MODEL_ASSET = "bubble_segmenter.onnx"
 
     /**
      * The square side the page is letterboxed into before inference.
@@ -72,7 +102,10 @@ object BubbleDetectionConfig {
     /**
      * Identifies the real detector AND its settings, for the P13 cache. Bump it when the model
      * file, [INPUT_SIZE], or anything else that changes the boxes a page produces changes.
-     * Version 1 is Kiuyha/Manga-Bubble-YOLO yolo26n at 640.
+     *
+     * Version 1 was Kiuyha/Manga-Bubble-YOLO yolo26n at 640, which boxed the text. Version 2 is
+     * kitsumed/yolov8m_seg-speech-bubble at 640, which segments the balloon: different boxes
+     * and, for the first time, a shape — so anything cached under 1 describes something else.
      */
-    const val ONNX_MODEL_VERSION = 1
+    const val ONNX_MODEL_VERSION = 2
 }

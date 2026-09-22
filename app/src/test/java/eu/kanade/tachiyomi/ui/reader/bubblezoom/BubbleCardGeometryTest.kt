@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.reader.bubblezoom
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -141,6 +142,75 @@ class BubbleCardGeometryTest {
 
         assertEquals(-60f, rect.left)
         assertEquals(1140f, rect.right)
+    }
+
+    @Test
+    fun `the text's place in the search region is where the balloon is asked to hold it`() {
+        // A detection a quarter of the way in, in a search region twice its size: the mask is
+        // 200x100, so the text must land at a quarter of that and be half of it.
+        val text = BubbleBox(0.25f, 0.25f, 0.5f, 0.5f)
+        val search = BubbleBox(0f, 0f, 1f, 1f)
+
+        val rect = BubbleCardGeometry.textWithin(text, search, 200, 100)
+
+        assertEquals(BubbleMask.MaskRect(50, 25, 150, 75), rect)
+    }
+
+    @Test
+    fun `the text's place is clamped into the grid and never empty`() {
+        // A detection flush against the page edge: padded() truncates there, so the search
+        // region starts at the same place and the text's left edge lands on column zero.
+        val flush = BubbleCardGeometry.textWithin(
+            BubbleBox(0f, 0f, 0.2f, 0.2f),
+            BubbleBox(0f, 0f, 0.4f, 0.4f),
+            100,
+            100,
+        )
+        assertEquals(BubbleMask.MaskRect(0, 0, 50, 50), flush)
+
+        // Thinner than one mask pixel: a rectangle a guard would divide by must still have room.
+        val hairline = BubbleCardGeometry.textWithin(
+            BubbleBox(0.5f, 0.5f, 1e-4f, 1e-4f),
+            BubbleBox(0f, 0f, 1f, 1f),
+            20,
+            20,
+        )
+        assertEquals(1, hairline.width)
+        assertEquals(1, hairline.height)
+    }
+
+    @Test
+    fun `a silhouette's bounds become the page-space box the card frames`() {
+        // The whole point of amendment E3: the card is framed on what the trace found, not on
+        // the detection. A silhouette filling the middle half of a search region that itself
+        // covers the middle half of the page is the middle quarter of the page.
+        val search = BubbleBox(0.25f, 0.25f, 0.5f, 0.5f)
+
+        val box = BubbleCardGeometry.boxOfSilhouette(BubbleMask.MaskRect(25, 25, 75, 75), search, 100, 100)
+
+        assertEquals(0.375f, box!!.x, 1e-5f)
+        assertEquals(0.375f, box.y, 1e-5f)
+        assertEquals(0.25f, box.width, 1e-5f)
+        assertEquals(0.25f, box.height, 1e-5f)
+    }
+
+    @Test
+    fun `a silhouette that fills its search region gives the search region back`() {
+        val search = BubbleBox(0.1f, 0.2f, 0.3f, 0.4f)
+
+        val box = BubbleCardGeometry.boxOfSilhouette(BubbleMask.MaskRect(0, 0, 64, 48), search, 64, 48)
+
+        assertEquals(search.x, box!!.x, 1e-5f)
+        assertEquals(search.width, box.width, 1e-5f)
+        assertEquals(search.bottom, box.bottom, 1e-5f)
+    }
+
+    @Test
+    fun `a degenerate mask gives no box rather than an invalid one`() {
+        val search = BubbleBox(0.1f, 0.1f, 0.5f, 0.5f)
+
+        assertNull(BubbleCardGeometry.boxOfSilhouette(BubbleMask.MaskRect(0, 0, 10, 10), search, 0, 10))
+        assertNull(BubbleCardGeometry.boxOfSilhouette(BubbleMask.MaskRect(5, 5, 5, 9), search, 10, 10))
     }
 
     @Test

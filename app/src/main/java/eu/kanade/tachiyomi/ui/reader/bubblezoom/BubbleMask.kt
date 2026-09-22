@@ -15,15 +15,29 @@ import kotlin.math.abs
  * makes screentone read as grey rather than as thousands of tiny holes, and the mask is drawn
  * back up filtered, so the edge arrives antialiased for free.
  *
- * It refuses rather than guesses. A fill that reaches the border escaped through a gap in the
- * outline and has taken the page with it; one that covers almost nothing found a glyph or a
- * texture. Both hand the bubble back to the rectangular card, which is always correct if less
- * pretty. Open bubbles, captions with no outline and ragged shout balloons all land here.
+ * It refuses rather than guesses. A fill that floods the border escaped through a gap in the
+ * outline and has taken the page with it; one that misses the text it was found for is not that
+ * balloon's. Both hand the bubble back to the rectangular card, which is always correct if less
+ * pretty. Captions on a light background and balloons whose paper matches the wall behind them
+ * land here, measured and expected.
+ *
+ * Amendment E3 changed what it is handed, not how it works. The caller now traces in a region
+ * far larger than the card will be, because the detector boxes the TEXT and the balloon does not
+ * fit in that box — at the card's own padding the outline is cut off by the capture and the fill
+ * runs out through the open end, which on a real comic refused nine balloons of nine. A tail may
+ * still run out of the larger region, and clipping a tail costs nothing anyone can see, so the
+ * border test is a fraction of the perimeter rather than a flag.
  *
  * Pure Kotlin on purpose — no Android type crosses this file, so every branch above is a JVM
  * unit test in `BubbleMaskTest`.
  */
 object BubbleMask {
+
+    /** A rectangle in mask coordinates: left and top inclusive, right and bottom exclusive. */
+    data class MaskRect(val left: Int, val top: Int, val right: Int, val bottom: Int) {
+        val width: Int get() = right - left
+        val height: Int get() = bottom - top
+    }
 
     /**
      * The bubble's silhouette over [width] x [height] ARGB [pixels], or null if it has none to
@@ -34,7 +48,13 @@ object BubbleMask {
      * Nothing here can work it out: at this point the only sizes in hand are the mask's, and
      * how many mask pixels an outline occupies depends on how large the bubble was on the page.
      */
-    fun extract(pixels: IntArray, width: Int, height: Int, growPasses: Int): BooleanArray? {
+    fun extract(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        text: MaskRect,
+        growPasses: Int,
+    ): BooleanArray? {
         if (width < MIN_SIDE || height < MIN_SIDE) return null
         val size = width * height
         if (pixels.size < size) return null
@@ -45,7 +65,58 @@ object BubbleMask {
         val filled = fillFromCentre(luma, width, height, surface) ?: return null
         fillEnclosedHoles(filled, width, height)
 
+        // Asked before the silhouette is grown: growing would drag it over the text from the
+        // outside, and a shape that merely surrounds the words would pass for one that holds
+        // them. [text] is where the detection sits inside the search region.
+        if (!covers(filled, width, height, text)) return null
+
         return grow(filled, width, height, growPasses)
+    }
+
+    /**
+     * The rectangle [shape] occupies, or null when it occupies nothing.
+     *
+     * This is what amendment E3 frames the card with. The silhouette was traced in a region
+     * chosen to be far too big for the balloon, and its own bounds are the only honest answer
+     * to which part of that region the balloon is.
+     */
+    fun bounds(shape: BooleanArray, width: Int, height: Int): MaskRect? {
+        var left = width
+        var top = height
+        var right = -1
+        var bottom = -1
+        for (y in 0 until height) {
+            val row = y * width
+            for (x in 0 until width) {
+                if (!shape[row + x]) continue
+                if (x < left) left = x
+                if (x > right) right = x
+                if (y < top) top = y
+                if (y > bottom) bottom = y
+            }
+        }
+        if (right < left || bottom < top) return null
+        return MaskRect(left, top, right + 1, bottom + 1)
+    }
+
+    /** Whether enough of the text this balloon was found for lies inside the silhouette. */
+    private fun covers(filled: BooleanArray, width: Int, height: Int, text: MaskRect): Boolean {
+        val left = text.left.coerceIn(0, width - 1)
+        val top = text.top.coerceIn(0, height - 1)
+        val right = text.right.coerceIn(left + 1, width)
+        val bottom = text.bottom.coerceIn(top + 1, height)
+
+        var inside = 0
+        var total = 0
+        for (y in top until bottom) {
+            val row = y * width
+            for (x in left until right) {
+                total++
+                if (filled[row + x]) inside++
+            }
+        }
+        if (total == 0) return false
+        return inside.toFloat() / total >= BubbleZoomConfig.MASK_MIN_TEXT_COVERAGE
     }
 
     /**
@@ -86,12 +157,12 @@ object BubbleMask {
         }
         if (top == 0) return null
 
-        var escaped = false
+        var border = 0
         while (top > 0) {
             val index = stack[--top]
             val x = index % width
             val y = index / width
-            if (x == 0 || y == 0 || x == width - 1 || y == height - 1) escaped = true
+            if (x == 0 || y == 0 || x == width - 1 || y == height - 1) border++
 
             if (x > 0) {
                 val next = index - 1
@@ -127,13 +198,18 @@ object BubbleMask {
             }
         }
 
-        // Escaping means the outline had a gap and the fill is now holding the page rather than
-        // the bubble. There is no salvaging that, and a wrong silhouette is worse than none.
-        if (escaped) return null
+        // A thin touch on the border is a tail leaving the region, which costs the silhouette
+        // nothing visible. A wide one is the fill escaping through a gap in the outline and
+        // taking the page with it, and a wrong silhouette is worse than none. Measured on a
+        // real comic: right silhouettes touched 0 to 0.6 percent of the perimeter, leaked ones
+        // more than 20.
+        val perimeter = 2 * (width + height)
+        if (border.toFloat() / perimeter > BubbleZoomConfig.MASK_MAX_LEAK_FRACTION) return null
 
-        val covered = area.toFloat() / size
-        if (covered < BubbleZoomConfig.MASK_MIN_AREA_FRACTION) return null
-        if (covered > BubbleZoomConfig.MASK_MAX_AREA_FRACTION) return null
+        // The region is deliberately far larger than the balloon, so covering a third of it is
+        // the fill holding the page even when it never reached a border. Same measurement: 10
+        // to 15 percent for a balloon, 33 to 48 for a fill that had got out.
+        if (area.toFloat() / size > BubbleZoomConfig.MASK_MAX_SEARCH_AREA_FRACTION) return null
         return filled
     }
 

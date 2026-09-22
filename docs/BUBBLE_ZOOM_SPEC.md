@@ -94,7 +94,8 @@ O que ele faz, medido e não lembrado:
   da página inteira, um swipe para baixo vira para a página anterior e já entra no último
   balão dela (capturas `pb-G2`/`pb-G3`: a legenda "THIS PRISON OF GODS" aparece ampliada e com
   sombra na página 1). Uma frase anterior desta seção dizia que não fazia nada; era leitura
-  errada das mesmas capturas.
+  errada das mesmas capturas. Depois de medido, o usuário decidiu seguir o Play Books também
+  aqui.
 - **Toque na borda** = próximo/anterior balão, também sem card (entra no primeiro/último);
   **toque no centro** = com card dispensa, sem card abre o menu; **teclas de volume** = bordas
   (dica 3 do próprio app). É o interruptor "Move between bubbles with Bubble Zoom" do Play
@@ -128,13 +129,15 @@ O que a E2 muda no que está construído:
    O toque sobre o card é decidido pelo **retângulo do card**, não pelo que a página tem por
    baixo: o card é quase três vezes o balão e cobre os vizinhos, então perguntar à página
    pularia para um deles em vez de dispensar.
-4. **Swipe vertical com card erguido**: para cima próximo, para baixo anterior. **Sem card o
-   swipe é do Mihon** — aqui divergimos do Play Books de propósito: no pager horizontal do
-   Mihon um arrasto vertical numa página em encaixe não faz nada, e fazer um flick para baixo
-   virar a página para trás seria uma regressão de leitura normal com a preferência ligada. O
-   card é o que o leitor pediu com o duplo-toque, e é o que autoriza tomar gestos. No pager
-   vertical, onde swipe vertical vira página, o card erguido toma o gesto; sem card, vira
-   página como sempre.
+4. **Swipe vertical**: para cima próximo, para baixo anterior — com card erguido sempre, e
+   também na página em repouso cuja imagem não pode ser arrastada verticalmente, onde a
+   biblioteca não faz nada com o gesto e ele está livre. É a caminhada do Play Books, decidida
+   pelo usuário depois de ver a medição: da página inteira, um swipe para baixo vira para a
+   anterior e entra no último balão dela. **É uma divergência do Mihon**, que não faz nada com
+   arrasto vertical numa página em encaixe, e é deliberada. Uma página que pode ser arrastada
+   mantém o arrasto, e um duplo-toque que virou *quick scale* da biblioteca nunca é lido também
+   como swipe. No pager vertical, onde swipe vertical vira página, o card erguido toma o gesto;
+   sem card, vira página como sempre.
 5. **Toques, teclas de volume, DPAD e fronteiras ficam como a P6 fez**, que é o Play Books
    com o interruptor ligado. O centro dispensa (P16). Nada disso muda.
 6. **Enquanto há card erguido a página por baixo não recebe toques de um dedo** (a image
@@ -142,10 +145,13 @@ O que a E2 muda no que está construído:
    segundo dedo dispensa o card e a pinça é ignorada até o gesto seguinte; o swipe horizontal
    vira a página como sempre.
 
-**Três desvios do Play Books, todos deliberados:** sem card o swipe é do Mihon (acima);
-duplo-toque sobre o card desativa (no Play Books não faz nada); duplo-toque em arte vazia com
-card erguido desativa em vez de ampliar a página. Os três vêm do pedido do usuário ou da
-regra de que a página nunca é ampliada por esta feature.
+**Dois desvios do Play Books, ambos deliberados:** duplo-toque sobre o card desativa (no Play
+Books não faz nada); duplo-toque em arte vazia com card erguido desativa em vez de ampliar a
+página. Os dois vêm do pedido do usuário e da regra de que a página nunca é ampliada por esta
+feature. O terceiro desvio que existiu — swipe sem card não fazer nada — foi revertido pelo
+usuário depois de ver que o Play Books de fato anda: **o swipe sem card anda**, e com isso a
+garantia "com a preferência ligada e sem card, tudo é upstream" vale para todo gesto menos
+esse, que está declarado aqui.
 
 O que **não** muda: `BubbleBox` retangular e normalizado; detector, cache e ordem (P10–P13);
 a máquina de estados da P5 (Ready com índice −1…N−1, `PageEntry`); preferência desligada =
@@ -154,6 +160,79 @@ vanilla. **P14 e P15 são absorvidas pela E2.**
 Fora de escopo continua: manter o card ao girar a tela (a activity é recriada); *crop
 borders* (com a preferência ligada o quadro da image view não é o do arquivo — o Bubble Zoom
 fica desligado nessas páginas); orientação EXIF.
+
+### Emenda E3 — procurar o balão antes de enquadrar o card
+
+Decidida pelo usuário quando a E2 finalmente pôs um card numa HQ real e ele saiu **retângulo**:
+a máscara da E1 era recusada em todo balão da página. A causa, medida e não suposta: o detector
+caixa o **texto**, então a caixa acolchoada em que o traçado rodava **não contém o balão** — a
+elipse é cortada pela própria captura, a cauda fica aberta, e o preenchimento sai pela ponta
+aberta. Nove balões de nove.
+
+A E3 inverte a ordem. O traçado passa a rodar numa **região de busca** muito maior que o card
+(`MASK_SEARCH_PADDING = 1.2` do menor lado da detecção), e **a silhueta encontrada passa a ser
+o enquadramento do card**: o card mostra o balão que o traçado achou, não "caixa de texto mais
+padding". A captura de busca é tirada direto na resolução da máscara, algumas centenas de
+pixels, porque ela só é traçada e nunca mostrada.
+
+Três guardas mudaram junto, cada uma com o número que a definiu:
+
+- **Escape virou fração.** Uma cauda pode sair da região — é fina, e cortá-la não custa nada
+  visível. Um vazamento toma um lado inteiro. Silhuetas corretas tocaram 0–0,6 % do perímetro;
+  todo preenchimento que tinha escapado tocou mais de 20 %. `MASK_MAX_LEAK_FRACTION = 0.05`.
+- **O piso de área saiu.** Numa região escolhida para ser grande demais, uma legenda de borda
+  justa é pequena e perfeitamente real; o piso de 10 % a recusaria.
+- **Entrou "a silhueta segura o texto".** É a guarda que diz *esta forma é daquela detecção* em
+  vez de apenas *esta forma tem cara de balão*. Medido entre 68 e 81 % nas silhuetas certas — o
+  que falta para 100 é o próprio letreiramento, onde o preenchimento para.
+  `MASK_MIN_TEXT_COVERAGE = 0.5`, e um teto de 0,35 da região de busca contra o preenchimento
+  que virou página (balões reais mediram 10–15 %, vazamentos 33–48 %).
+
+O que **não** muda: o card continua sendo a única apresentação, os pixels continuam vindo da
+decodificação nativa, e onde a silhueta não sai o card continua caindo no retângulo arredondado
+— agora enquadrado na caixa de texto acolchoada, como antes. Degradação, não falha.
+
+### Emenda E4 — um modelo de segmentação, e o recorte deixa de depender dos pixels
+
+Pedida pelo usuário: *"quero que ele consiga recortar todos os balões"*. O traçado por tom da
+E1/E3 chegava a seis de nove numa página real, e **quatro alavancas foram medidas e descartadas**
+antes desta decisão: escada de tolerância (nenhum ganho), parada por gradiente (piora), selagem
+morfológica de frestas (nenhum ganho), e região de busca maior (já estava na E3). Os casos que
+sobravam não eram de afinação — legenda sobre fundo claro, balão cuja parede tem o mesmo tom,
+dois balões que se tocam: em pixels não há o que separar.
+
+`kitsumed/yolov8m_seg-speech-bubble` devolve a máscara de cada balão diretamente. Medido antes
+de entrar, nas mesmas páginas: segmenta todos os balões, **separa os sobrepostos**, pega o balão
+de grito com pontas, e **acha balões que o detector de texto perdia**. Por isso ele **substitui**
+o detector em vez de somar — um modelo de segmentação já devolve as caixas.
+
+O que isso custa, medido e não estimado:
+
+| | antes (yolo26n, caixas) | depois (yolov8m-seg) |
+|---|---|---|
+| modelo | 6 MB | **109 MB** (APK 126 → 215 MB) |
+| inferência no emulador | 177 ms | **2,1–2,3 s** |
+| balões por página | 8–12, sem forma | **11–18, todos com forma** |
+| balões recortados no formato | 4 de 8 | **8 de 8** |
+
+A licença é a mesma situação já registrada: a ficha do repositório diz GPL-3.0 e a metadata do
+`.onnx` diz AGPL-3.0, o carimbo da Ultralytics — igual ao detector que a P9 embarcou e que o
+usuário aceitou para uso pessoal. Distribuir continua sendo decisão em aberto, para os dois.
+
+Duas coisas que o formato do export impôs. O grafo **não tem NMS**: uma página de oito balões
+volta como quarenta e três âncoras acima do piso, então suprimir duplicatas é trabalho do app.
+E o tensor de caixas é **canal-major** — a coluna de uma âncora fica `anchors` floats adiante, não
+adjacente —, o que faz uma leitura errada devolver lixo que ainda parece caixa; há um teste só
+para isso.
+
+A máscara nativa tem passo 4, então um balão chega com cerca de cinquenta células de largura e
+o card a estica umas oito vezes, o que aparecia como uma faixa mole de arte em volta. Ela é
+refinada interpolando os **logits** do modelo e cortando depois, de modo que a borda cai onde a
+confiança cruza a metade e não numa linha da grade: faixa mole medida caiu de 36,4 % para
+30,4 % do card.
+
+O traçado da E1/E3 **fica**: o detector falso não tem formas, e uma detecção sem forma continua
+caindo no traçado por pixels e, depois dele, no retângulo.
 
 ## 4. Definição de sucesso
 

@@ -22,8 +22,11 @@ import tachiyomi.core.common.util.system.logcat
 
 /** Identifies one lifted card, and carries what a sharp decode of it needs. */
 interface CardToken {
-    /** The bubble's box with [BubbleZoomConfig.FOCUS_PADDING] applied: what the card shows. */
-    val padded: BubbleBox
+    /**
+     * The page-space rectangle the card shows: the balloon its silhouette was traced in, or,
+     * when none could be traced, the detected text's box padded.
+     */
+    val sourceBox: BubbleBox
 
     /** The card's size on screen, which is all a decode needs to pick its sample size. */
     val widthPx: Int
@@ -73,7 +76,7 @@ class BubbleZoomOverlayView(
         var bitmap: Bitmap,
         val mask: Bitmap?,
         val rect: RectF,
-        override val padded: BubbleBox,
+        override val sourceBox: BubbleBox,
         override val widthPx: Int,
         override val heightPx: Int,
     ) : CardToken {
@@ -167,11 +170,16 @@ class BubbleZoomOverlayView(
      * capture bitmap could not be allocated. Since amendment E2 nothing else refuses. A balloon
      * partly off screen is lifted from what the view can replay and completed by [upgrade], and
      * there is no magnification band because the sharp pixels no longer come from the tiles.
-     * Failing to trace the bubble's shape only costs the card its silhouette, not its existence.
+     *
+     * What the card shows, in order of preference: the balloon the model segmented, when the
+     * detection came with a shape (E4); the balloon a silhouette could be traced in, when it
+     * did not (E3); and the detection's own box padded, when neither worked, which is where
+     * this feature started and is never wrong, only plainer.
      *
      * The token identifies this card for [upgrade] and carries what a decode of it needs.
      */
-    fun show(box: BubbleBox): CardToken? {
+    fun show(detection: BubbleDetection): CardToken? {
+        val box = detection.box
         if (!imageView.isReady) return null
         val viewportWidth = imageView.width.toFloat()
         val viewportHeight = imageView.height.toFloat()
@@ -181,24 +189,34 @@ class BubbleZoomOverlayView(
         val sourceHeight = imageView.sHeight.toFloat()
         if (sourceWidth <= 0f || sourceHeight <= 0f) return null
 
-        val padded = box.padded(BubbleZoomConfig.FOCUS_PADDING)
-        val topLeft = imageView.sourceToViewCoord(padded.x * sourceWidth, padded.y * sourceHeight)
-            ?: return null
+        // The balloon first, the card second. A model that segments hands the shape over with
+        // the box (E4); otherwise the shape is looked for in the page's own pixels (E3), which
+        // is still what serves a detector that only boxes things.
+        val found = fromDetection(detection) ?: findSilhouette(box, sourceWidth, sourceHeight)
+        val shown = found?.box ?: box.padded(BubbleZoomConfig.FOCUS_PADDING)
+
+        val topLeft = imageView.sourceToViewCoord(shown.x * sourceWidth, shown.y * sourceHeight)
         val bottomRight = imageView
-            .sourceToViewCoord(padded.right * sourceWidth, padded.bottom * sourceHeight)
-            ?: return null
+            .sourceToViewCoord(shown.right * sourceWidth, shown.bottom * sourceHeight)
+        if (topLeft == null || bottomRight == null) {
+            found?.mask?.recycle()
+            return null
+        }
         val onScreen = CardRect(topLeft.x, topLeft.y, bottomRight.x, bottomRight.y)
 
         val scale = BubbleCardGeometry.cardScale(
-            paddedWidthSourcePx = padded.width * sourceWidth,
-            paddedHeightSourcePx = padded.height * sourceHeight,
+            paddedWidthSourcePx = shown.width * sourceWidth,
+            paddedHeightSourcePx = shown.height * sourceHeight,
             viewportWidthPx = viewportWidth,
             viewportHeightPx = viewportHeight,
             currentViewScale = imageView.scale,
         )
-        val cardWidth = padded.width * sourceWidth * scale
-        val cardHeight = padded.height * sourceHeight * scale
-        if (cardWidth < 1f || cardHeight < 1f) return null
+        val cardWidth = shown.width * sourceWidth * scale
+        val cardHeight = shown.height * sourceHeight * scale
+        if (cardWidth < 1f || cardHeight < 1f) {
+            found?.mask?.recycle()
+            return null
+        }
 
         val target = BubbleCardGeometry.place(
             cardWidthPx = cardWidth,
@@ -212,12 +230,12 @@ class BubbleZoomOverlayView(
 
         // Captured before anything is torn down, so a refusal leaves the current card untouched
         // and the walk never flashes the bare page between two bubbles.
-        val pixels = captureCard(onScreen, cardWidth, cardHeight) ?: return null
-        val mask = traceShape(
-            capture = pixels,
-            paddedLongSourcePx = maxOf(padded.width * sourceWidth, padded.height * sourceHeight),
-            pageWidthSourcePx = sourceWidth,
-        )
+        val pixels = captureCard(onScreen, cardWidth, cardHeight)
+        if (pixels == null) {
+            found?.mask?.recycle()
+            return null
+        }
+        val mask = found?.mask
         if (mask != null) cutOut(pixels, mask)
 
         outgoing?.recycle()
@@ -226,7 +244,7 @@ class BubbleZoomOverlayView(
             bitmap = pixels,
             mask = mask,
             rect = RectF(target.left, target.top, target.right, target.bottom),
-            padded = padded,
+            sourceBox = shown,
             widthPx = cardWidth.toInt().coerceAtLeast(1),
             heightPx = cardHeight.toInt().coerceAtLeast(1),
         )
@@ -326,50 +344,101 @@ class BubbleZoomOverlayView(
     }
 
     /**
-     * The bubble's silhouette as a white stencil, or null when it could not be traced.
+     * A balloon that was found: the page-space rectangle it fills, and its shape as a white
+     * stencil over exactly that rectangle.
      *
-     * Reduced first, both to keep the trace off the frame budget and because reducing is what
-     * turns screentone into a tone. The stencil is kept after it has been applied: it is also
-     * what the halo is drawn from, since a cut-out has no rectangle left to stroke.
-     *
-     * The page's own measurements come down with it, because how far the silhouette has to grow
-     * to pick up the bubble's outline is a fact about the page and not about the mask.
+     * The stencil is kept after it has been multiplied into the card, because it is also what
+     * the halo is drawn from — a cut-out has no rectangle left to stroke.
      */
-    private fun traceShape(
-        capture: Bitmap,
-        paddedLongSourcePx: Float,
-        pageWidthSourcePx: Float,
-    ): Bitmap? {
-        val longSide = maxOf(capture.width, capture.height).toFloat()
-        val factor = (longSide / BubbleZoomConfig.MASK_LONG_SIDE_PX).coerceAtLeast(1f)
-        val width = (capture.width / factor).toInt().coerceAtLeast(MIN_MASK_SIDE)
-        val height = (capture.height / factor).toInt().coerceAtLeast(MIN_MASK_SIDE)
+    private class Silhouette(val box: BubbleBox, val mask: Bitmap)
 
-        val reduced = runCatching { Bitmap.createScaledBitmap(capture, width, height, true) }
-            .getOrNull() ?: return null
+    /**
+     * The silhouette the detector already knew, when it knew one.
+     *
+     * A segmentation model returns the balloon's box and its shape together, so there is
+     * nothing to look for: the box is the frame and the shape is the stencil, and the whole of
+     * [findSilhouette] — a second capture, a flood fill, four guards — is skipped.
+     */
+    private fun fromDetection(detection: BubbleDetection): Silhouette? {
+        val shape = detection.shape ?: return null
+        val pixels = IntArray(shape.width * shape.height) { index ->
+            if (shape.cells[index]) Color.WHITE else Color.TRANSPARENT
+        }
+        val mask = runCatching {
+            Bitmap.createBitmap(pixels, shape.width, shape.height, Bitmap.Config.ARGB_8888)
+        }.getOrNull() ?: return null
+        return Silhouette(detection.box, mask)
+    }
+
+    /**
+     * Looks for the balloon around [text], and reports where it is and what shape it has.
+     *
+     * The search region is [text] grown by [BubbleZoomConfig.MASK_SEARCH_PADDING], which is
+     * deliberately far more than the card will show: the detector boxes the words, the balloon
+     * around them is not in the detection at all, and a fill that starts inside a shape whose
+     * outline is cut off by its own capture runs out of the open end every time. Measured on a
+     * real comic, that was nine balloons of nine.
+     *
+     * Cheap on purpose. The capture is only ever traced, never shown, so it is taken straight
+     * at mask resolution — a couple of hundred pixels on the long side — rather than at card
+     * size and reduced afterwards.
+     */
+    private fun findSilhouette(text: BubbleBox, sourceWidth: Float, sourceHeight: Float): Silhouette? {
+        val search = text.padded(BubbleZoomConfig.MASK_SEARCH_PADDING)
+        val topLeft = imageView.sourceToViewCoord(search.x * sourceWidth, search.y * sourceHeight)
+            ?: return null
+        val bottomRight = imageView
+            .sourceToViewCoord(search.right * sourceWidth, search.bottom * sourceHeight)
+            ?: return null
+        val onScreen = CardRect(topLeft.x, topLeft.y, bottomRight.x, bottomRight.y)
+        if (onScreen.width <= 0f || onScreen.height <= 0f) return null
+
+        val longSide = maxOf(onScreen.width, onScreen.height)
+        val factor = BubbleZoomConfig.MASK_LONG_SIDE_PX / longSide
+        val width = (onScreen.width * factor).toInt().coerceAtLeast(MIN_MASK_SIDE)
+        val height = (onScreen.height * factor).toInt().coerceAtLeast(MIN_MASK_SIDE)
+
+        val capture = captureCard(onScreen, width.toFloat(), height.toFloat()) ?: return null
         val pixels = IntArray(width * height)
-        reduced.getPixels(pixels, 0, width, 0, 0, width, height)
-        // createScaledBitmap hands back the original when nothing had to change.
-        if (reduced !== capture) reduced.recycle()
+        capture.getPixels(pixels, 0, width, 0, 0, width, height)
+        capture.recycle()
 
         val passes = BubbleCardGeometry.outlineGrowPasses(
             maskLongSidePx = maxOf(width, height),
-            paddedLongSourcePx = paddedLongSourcePx,
-            pageWidthSourcePx = pageWidthSourcePx,
+            paddedLongSourcePx = maxOf(search.width * sourceWidth, search.height * sourceHeight),
+            pageWidthSourcePx = sourceWidth,
         )
-        val shape = BubbleMask.extract(pixels, width, height, passes)
-        // Whether the balloon's own outline could be followed is the difference between the
-        // card the amendment asks for and the rounded rectangle it falls back to, and from
-        // outside they look like two different features. Said out loud, once per card.
+        val shape = BubbleMask.extract(
+            pixels = pixels,
+            width = width,
+            height = height,
+            text = BubbleCardGeometry.textWithin(text, search, width, height),
+            growPasses = passes,
+        )
+        // Whether the balloon's own outline could be followed is the difference between the card
+        // the amendment asks for and the rounded rectangle it falls back to, and from outside
+        // they look like two different features. Said out loud, once per card.
+        val bounds = shape?.let { BubbleMask.bounds(it, width, height) }
+        val box = bounds?.let { BubbleCardGeometry.boxOfSilhouette(it, search, width, height) }
         logcat(LogPriority.INFO) {
-            "BubbleZoom mask ${width}x$height grow=$passes -> ${if (shape == null) "NONE" else "traced"}"
+            "BubbleZoom mask ${width}x$height grow=$passes -> ${if (box == null) "NONE" else "traced"}"
         }
-        if (shape == null) return null
-        for (index in pixels.indices) {
-            pixels[index] = if (shape[index]) Color.WHITE else Color.TRANSPARENT
+        if (shape == null || bounds == null || box == null) return null
+
+        // Only the silhouette's own rectangle becomes the stencil, because only that rectangle
+        // becomes the card. The rest of the search region was scaffolding.
+        val stencil = IntArray(bounds.width * bounds.height)
+        for (y in 0 until bounds.height) {
+            val from = (bounds.top + y) * width + bounds.left
+            val to = y * bounds.width
+            for (x in 0 until bounds.width) {
+                stencil[to + x] = if (shape[from + x]) Color.WHITE else Color.TRANSPARENT
+            }
         }
-        return runCatching { Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888) }
-            .getOrNull()
+        val mask = runCatching {
+            Bitmap.createBitmap(stencil, bounds.width, bounds.height, Bitmap.Config.ARGB_8888)
+        }.getOrNull() ?: return null
+        return Silhouette(box, mask)
     }
 
     /** Multiplies the stencil into the capture's alpha, so the page around the bubble goes. */

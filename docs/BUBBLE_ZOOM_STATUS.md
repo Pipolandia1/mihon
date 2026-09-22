@@ -973,12 +973,13 @@ documento.
 
 **Corrigidos:**
 
-1. **Swipe vertical sem card virava a página.** Eu tinha deixado o swipe ativo também numa
-   página em repouso com balões, com um KDoc afirmando que era o que o Play Books faz. Um
-   flick para baixo chamava `moveToPrevious()` e **voltava de página** num pager horizontal,
-   onde o Mihon não faz nada com arrasto vertical — regressão de leitura normal com a
-   preferência ligada. Agora o swipe só existe com card erguido. (Corrige também o
-   *quick-scale* — duplo-toque-e-arrasta — que era contado como swipe.)
+1. **Swipe vertical sem card virava a página.** O achado estava certo sobre o fato: um flick
+   para baixo chamava `moveToPrevious()` e voltava de página num pager horizontal, onde o
+   Mihon não faz nada com arrasto vertical. Eu restringi o swipe ao card erguido; **o usuário
+   reverteu depois de ver a medição do Play Books**, que anda nesse gesto, e o swipe sem card
+   voltou — com a guarda que o achado também apontou e que ficou: uma página que pode ser
+   arrastada mantém o arrasto, e um duplo-toque que virou *quick scale* da biblioteca não é
+   lido também como swipe. A divergência em relação ao upstream está declarada na spec.
 2. **Duplo-toque sobre o card pulava para o vizinho.** O ponto ia para o espaço da página, e
    o card é ~2,8× o balão: ele cobre os vizinhos, então o toque caía na caixa de outro balão
    e o card trocava em vez de sumir. Agora o retângulo do card decide primeiro.
@@ -1073,6 +1074,107 @@ Uma linha de log nova diz, por card, se a silhueta foi traçada. No aparelho ela
 `BubbleZoom mask 192x151 grow=8 -> NONE` em **todos** os cards, que é a confirmação de que a
 análise offline acima descreve o app e não uma aproximação dele. Sem essa linha, os dois
 cards são duas features diferentes vistas de fora, e foi o que me custou a investigação.
+
+## E3 — o recorte no formato do balão, agora numa HQ real
+
+O usuário mandou corrigir depois de ver a medição. A emenda está na spec; aqui ficam os
+números e o que eles custaram.
+
+**A causa era de enquadramento, não de algoritmo.** O traçado rodava dentro do card, e o card
+era a caixa do **texto** acolchoada — então o balão não cabia nela: a elipse saía cortada, a
+cauda ficava aberta, e o preenchimento escapava pela ponta. Uma replicação minha anterior tinha
+dito que o traçado deveria funcionar; ela estava contaminada, porque eu havia recortado da
+captura de tela **com a overlay de debug ligada**, e a caixa magenta servia de barreira que o
+app não vê. Repetida sobre a página limpa, ela reproduziu a recusa exatamente.
+
+**Varreduras que decidiram as constantes**, nos nove balões de uma página:
+
+| região de busca | traçados |
+|---|---|
+| 0,2 (o que existia) | 0/9 |
+| 0,8 | 4/9 |
+| **1,2** | **5/9** |
+| 1,6 e 2,2 | 0/9 e 2/9 — aí o piso de área recusa, porque o balão vira fração pequena |
+
+Com o vazamento fino permitido: **6/9**. Uma escada de tolerância (0,18 → 0,12 → 0,08 → 0,05)
+foi medida e **não acrescentou nada**, então não entrou.
+
+As duas populações separam limpo, e é daí que saem os números:
+
+| | cobertura da região | borda tocada |
+|---|---|---|
+| silhuetas certas | 10,1–15,1 % | 0,0–0,6 % |
+| preenchimentos que escaparam | 33,3–47,8 % | 20,9–29,4 % |
+
+**No aparelho** (edição #2, página com oito balões): o log diz `traced` em cinco e `NONE` em
+três, e olhando os cards são quatro silhuetas inequívocas — incluindo um **balão de grito com
+pontas** e duas caudas longas inteiras — contra o retângulo em todos antes. A página continua
+sem se mover: diferença fora do card **0,00 / 0** nos oito. Os que caem no retângulo são
+honestos: legenda sobre fundo claro, balão cuja parede de fundo tem o mesmo tom, balões
+sobrepostos.
+
+**O swipe sem card voltou**, por decisão do usuário depois de ver que o Play Books anda nesse
+gesto: verificado no aparelho, um swipe para cima sem card ergue o primeiro balão. A guarda que
+a revisão pediu ficou — página que pode ser arrastada mantém o arrasto, e *quick scale* não é
+lido como swipe.
+
+Testes: 173 no pacote (eram 163), com o `BubbleMaskTest` reescrito em torno das guardas novas —
+a cauda fina é mantida, o vazamento largo é recusado, a silhueta que não segura seu texto é
+recusada, e uma legenda de borda justa é aceita, que o piso antigo recusaria.
+
+## E4 — todos os balões, e o que isso custou
+
+O usuário pediu o recorte de **todos** os balões. Antes de trocar de método, quatro ideias foram
+medidas nos nove balões de uma página e **descartadas com número**:
+
+| ideia | resultado |
+|---|---|
+| escada de tolerância 0,18 → 0,03 | nenhum ganho (5/9 → 5/9) |
+| parada por gradiente de borda | **piora**: abaixo de 0,30 quebra os que funcionavam |
+| selagem morfológica de frestas | nenhum ganho (6/9 no melhor caso) |
+| região de busca maior | já era a E3 |
+
+A varredura por balão explica por quê: em "YOU MORON" **não existe janela de tolerância** — a
+0,14 o preenchimento inunda a parede, a 0,10 não sai do lugar. Não é fresta no contorno, é
+sobreposição de tons. Traçado por pixels não resolve isso.
+
+**O modelo de segmentação resolve.** Medido antes de entrar no app, nas mesmas páginas: todos os
+balões, sobrepostos separados, balão de grito com pontas, e balões que o detector de texto
+perdia. Só a legenda de localização "THE SLABS" fica de fora, o que é correto para um modelo de
+"speech bubble".
+
+**Verificado no aparelho**, página de oito balões, cada um com duplo-toque e medição em pixels:
+
+| | antes (E3) | depois (E4) |
+|---|---|---|
+| recortados no formato | 4 de 8 | **8 de 8** |
+| cobertura média da caixa do card | — | 64 % (um retângulo daria 100 %) |
+| cantos livres | — | 3–4 de 4 em todos |
+| página se move | 0,00 / 0 | **0,00 / 0** |
+| balões achados por página | 8–12 | **11–18, todos com forma** |
+| inferência | 177 ms | **2,1–2,3 s** |
+| APK | 126 MB | **215 MB** |
+
+**Os dois custos são reais e ficam registrados, não escondidos:** a inferência é doze vezes mais
+lenta, então numa página nova os balões aparecem depois de uns dois segundos — o contrato de
+"chega tarde" cobre isso e a página nunca espera, mas é perceptível; e o APK quase dobrou. Se
+algum dos dois incomodar, as saídas conhecidas são entrada de 512 em vez de 640, ou a
+quantização int8 (28 MB), que **neste PC mediu mais lenta** (454 ms contra 331) e mudou as
+contagens — em ARM pode inverter, e só se decide medindo no aparelho.
+
+**Refinamento da máscara.** A grade nativa tem passo 4, então um balão chega com ~50 células e o
+card a estica ~8×, o que aparecia como faixa mole de arte em volta. Interpolando os logits e
+cortando depois, a faixa mole caiu de **36,4 % para 30,3 %** do card e a borda passou a ler como
+contorno em vez de borrão. Comparação em `tools/shots/_e5compare.png`.
+
+**O que saiu:** `YoloEndToEndDecoder`, sua fixture de 300 linhas e o `bubble_detector.onnx` de
+6 MB. O `Letterbox` ficou — os dois lados ainda precisam concordar sobre ele — e seus três testes
+também. `ONNX_MODEL_VERSION` foi a 2, porque as caixas agora descrevem o balão e não o texto.
+
+Testes: 176 no pacote, 11 novos no decodificador de segmentação — um preso às linhas reais do
+modelo (63 âncoras → 43 acima do piso → **8 balões** depois do NMS, igual ao Python), um que
+falha se alguém voltar a ler o tensor como adjacente em vez de canal-major, e dois para o
+refinamento.
 
 ## Próxima fase
 
