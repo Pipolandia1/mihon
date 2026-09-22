@@ -84,6 +84,38 @@ object BubbleZoomConfig {
      */
     const val PREFETCH_PAGES = 3
 
+    /**
+     * How wide a strip of page with no balloon in it counts as the gap between two rows of
+     * panels, as a fraction of the page's height. Amendment P12.
+     *
+     * Small enough that the gutter between two rows of panels is always found — a comic page
+     * of three rows leaves far more than a fiftieth of its height between them — and large
+     * enough that two balloons stacked inside one panel, which nearly touch, are not read as
+     * two separate rows and therefore ordered the same way either way.
+     */
+    const val ORDER_ROW_GAP = 0.02f
+
+    /**
+     * The same across the page, as a fraction of its width, for panels side by side.
+     *
+     * Wider than the row gap on purpose: balloons within a panel are often set apart
+     * horizontally for the lettering to breathe, and a narrow threshold would read that as two
+     * panels and order them by column when they should be read down.
+     */
+    const val ORDER_COLUMN_GAP = 0.04f
+
+    /**
+     * How far apart two balloons' top edges may be and still be read as one row, as a fraction
+     * of the page's height.
+     *
+     * Only used where no cut is possible, which is a cluster inside one panel. Lettering is
+     * placed by eye, so balloons meant to be read across a panel are never aligned exactly —
+     * measured on a real page, one sat a thousandth of a page higher than its neighbour and a
+     * strict sort by the top edge read it first. A fortieth of a page is far more than that
+     * drift and far less than the step between two balloons genuinely stacked.
+     */
+    const val ORDER_BAND_TOLERANCE = 0.025f
+
     /** Gap kept between the card and the edge of the viewport, in dp. */
     const val CARD_SCREEN_MARGIN_DP = 12f
 

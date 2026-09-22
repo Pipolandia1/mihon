@@ -53,8 +53,8 @@ Ordem executada até aqui: P0 → P1 → P2 → P3 → P4 → P5 → P6 → **P1
 - [x] P8  interface BubbleDetector + FakeBubbleDetector
 - [x] P9  detector ONNX real + pipeline de imagem
 - [ ] P10 confidence filtering + BubbleDetectionConfig
-- [ ] P11 cache em memória + prefetch
-- [ ] P12 detecção de painéis + BubbleOrderResolver + testes
+- [x] P11 prefetch (metade feita; o cache em disco é a P13)
+- [x] P12 BubbleOrderResolver (ordem de leitura sem detectar painéis — ver abaixo)
 - [ ] P13 cache em disco com modelVersion
 - [ ] P14 teclas de volume — absorvida pela E2 (já andam pelo gancho da P6)
 - [ ] P15 double tap — é a E2
@@ -1232,6 +1232,48 @@ with N bubbles`. Sem elas, três diagnósticos seguidos foram adivinhação.
 Testes: 189 no pacote, 12 novos — seis para a escolha das páginas (transição no meio, página
 não carregada, `InsertPage`, fim da lista, settings que reescrevem a página) e seis para a
 sessão (busca adiante, página já conhecida, desligado, crop borders, e as duas de eviction).
+
+## P12 — ordem de leitura, sem detectar painéis
+
+**O problema, medido antes de escrever código.** Depois do NMS o decodificador devolve os balões
+por **confiança**, e a ordem de leitura nunca existiu. Com o detector antigo quase não aparecia;
+com 11–18 balões por página, aparece sempre. Entrando na caminhada e registrando onde cada card
+caía, a posição vertical foi `507 → 1101 → 508 → 760 → 508 → 1382`: desce, volta ao topo, desce,
+volta — **duas subidas em sete passos**.
+
+**O desvio da spec, declarado.** A P12 pede detecção de painéis. Não foi feita: achar calha na
+arte é a mesma classe de heurística que a E1 e a E3 mediram falhar — uma calha do mesmo tom da
+arte ao lado não está lá para ser achada — e um segundo modelo depois de um de 109 MB não se
+justifica. O layout é inferido **das próprias caixas**, por corte XY recursivo: uma faixa que
+nenhum balão cruza separa fileiras; não havendo, a separação vertical separa quadrinhos lado a
+lado; não havendo nenhuma, lê-se em bandas.
+
+**O limite, dito no código:** um quadrinho cujos balões se alinham com os do vizinho é, das
+caixas, a mesma figura que um quadrinho largo. Esse caso sai na ordem errada. É muito menor que
+ordenar por confiança, e é o preço de não ter painéis.
+
+**Verificado no aparelho**, mesma medição que abriu o assunto:
+
+| | antes | depois |
+|---|---|---|
+| volta para cima na página | 2 de 7 passos | **0 de 9** |
+| sequência vertical | 507, 1101, 508, 760, 508, 1382 | 897, 1231, 1249, 1245, 1244, 1288, 1476, 1631 |
+
+Os passos de x 603 → 664 → 722 na mesma altura são uma banda sendo lida atravessada, que é o
+comportamento que a correção abaixo produziu.
+
+**Dois defeitos que os testes acharam, e um era meu de teste.** Uma fixture desenhava "dois
+quadrinhos lado a lado" com os balões tão afastados na vertical que a figura vira indistinguível
+de uma grade 2×2 — e eu cobrava do algoritmo a resposta que só o conhecimento de painéis daria;
+a fixture foi corrigida e o porquê ficou escrito nela. O outro era real: no grupo que não dá
+para cortar, a ordenação era por `y` puro, e na página medida no aparelho o balão do meio de uma
+fileira estava **um milésimo de página** mais alto que o da esquerda e era lido primeiro.
+Lettering é posto a olho; agora a leitura é por bandas, com `ORDER_BAND_TOLERANCE`.
+
+Testes: 197 no pacote, 8 novos — fileiras antes do que está dentro delas, quadrinhos lado a lado
+nas duas direções, fileira com quadrinhos de alturas diferentes, aglomerado que não corta, a
+página real que abriu o assunto, e a propriedade que um corte recursivo quebra em silêncio:
+**todo balão volta exatamente uma vez**.
 
 ## Próxima fase
 

@@ -65,8 +65,12 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
      * The current page is passed as a lambda because switching the feature on mid-read has to
      * give the walk a subject, and the reader only announces a page when it selects one.
      */
-    val bubbleZoom =
-        BubbleZoomSession(readerPreferences, scope, activity) { (currentPage as? ReaderPage)?.bubblePageKey() }
+    val bubbleZoom = BubbleZoomSession(
+        preferences = readerPreferences,
+        scope = scope,
+        context = activity,
+        rightToLeft = { this is R2LPagerViewer },
+    ) { (currentPage as? ReaderPage)?.bubblePageKey() }
 
     /**
      * Currently active item. It can be a chapter page or a chapter transition.

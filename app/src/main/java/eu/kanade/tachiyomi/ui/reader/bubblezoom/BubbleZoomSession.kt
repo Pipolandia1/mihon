@@ -60,6 +60,12 @@ class BubbleZoomSession(
      */
     private val cropBorders: () -> Boolean = { false },
     /**
+     * Whether the reader reads right to left, which is the only thing reading order needs from
+     * the viewer. Down the page is down the page either way; it decides how two panels side by
+     * side are ordered, and how two balloons at the same height are.
+     */
+    private val rightToLeft: () -> Boolean = { false },
+    /**
      * The page the reader is on, read lazily: switching the feature on has to give the walk a
      * subject, and the reader will not call `activatePage` again until it turns a page.
      *
@@ -365,7 +371,10 @@ class BubbleZoomSession(
         if (page !in ready) return
         val entry = detections[page] ?: return
         val before = controller.state.value
-        entry.bubbles?.let { controller.onBubblesReady(page, it) }
+        // Ordered here rather than in the controller, which is kept free of the reader's
+        // direction on purpose: it is the one fact about the viewer that the state machine
+        // would otherwise have to hold, and it is the session's job to know the reader.
+        entry.bubbles?.let { controller.onBubblesReady(page, BubbleOrderResolver.order(it, rightToLeft())) }
         entry.failure?.let { controller.onDetectionFailed(page, it) }
         // The one moment the reader can see: this page now has its balloons. Timed against the
         // reader's own "page selected" line, it says whether the answer was waiting when they
@@ -408,6 +417,7 @@ fun BubbleZoomSession(
     preferences: ReaderPreferences,
     scope: CoroutineScope,
     context: Context,
+    rightToLeft: () -> Boolean,
     currentPage: () -> BubblePageKey?,
 ): BubbleZoomSession = BubbleZoomSession(
     enabled = preferences.bubbleZoom,
@@ -421,6 +431,7 @@ fun BubbleZoomSession(
         real = OnnxBubbleDetector(context.applicationContext),
     ),
     cropBorders = { preferences.cropBorders.get() },
+    rightToLeft = rightToLeft,
     currentPage = currentPage,
 )
 
