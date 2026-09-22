@@ -5,7 +5,7 @@
 
 ## Fase atual
 
-**P17 concluída** (painel de depuração). Antes dela: P12 (ordem de leitura), prefetch,
+**E5 concluída** (página dupla partida em duas). Antes dela: **P17** (painel de depuração). Antes dela: P12 (ordem de leitura), prefetch,
 E4 (modelo de segmentação), E3, E2, P10 (fechada por medição).
 
 Depois da P17, a sessão fez a **comparação extensiva com o Google Play Books na mesma HQ**
@@ -1342,6 +1342,48 @@ Verificado no aparelho: as tags 1‑2‑3 saem na ordem certa e legíveis sobre 
 escura, `ahead` aparece em página buscada à frente, `detecting…` aparece no lugar certo.
 14 testes novos (9 de redação do painel, 5 de sessão).
 
+## E5 — a página dupla olhada em duas metades
+
+Item 2 da lista da comparação. Uma spread inteira dentro do quadrado de 640 do modelo volta
+**vazia**; a mesma spread partida ao meio volta com os balões. Medido com os mesmos pesos, na
+mesma página (2000×1537, seis legendas):
+
+| o que o modelo viu | balões, de seis |
+|---|---|
+| a spread inteira a 640 | **0** |
+| a spread inteira a 1024 | 2 |
+| duas metades sobrepostas, 640 cada | **5** |
+
+O motivo não é a letterbox — uma página retrato desperdiça mais do quadrado que uma deitada —
+é que a spread carrega **duas páginas de desenho**, então cada balão nela tem metade do tamanho
+que o modelo espera. Partir põe uma página de cada vez na frente dele.
+
+Por isso o corte é só para spread, e spread aqui quer dizer **mais larga que alta**: numa HQ
+lida em páginas retrato, uma imagem deitada é duas páginas impressas atravessando a dobra.
+Página retrato fica inteira de propósito, mesmo estando mais longe do quadrado — o mesmo
+experimento numa página retrato densa moveu 13 balões para 14 ao custo de dobrar a inferência,
+o que não paga em toda página de todo capítulo.
+
+`PageTiles` (puro, testável na JVM) decide os recortes e junta as respostas. A junção usa IoU
+**ou contenção**: o balão que a dobra corta volta inteiro de uma metade e picotado da outra, e
+esses dois têm IoU baixo demais para um teste de sobreposição reconhecê-los como o mesmo.
+
+No detector, duas mudanças além do laço: a decodificação passa a ser dimensionada pela **maior
+metade** e não pela página, para a metade não ficar com menos pixel do que uma página normal
+teria; e a pintura passa a usar retângulo de origem e destino em vez de matriz, porque a matriz
+escala a página decodificada inteira e desenharia a metade vizinha por cima do cinza que o
+modelo espera na borda.
+
+**Verificado no aparelho**, com as páginas reais empurradas para a fonte local (o extensão
+online caiu no Cloudflare):
+
+    detect 2000x1537 in 2 tiles -> 5 bubbles (5 shaped) in 4441ms
+    detect 1280x1966            -> 11 bubbles (11 shaped) in 2345ms
+
+Cinco balões onde antes eram zero; página retrato com a mesma contagem de antes, um recorte só,
+mesmo tempo. O card abre nos balões da spread com o recorte certo (2/5 e 3/5 conferidos na
+tela). 11 testes novos.
+
 ## Onde estamos contra o Play Books — medido em 22/09/2026
 
 Mesma HQ aberta nos dois leitores, mesmas páginas, emulador. O que a comparação achou, em
@@ -1354,10 +1396,8 @@ são bimodais (0,49–0,94 e depois nada até 0,14). Os balões que faltam o mod
 em nenhuma configuração. São balões cortados pela borda do quadrinho e legendas amarelas
 ("HE FOUND LOVE.", "I KNOW SOME THINGS HAPPEN BY CHANCE") que o Play Books pega.
 
-**2. Página dupla: 0 de 6.** A spread 2000×1537 dá **0 balões** inteira a 640, 2 a 1024 e
-**5 de 6 partida em duas metades a 640 cada** (~0,7 s no desktop). Aqui, ao contrário do item
-1, partir resolve — porque a letterbox quadrada joga fora metade da altura de uma página
-deitada.
+**2. Página dupla: 0 de 6.** ✅ **Feito — E5.** A spread dá 0 balões inteira e 5 partida em
+duas metades; no aparelho, 5 balões em 4441 ms, contra 0 antes.
 
 **3. Falsos positivos viram card de arte.** Na página 7 o passeio para num **rosto** (55 %) e
 numa **mão** (27 %); na página 5, num **relógio** (45 %). Limiar não separa: balões reais

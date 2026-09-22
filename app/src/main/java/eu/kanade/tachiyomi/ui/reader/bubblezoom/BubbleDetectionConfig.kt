@@ -71,6 +71,38 @@ object BubbleDetectionConfig {
     const val INPUT_SIZE = 640
 
     /**
+     * How much wider than tall a page has to be before it is looked at in two halves rather
+     * than whole. Amendment E5.
+     *
+     * A single comic page is portrait; anything meaningfully wider than tall is two pages
+     * printed across the fold, and a spread carries two pages of drawing into one square input,
+     * which halves every balloon on it. Measured on a real 2000x1537 spread: 0 balloons of six
+     * whole, 5 of six in halves. Just above 1 so a page that happens to be square is not split
+     * for nothing, and far below the 1.3 of the spread measured.
+     */
+    const val SPREAD_ASPECT = 1.15f
+
+    /**
+     * How far past the middle each half of a spread reaches, as a fraction of the page's width.
+     *
+     * A balloon sitting on the fold has to be whole in at least one of the two halves, and
+     * balloons are small: a tenth of the page each way is several times the widest of them,
+     * and what it costs is a tenth more page in each pass.
+     */
+    const val SPREAD_TILE_OVERLAP = 0.10f
+
+    /**
+     * When two boxes from different halves are the same balloon seen twice: by overlap, and —
+     * for the balloon the seam cut, which comes back whole from one half and clipped from the
+     * other — by how much of the smaller one lies inside the larger.
+     *
+     * Looser than [SEG_NMS_IOU] because these are two different views of one page rather than
+     * two guesses from one, and used only across halves, never within one.
+     */
+    const val TILE_MERGE_IOU = 0.4f
+    const val TILE_MERGE_CONTAINMENT = 0.7f
+
+    /**
      * A page whose long side is at least this many input sizes is never decoded at full
      * resolution, even when the next power-of-two sample size lands a little under the input:
      * the model sees it slightly upscaled instead of the app holding a second full-size copy.

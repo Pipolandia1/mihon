@@ -8,10 +8,11 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.Rect
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleDetection
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleDetectionConfig
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import logcat.LogPriority
@@ -20,6 +21,8 @@ import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import kotlin.coroutines.coroutineContext
+import kotlin.math.roundToInt
 
 /**
  * The real detector: a YOLO end-to-end model run by ONNX Runtime, on the CPU, off the main
@@ -31,12 +34,16 @@ import java.nio.FloatBuffer
  *
  * The pipeline is the spec's, in this order and with these guarantees:
  *
- *  1. Decode the page's encoded bytes at a power-of-two sample size that lands its long side
- *     near [BubbleDetectionConfig.INPUT_SIZE]. Never at full size for a page large enough to
- *     matter: a 1200px scanlation page decodes at 600 and is upscaled a little, rather than
- *     being held at 1200x1700 in ARGB next to the viewer's own tiles of the same page.
- *  2. Paint that into a reusable square input bitmap through the same [Letterbox] the decoder
- *     will use to undo it, on the grey the model was trained with.
+ *  0. Ask [PageTiles] what to look at. An ordinary page is one look at the whole of it; a
+ *     double-page spread is two overlapping halves, because a spread put into one square input
+ *     comes back with nothing - amendment E5, measured.
+ *  1. Decode the page's encoded bytes at a power-of-two sample size that lands the longest
+ *     TILE's long side near [BubbleDetectionConfig.INPUT_SIZE] - the page's own, when there is
+ *     one tile. Never at full size for a page large enough to matter: a 1200px scanlation page
+ *     decodes at 600 and is upscaled a little, rather than being held at 1200x1700 in ARGB next
+ *     to the viewer's own tiles of the same page.
+ *  2. Paint each tile into a reusable square input bitmap through the same [Letterbox] the
+ *     decoder will use to undo it, on the grey the model was trained with.
  *  3. Pack it as an NCHW float tensor, RGB, 0..1.
  *  4. Run. The session is created once, lazily, and lives until [close]; a [Mutex] means one
  *     inference at a time, so the reusable buffers are never shared.
@@ -49,9 +56,9 @@ import java.nio.FloatBuffer
  * failed, navigation stays exactly as upstream Mihon's, and the failure is remembered so no
  * later page pays for the attempt again.
  *
- * Cancellation is honoured between the steps and not inside `run`, which is a blocking native
- * call. That is the guarantee phase P8 wrote down: a cancelled detection's answer is discarded,
- * not that its work is interrupted.
+ * Cancellation is honoured between the steps, and between a spread's two halves, but never
+ * inside `run`, which is a blocking native call. That is the guarantee phase P8 wrote down: a
+ * cancelled detection's answer is discarded, not that its work is interrupted.
  */
 class OnnxBubbleDetector(
     private val context: Context,
@@ -113,37 +120,60 @@ class OnnxBubbleDetector(
         }
     }
 
-    private fun infer(image: BubbleDetectionImage): List<BubbleDetection> {
+    private suspend fun infer(image: BubbleDetectionImage): List<BubbleDetection> {
         val session = openSession()
-        val letterbox = Letterbox(image.width, image.height, inputSize)
+        val tiles = PageTiles.of(image.width, image.height)
+        val page = decodeReduced(image, longestTileSide(tiles, image))
 
-        val page = decodeReduced(image)
-        val tensor = try {
-            paintInput(page, letterbox)
-            packTensor()
+        val started = System.nanoTime()
+        val found = ArrayList<BubbleDetection>()
+        try {
+            for (tile in tiles) {
+                // Between the halves, where there is something to give up: the page is decoded
+                // and the first half's answer is already worthless if the reader has moved on.
+                coroutineContext.ensureActive()
+                val letterbox = Letterbox(
+                    sourceWidth = sidePixels(tile.width, image.width),
+                    sourceHeight = sidePixels(tile.height, image.height),
+                    inputSize = inputSize,
+                )
+                paintInput(page, tile, letterbox)
+                val output = run(session, packTensor())
+                YoloSegDecoder.decode(
+                    output = output.boxes,
+                    anchors = output.anchors,
+                    prototypes = output.prototypes,
+                    gridWidth = output.gridWidth,
+                    gridHeight = output.gridHeight,
+                    letterbox = letterbox,
+                ).forEach { detection ->
+                    // A box is a fraction of the tile it was found in; a fraction of the PAGE
+                    // is what every other part of this feature means by one.
+                    tile.place(detection.box)?.let { found += detection.copy(box = it) }
+                }
+            }
         } finally {
             page.recycle()
         }
-
-        val started = System.nanoTime()
-        val output = run(session, tensor)
         val elapsedMs = (System.nanoTime() - started) / 1_000_000
 
-        val found = YoloSegDecoder.decode(
-            output = output.boxes,
-            anchors = output.anchors,
-            prototypes = output.prototypes,
-            gridWidth = output.gridWidth,
-            gridHeight = output.gridHeight,
-            letterbox = letterbox,
-        )
+        val merged = if (tiles.size > 1) PageTiles.merge(found) else found
         logcat(LogPriority.INFO) {
-            val shaped = found.count { it.shape != null }
-            "BubbleZoom detect ${image.width}x${image.height} -> ${found.size} bubbles " +
+            val shaped = merged.count { it.shape != null }
+            val halves = if (tiles.size > 1) " in ${tiles.size} tiles" else ""
+            "BubbleZoom detect ${image.width}x${image.height}$halves -> ${merged.size} bubbles " +
                 "($shaped shaped) in ${elapsedMs}ms"
         }
-        return found
+        return merged
     }
+
+    /** A tile's side in source pixels, never zero however thin the fraction. */
+    private fun sidePixels(fraction: Float, pageSide: Int): Int =
+        (fraction * pageSide).roundToInt().coerceIn(1, pageSide)
+
+    /** The longest side any one tile has, which is what the decode has to keep detail for. */
+    private fun longestTileSide(tiles: List<PageTiles.Tile>, image: BubbleDetectionImage): Int =
+        tiles.maxOf { maxOf(sidePixels(it.width, image.width), sidePixels(it.height, image.height)) }
 
     private fun openSession(): OrtSession {
         session?.let { return it }
@@ -185,9 +215,12 @@ class OnnxBubbleDetector(
      * common scanlation case, and holding it at full size in ARGB is the second copy of a page
      * the rules forbid; decoding it at 600 and letting the model see it upscaled a hair is
      * the better trade, and pages small enough that full size is cheap still get it.
+     *
+     * [longSide] is the longest side of the largest TILE, not of the page: a spread halved into
+     * two looks must not be decoded so coarsely that each half is left with fewer pixels than
+     * an ordinary page would have had.
      */
-    private fun decodeReduced(image: BubbleDetectionImage): Bitmap {
-        val longSide = maxOf(image.width, image.height)
+    private fun decodeReduced(image: BubbleDetectionImage, longSide: Int): Bitmap {
         var sample = 1
         while (longSide / (sample * 2) >= inputSize) sample *= 2
         if (sample == 1 && longSide >= inputSize * BubbleDetectionConfig.FULL_DECODE_BELOW) sample = 2
@@ -200,22 +233,31 @@ class OnnxBubbleDetector(
             ?: throw IOException("page could not be decoded")
     }
 
-    private fun paintInput(page: Bitmap, letterbox: Letterbox) {
+    private fun paintInput(page: Bitmap, tile: PageTiles.Tile, letterbox: Letterbox) {
         val target = inputBitmap ?: Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
             .also { inputBitmap = it }
         val canvas = Canvas(target)
         canvas.drawColor(LETTERBOX_FILL)
-        // The decoded page is smaller than the source by the sample size, so the scale is
-        // taken against ITS size; the letterbox geometry itself came from the source dimensions
-        // and only the destination rectangle matters.
-        val matrix = Matrix().apply {
-            setScale(
-                letterbox.scaledWidth.toFloat() / page.width,
-                letterbox.scaledHeight.toFloat() / page.height,
-            )
-            postTranslate(letterbox.padX.toFloat(), letterbox.padY.toFloat())
-        }
-        canvas.drawBitmap(page, matrix, paint)
+        // Source and destination rectangles rather than a matrix, so the tile is the only thing
+        // that lands in the input: a matrix scales the whole decoded page, which would paint the
+        // neighbouring half over the grey padding the model expects there. The decoded page is
+        // smaller than the source by the sample size, so the source rectangle is taken against
+        // ITS size; the letterbox geometry came from the source and decides the destination.
+        val left = (tile.x * page.width).roundToInt().coerceIn(0, page.width - 1)
+        val top = (tile.y * page.height).roundToInt().coerceIn(0, page.height - 1)
+        val source = Rect(
+            left,
+            top,
+            ((tile.x + tile.width) * page.width).roundToInt().coerceIn(left + 1, page.width),
+            ((tile.y + tile.height) * page.height).roundToInt().coerceIn(top + 1, page.height),
+        )
+        val destination = Rect(
+            letterbox.padX,
+            letterbox.padY,
+            letterbox.padX + letterbox.scaledWidth,
+            letterbox.padY + letterbox.scaledHeight,
+        )
+        canvas.drawBitmap(page, source, destination, paint)
     }
 
     /** ARGB pixels to three float planes, R then G then B, each 0..1. */
