@@ -1,9 +1,20 @@
 package eu.kanade.tachiyomi.ui.reader.bubblezoom
 
-import android.graphics.PointF
+import android.graphics.Bitmap
+import android.os.SystemClock
 import android.view.ViewGroup
 import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import logcat.LogPriority
+import tachiyomi.core.common.util.system.logcat
+import kotlin.coroutines.coroutineContext
 
 /**
  * The page's identity as Bubble Zoom sees it.
@@ -17,26 +28,25 @@ fun ReaderPage.bubblePageKey(): BubblePageKey = BubblePageKey(this)
  * Turns the session's answer for one page into what that page shows, and owns every view the
  * feature puts on screen.
  *
- * Two presentations, one decision per bubble. The preferred one lifts the bubble as a card and
- * leaves the page where it is; when the card cannot be built — an animated page, an image not
- * ready, a bubble partly off screen, a magnification outside the band where a frozen capture
- * still adds detail — the phase P4 camera move takes over instead. The reader sees one or the
- * other, never neither, and never both.
+ * One presentation. The focused bubble is lifted as a card and the page underneath never moves.
+ * Amendment E2 removed the alternative — the phase P4 camera, which zoomed the page itself
+ * whenever the card could not be built — so a bubble the card refuses is a silent stop in the
+ * walk: nothing is shown, the focus stays where it is, and the next step moves past it.
+ *
+ * The card is built twice. `show` puts an instant replay of the view's tiles on screen; then
+ * this class decodes the balloon's own pixels from the bytes the session kept for the page and
+ * hands them to the same card through `upgrade`. The decode runs on the session's scope, which
+ * the viewer cancels — never on the holder's, a MainScope nobody cancels — and is cancelled
+ * again here whenever the card it was for goes. A result that lands late is checked against the
+ * card it was for before it is used.
  *
  * The views are created here rather than by the page holder so that the holder never has to
  * remember to take them away again. With the feature off nothing is added to the view tree at
- * all, and switching it off while a page is being read removes what is there and gives the page
- * its camera back — which is the part that is easy to forget, because a card that is merely
- * cleared leaves a page still zoomed on a bubble nobody can see any more.
+ * all, and switching it off while a page is being read removes what is there.
  *
- * One instance per page holder. It remembers the scale and centre from before the first camera
- * move of a walk, so the page returns to exactly where the reader left it rather than to a
- * recomputed "default" that Mihon does not actually use.
+ * One instance per page holder.
  */
-class BubbleZoomPagePresenter {
-
-    private var savedScale: Float? = null
-    private var savedCenter: PointF? = null
+class BubbleZoomPagePresenter(private val session: BubbleZoomSession) {
 
     /** Set while the card exists, so a page move made by the reader can drop a stale capture. */
     private var card: BubbleZoomOverlayView? = null
@@ -46,6 +56,22 @@ class BubbleZoomPagePresenter {
 
     /** What the last [apply] was told, so [isHoldingThePage] can answer without asking again. */
     private var enabled = false
+
+    /** The bubble the card shows, so a re-apply of the same state does not rebuild the card. */
+    private var shown: BubbleDetection? = null
+
+    /** The sharp decode for the current card, while it is still running. */
+    private var decode: Job? = null
+
+    /**
+     * One decode at a time for this page.
+     *
+     * Cancelling a decode does not stop it: the work is a blocking native call with nowhere to
+     * suspend. Without this, a walk held on the volume key starts one full region decode per
+     * step and they pile up on an unbounded IO pool, each holding a native copy of the page.
+     * With it, the next decode waits, and finds the job already cancelled when its turn comes.
+     */
+    private val decodeLock = Mutex()
 
     fun apply(
         host: ViewGroup,
@@ -60,7 +86,7 @@ class BubbleZoomPagePresenter {
         val dead = state is BubbleZoomState.Error && state.page == page
         enabled = state !is BubbleZoomState.Disabled && !dead
         if (!enabled) {
-            switchOff(host, imageView)
+            switchOff(host)
             return
         }
         if (imageView == null || !imageView.isReady) return
@@ -74,24 +100,18 @@ class BubbleZoomPagePresenter {
             ?.map { it.box }
             .orEmpty()
         applyBoxes(host, imageView, presentation.showBoxes, detected)
-        present(imageView, presentation.state.focusFor(page))
+        present(page, presentation.state.focusFor(page))
     }
 
     /**
-     * Whether the page must not be moved out from under the feature.
-     *
-     * Two ways that can be true: a card is lifted from a frozen capture, or the P4 camera has
-     * framed a bubble and the page is no longer at its fit scale. Both are asked as one question
-     * so that the reader's delayed landscape re-frame has a single thing to consult — and so
-     * that with the feature off the answer is a plain false and the re-frame behaves exactly as
-     * upstream Mihon's does.
+     * Whether the page must not be moved out from under the feature: a card is lifted from a
+     * frozen capture. Asked by the reader's delayed landscape re-frame, and a plain false with
+     * the feature off, so that re-frame behaves exactly as upstream Mihon's does.
      */
-    fun isHoldingThePage(imageView: SubsamplingScaleImageView?): Boolean {
-        if (!enabled) return false
-        if (card?.isShowing == true) return true
-        val image = imageView ?: return false
-        return image.isReady && image.scale != image.minScale
-    }
+    fun isHoldingThePage(): Boolean = enabled && card?.isShowing == true
+
+    /** Whether a point in the holder's coordinates falls on the lifted card. */
+    fun cardContains(x: Float, y: Float): Boolean = card?.cardContains(x, y) == true
 
     /** The boxes are drawn in view space, so they are stale the moment the image moves. */
     fun invalidateBoxes() {
@@ -100,59 +120,96 @@ class BubbleZoomPagePresenter {
 
     /**
      * The reader moved the page themselves, so a frozen card no longer matches what is under it.
-     *
-     * The card goes, and the remembered camera is forgotten with it: the reader has taken over,
-     * and animating the page back to where Bubble Zoom found it would undo their own gesture.
-     * The caller is expected to reset the session as well, so that what the model believes and
-     * what is on screen do not drift apart.
+     * The card goes. The caller is expected to reset the session as well, so that what the model
+     * believes and what is on screen do not drift apart.
      */
     fun onPageMovedByUser() {
+        cancelDecode()
+        shown = null
         card?.onPageMoved()
-        savedScale = null
-        savedCenter = null
     }
 
-    /** The holder is going away. Everything goes with it, with no animation and no restore. */
+    /** The holder is going away. Everything goes with it, with no animation. */
     fun release(host: ViewGroup) {
+        cancelDecode()
+        shown = null
         card?.clear()
         detachViews(host)
-        savedScale = null
-        savedCenter = null
         enabled = false
     }
 
-    private fun present(imageView: SubsamplingScaleImageView, focus: BubbleDetection?) {
+    private fun present(page: BubblePageKey, focus: BubbleDetection?) {
         if (focus == null) {
+            cancelDecode()
+            shown = null
             card?.dismiss()
-            restoreCamera(imageView)
             return
         }
+        // The collector re-applies on every emission and again when the image finishes loading.
+        // The same bubble twice is not a new card, and must not be a second decode either.
+        if (focus == shown && card?.isShowing == true) return
+        cancelDecode()
 
-        // The card is tried first and captures before anything is torn down, so a refusal here
-        // leaves whatever is already shown untouched.
-        if (card?.show(focus.box) == true) {
-            // A card means the page itself never moved, so there is nothing to restore later.
-            restoreCamera(imageView)
+        val token = card?.show(focus.box)
+        if (token == null) {
+            // Nothing to show, and since E2 there is no second path. The focus is left where it
+            // is on purpose: un-focusing here would put the walk back at the resting page, the
+            // next step would select this same bubble, be refused again, and consume the event
+            // — a page that can never be turned by tap, volume key or swipe. Leaving it focused
+            // costs one silent stop instead, and the next step moves past it.
+            shown = null
+            card?.dismiss()
+            logcat(LogPriority.WARN) { "BubbleZoom card refused for ${focus.box}" }
             return
         }
-
-        card?.dismiss()
-        if (savedScale == null) {
-            savedScale = imageView.scale
-            savedCenter = imageView.center
-        }
-        imageView.focusOnBubble(focus.box)
+        shown = focus
+        sharpen(page, token)
     }
 
-    /**
-     * Gives the page back exactly as the feature found it, then takes the views away.
-     *
-     * The camera first and the views second: a page the P4 camera had framed is still zoomed on
-     * a bubble, and dropping the card without restoring it would leave the reader staring at a
-     * magnified fragment of a page with no way back short of a page turn.
-     */
-    private fun switchOff(host: ViewGroup, imageView: SubsamplingScaleImageView?) {
-        if (imageView != null && imageView.isReady) restoreCamera(imageView)
+    /** Replaces the card's replayed tiles with the balloon decoded from the page's own bytes. */
+    private fun sharpen(page: BubblePageKey, token: CardToken) {
+        val image = session.imageFor(page) ?: return
+        val region = BubbleCardGeometry.regionOf(token.padded, image.width, image.height) ?: return
+        val sample = BubbleCardGeometry.sampleSize(region, token.widthPx.toFloat(), token.heightPx.toFloat())
+        decode = session.scope.launch {
+            // Written from inside the IO block rather than returned from it: a cancelled
+            // `withContext` discards its result, and a bitmap discarded that way is never
+            // recycled. Handing it out through a holder means the `finally` below always sees
+            // it, whether this coroutine finished or was cancelled on the way back.
+            val decoded = arrayOfNulls<Bitmap>(1)
+            try {
+                val started = SystemClock.elapsedRealtime()
+                decodeLock.withLock {
+                    // Its turn came after the card it was for had already gone.
+                    coroutineContext.ensureActive()
+                    withContext(Dispatchers.IO) { decoded[0] = BubbleCardDecoder.decode(image, region, sample) }
+                }
+                val sharp = decoded[0]
+                if (sharp == null) {
+                    this@BubbleZoomPagePresenter.logcat(LogPriority.WARN) {
+                        "BubbleZoom card decode refused for ${region.width}x${region.height}/$sample"
+                    }
+                    return@launch
+                }
+                this@BubbleZoomPagePresenter.logcat(LogPriority.INFO) {
+                    "BubbleZoom card ${region.width}x${region.height}/$sample -> ${sharp.width}x${sharp.height}" +
+                        " in ${SystemClock.elapsedRealtime() - started}ms"
+                }
+                if (card?.upgrade(token, sharp) == true) decoded[0] = null
+            } finally {
+                decoded[0]?.recycle()
+            }
+        }
+    }
+
+    private fun cancelDecode() {
+        decode?.cancel()
+        decode = null
+    }
+
+    private fun switchOff(host: ViewGroup) {
+        cancelDecode()
+        shown = null
         card?.clear()
         detachViews(host)
     }
@@ -184,15 +241,5 @@ class BubbleZoomPagePresenter {
         }
         val overlay = boxes ?: BubbleZoomDebugOverlay.attach(host, imageView).also { boxes = it }
         overlay.boxes = detected
-    }
-
-    private fun restoreCamera(imageView: SubsamplingScaleImageView) {
-        val scale = savedScale
-        val center = savedCenter
-        savedScale = null
-        savedCenter = null
-        if (scale != null && center != null) {
-            imageView.resetBubbleZoom(scale, center)
-        }
     }
 }

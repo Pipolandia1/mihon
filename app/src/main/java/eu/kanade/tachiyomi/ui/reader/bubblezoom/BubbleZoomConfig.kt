@@ -28,11 +28,45 @@ object BubbleZoomConfig {
     const val TARGET_WIDTH_FRACTION = 0.60f
     const val TARGET_HEIGHT_FRACTION = 0.60f
 
-    /** Duration of the animation onto a bubble. */
-    const val FOCUS_DURATION_MS = 200L
+    /**
+     * How much larger than on screen the card shows the balloon, against the scale the page is
+     * drawn at right now.
+     *
+     * Google Play Books, measured on four cards: 2.55–3.32×, with the width fraction above as
+     * the ceiling that stops a wide caption growing past the screen. Without this term a small
+     * balloon is framed to fill 60 % of the viewport — 4× and more on a real page — which the
+     * P9 verification saw refused for every real balloon there was.
+     */
+    const val CARD_MAGNIFICATION = 2.8f
 
-    /** Duration of the animation back to the page's default fit. */
-    const val RESET_DURATION_MS = 200L
+    /**
+     * How far outside a detected box a double tap may land and still mean that balloon, as a
+     * fraction of the box's smallest side.
+     *
+     * The detector boxes the text, not the balloon (P9: 31–69 % of the balloon's area), so a
+     * reader who double taps the balloon's margin is still aiming at it. Half the text's
+     * smallest side reaches the outline of every balloon measured and no neighbour's.
+     */
+    const val DOUBLE_TAP_HIT_TOLERANCE = 0.5f
+
+    /** Shortest vertical drag, in dp, that counts as a swipe between bubbles. */
+    const val SWIPE_MIN_DISTANCE_DP = 48f
+
+    /** Slowest vertical fling, in dp per second, that counts as a swipe between bubbles. */
+    const val SWIPE_MIN_VELOCITY_DP_PER_S = 400f
+
+    /**
+     * Swipe up is next and swipe down is previous: the scroll convention, and what Google Play
+     * Books does (measured six times). One constant to flip for the other reading.
+     */
+    const val SWIPE_UP_IS_NEXT = true
+
+    /**
+     * Most pixels a card's region decode may produce; past it the sample size doubles. A card
+     * is a few hundred pixels on a side, so anything above this is detail no screen can show,
+     * at a memory cost the reader would feel.
+     */
+    const val CARD_MAX_DECODE_PIXELS = 2_000_000
 
     /** How long the lifted card takes to appear, and to morph from one bubble to the next. */
     const val CARD_ENTER_DURATION_MS = 200L
@@ -51,19 +85,6 @@ object BubbleZoomConfig {
 
     /** Width of the hairline that keeps the card's edge readable over white paper, in dp. */
     const val CARD_BORDER_WIDTH_DP = 1f
-
-    /**
-     * The card is only worth lifting inside this magnification band, measured against the scale
-     * the page is already at.
-     *
-     * Below the lower bound it would be barely larger than the bubble already on screen. Above
-     * the upper bound it stops adding detail: the capture is frozen at the tile resolution the
-     * page is being drawn at, while the P4 camera, by actually changing the view's scale, can
-     * cross a power-of-two threshold and have the library decode finer tiles. Past that point
-     * the camera genuinely shows more rather than merely bigger, so it takes over.
-     */
-    const val CARD_MIN_MAGNIFICATION = 1.1f
-    const val CARD_MAX_MAGNIFICATION = 2.6f
 
     /**
      * Long side, in pixels, the capture is reduced to before [BubbleMask] traces its outline.

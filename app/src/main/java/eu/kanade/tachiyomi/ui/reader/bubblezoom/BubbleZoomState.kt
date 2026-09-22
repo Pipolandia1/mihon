@@ -104,9 +104,9 @@ sealed interface BubbleZoomState {
  * observe the states in between: a page that is no longer the subject always answers null, so it
  * returns to rest even if every intermediate state was skipped.
  *
- * Phase P4's presentation turns a non-null answer into `focusOnBubble` and a null one into
- * `resetBubbleZoom`. Phase P16 turns the same answer into a lifted card and a dismissal. One
- * intent, two presentations, no second channel.
+ * The presenter turns a non-null answer into a lifted card and a null one into a dismissal.
+ * One intent, one presentation, no second channel: phase P4's camera, which used to be the
+ * other reading of the same answer, went with amendment E2.
  */
 fun BubbleZoomState.focusFor(page: BubblePageKey): BubbleDetection? {
     if (this !is BubbleZoomState.Ready) return null

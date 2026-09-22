@@ -367,13 +367,10 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
      */
     protected open fun moveRight() {
         // The only place navigation branches. Tap zones, volume keys and DPAD all arrive here.
-        val endedBubbleWalk = bubbleZoom.stepTowards(readingForward = this !is R2LPagerViewer)
-        if (endedBubbleWalk == BubbleZoomStep.CONSUMED) return
+        if (bubbleZoom.stepTowards(readingForward = this !is R2LPagerViewer) == BubbleZoomStep.CONSUMED) return
         if (pager.currentItem != adapter.count - 1) {
             val holder = (currentPage as? ReaderPage)?.let(::getPageHolder)
-            if (holder != null && config.navigateToPan && endedBubbleWalk == BubbleZoomStep.IGNORED &&
-                holder.canPanRight()
-            ) {
+            if (holder != null && config.navigateToPan && holder.canPanRight()) {
                 holder.panRight()
             } else {
                 pager.setCurrentItem(pager.currentItem + 1, config.usePageTransitions)
@@ -385,13 +382,10 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
      * Moves to the page at the left.
      */
     protected open fun moveLeft() {
-        val endedBubbleWalk = bubbleZoom.stepTowards(readingForward = this is R2LPagerViewer)
-        if (endedBubbleWalk == BubbleZoomStep.CONSUMED) return
+        if (bubbleZoom.stepTowards(readingForward = this is R2LPagerViewer) == BubbleZoomStep.CONSUMED) return
         if (pager.currentItem != 0) {
             val holder = (currentPage as? ReaderPage)?.let(::getPageHolder)
-            if (holder != null && config.navigateToPan && endedBubbleWalk == BubbleZoomStep.IGNORED &&
-                holder.canPanLeft()
-            ) {
+            if (holder != null && config.navigateToPan && holder.canPanLeft()) {
                 holder.panLeft()
             } else {
                 pager.setCurrentItem(pager.currentItem - 1, config.usePageTransitions)

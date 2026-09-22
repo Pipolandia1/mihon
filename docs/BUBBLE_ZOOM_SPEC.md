@@ -67,6 +67,94 @@ P8, P9 e P13 seguem como estavam.
 Onde não dá para traçar — balão aberto, legenda sem borda, balão do mesmo tom da arte em
 volta — o card recusa a silhueta e volta ao retângulo da P16. Degradação, não falha.
 
+### Emenda E2 — o card é a única apresentação, e o gesto é o do Play Books
+
+Decidida pelo usuário depois da P9, com a verificação numa HQ real na mão: numa página real
+o card nunca aparecia (as caixas de texto pedem 4× na mediana e a faixa de magnificação
+parava em 2,6×), e o leitor via a câmera da P4 ampliando a página. O pedido: **nunca dar
+zoom na página**; sempre recortar o balão e ampliar só ele; funcionar como o Google Play
+Books — duplo-toque num balão ativa o Bubble Zoom naquele balão, swipe vai ao próximo e ao
+anterior, duplo-toque de novo desativa.
+
+O Play Books foi observado no emulador em 21/09/2026, numa amostra de HQ, com toques
+injetados por evdev para ter timing exato (capturas em `tools/shots/pb-*.png`, gitignored).
+O que ele faz, medido e não lembrado:
+
+- **Duplo-toque num balão** → card com a silhueta exata do balão, cauda inclusa, sombra
+  projetada, página intocada por baixo (sem escurecer), balão original ainda visível onde o
+  card não cobre. Ampliação em quatro cards: **2,55–3,32×** do tamanho em tela; centrado no
+  balão nos casos pequenos; os grandes param em ~63 % da largura da tela (uma legenda de
+  258 px virou 676 px). Em dois casos o card saiu deslocado do centro (até 150 px), por regra
+  que não identifiquei.
+- **Duplo-toque em arte vazia** → o zoom nativo da página (2×), como em qualquer leitor. Com
+  card erguido, dispensa o card e dá o mesmo zoom.
+- **Duplo-toque noutro balão** com card erguido → pula para ele. Sobre o próprio card → nada.
+- **Swipe vertical com card**: para cima = próximo, para baixo = anterior. O pedido dizia o
+  contrário; é uma constante (`SWIPE_UP_IS_NEXT`). **Sem card o swipe também anda**: partindo
+  da página inteira, um swipe para baixo vira para a página anterior e já entra no último
+  balão dela (capturas `pb-G2`/`pb-G3`: a legenda "THIS PRISON OF GODS" aparece ampliada e com
+  sombra na página 1). Uma frase anterior desta seção dizia que não fazia nada; era leitura
+  errada das mesmas capturas.
+- **Toque na borda** = próximo/anterior balão, também sem card (entra no primeiro/último);
+  **toque no centro** = com card dispensa, sem card abre o menu; **teclas de volume** = bordas
+  (dica 3 do próprio app). É o interruptor "Move between bubbles with Bubble Zoom" do Play
+  Books ligado, que é o padrão; desligado não foi testado.
+- **Fronteiras**: depois do último balão, "próximo" mostra a página seguinte inteira; de
+  novo, o primeiro balão dela. Antes do primeiro, "anterior" mostra a página atual inteira;
+  de novo, o último balão da anterior. Cada página tem as paradas
+  `[inteira, b0 … bN−1]` — exatamente o modelo que a P5/P6 construíram.
+- **Swipe horizontal com card** → vira a página, o card some.
+- Animação de entrada: não gravada (o emulador caiu antes); fica para a verificação da E2.
+
+O que a E2 muda no que está construído:
+
+1. **A câmera da P4 sai.** `BubbleZoomFocus.kt` e o fallback do presenter são apagados; o
+   card é a única apresentação. Se o card não puder ser construído (balão fora da tela,
+   captura falhou), nada acontece — não há segundo caminho, e a página não se move.
+2. **A fonte de pixels do card é a imagem em resolução nativa.** `BitmapRegionDecoder`
+   sobre os bytes que o holder já entrega à sessão para a detecção — retidos por página
+   enquanto o holder vive — decodificando só o retângulo do balão, fora da thread principal.
+   A captura instantânea dos tiles da view vira placeholder até o nítido chegar. A faixa de
+   magnificação (1,1–2,6×) some junto com a razão que a justificava. O tamanho do card passa
+   a ser `CARD_MAGNIFICATION` (2,8×, do Play Books) do tamanho em tela, limitado pelas
+   frações de viewport que já existem (~60 %).
+3. **Duplo-toque num balão ativa o Bubble Zoom nele** — a P15, agora obrigatória e com regra
+   fixa: hit test puro sobre a lista Ready, ponto convertido por `viewToSourceCoord`, menor
+   caixa que contém o ponto, tolerância `DOUBLE_TAP_HIT_TOLERANCE` porque as caixas são de
+   texto e não de balão. Sem balão sob o dedo, ou antes de a detecção terminar, o duplo-toque
+   é o zoom nativo do Mihon, intocado. Com card erguido: noutro balão pula; sobre o card ou
+   em arte vazia **desativa** e o gesto é consumido (o pedido; o Play Books não desativa
+   sobre o card e dá zoom na arte vazia — aqui não há zoom de página nascido do Bubble Zoom).
+   O toque sobre o card é decidido pelo **retângulo do card**, não pelo que a página tem por
+   baixo: o card é quase três vezes o balão e cobre os vizinhos, então perguntar à página
+   pularia para um deles em vez de dispensar.
+4. **Swipe vertical com card erguido**: para cima próximo, para baixo anterior. **Sem card o
+   swipe é do Mihon** — aqui divergimos do Play Books de propósito: no pager horizontal do
+   Mihon um arrasto vertical numa página em encaixe não faz nada, e fazer um flick para baixo
+   virar a página para trás seria uma regressão de leitura normal com a preferência ligada. O
+   card é o que o leitor pediu com o duplo-toque, e é o que autoriza tomar gestos. No pager
+   vertical, onde swipe vertical vira página, o card erguido toma o gesto; sem card, vira
+   página como sempre.
+5. **Toques, teclas de volume, DPAD e fronteiras ficam como a P6 fez**, que é o Play Books
+   com o interruptor ligado. O centro dispensa (P16). Nada disso muda.
+6. **Enquanto há card erguido a página por baixo não recebe toques de um dedo** (a image
+   view não vê o gesto, então não há pan nem zoom de página sob um card congelado); um
+   segundo dedo dispensa o card e a pinça é ignorada até o gesto seguinte; o swipe horizontal
+   vira a página como sempre.
+
+**Três desvios do Play Books, todos deliberados:** sem card o swipe é do Mihon (acima);
+duplo-toque sobre o card desativa (no Play Books não faz nada); duplo-toque em arte vazia com
+card erguido desativa em vez de ampliar a página. Os três vêm do pedido do usuário ou da
+regra de que a página nunca é ampliada por esta feature.
+
+O que **não** muda: `BubbleBox` retangular e normalizado; detector, cache e ordem (P10–P13);
+a máquina de estados da P5 (Ready com índice −1…N−1, `PageEntry`); preferência desligada =
+vanilla. **P14 e P15 são absorvidas pela E2.**
+
+Fora de escopo continua: manter o card ao girar a tela (a activity é recriada); *crop
+borders* (com a preferência ligada o quadro da image view não é o do arquivo — o Bubble Zoom
+fica desligado nessas páginas); orientação EXIF.
+
 ## 4. Definição de sucesso
 
 1. Página carrega normalmente e **imediatamente**.
@@ -98,7 +186,7 @@ BubbleZoomController ──── BubbleZoomState
                 ▼
      PagerPageHolder → ReaderPageImageView
                 │
-                ├── pageView (subsampling image view)  ← animateScaleAndCenter
+                ├── pageView (subsampling image view)  ← nunca animada (E2)
                 └── BubbleZoomOverlayView              ← desenho / debug
 ```
 
@@ -175,6 +263,9 @@ isso; use os métodos dela.
 
 Zoom alvo: a região (com padding) deve ocupar ~**60% da largura útil** da tela,
 limitado por `minScale` e `maxScale` da view. Animação de **180–220 ms**.
+
+> **Emenda E2:** a view nunca é animada — só o card. O alvo é `CARD_MAGNIFICATION`
+> (2,8×) do tamanho em tela, limitado às frações de ~60 % acima.
 
 ---
 
@@ -311,8 +402,8 @@ Esta é a **única** lista de fases. Os prompts em `BUBBLE_ZOOM_PROMPTS.md` segu
 | P11 | Cache em memória + prefetch (current, +1, +2) | sim |
 | P12 | Detecção de painéis + `BubbleOrderResolver` + testes | sim |
 | P13 | Cache em disco com `modelVersion` | sim |
-| P14 | Teclas de volume | sim |
-| P15 | Double tap seleciona o balão sob o dedo | sim |
+| P14 | Teclas de volume — **absorvida pela E2** (já andam pelo gancho da P6) | sim |
+| P15 | Double tap seleciona o balão sob o dedo — **é a E2** | sim |
 | P16 | `BubbleZoomOverlayView` (recorte visual animado) | sim |
 | P17 | Debug HUD (índice, confidence, tempo, contagens) | sim |
 | P18 | Dataset de 30 páginas + medição + tuning de threshold | sim |

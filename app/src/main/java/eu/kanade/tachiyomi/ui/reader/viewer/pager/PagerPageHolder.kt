@@ -3,12 +3,14 @@ package eu.kanade.tachiyomi.ui.reader.viewer.pager
 import android.annotation.SuppressLint
 import android.content.Context
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.ViewGroup.LayoutParams
 import androidx.core.view.isVisible
 import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
 import eu.kanade.presentation.util.formattedMessage
 import eu.kanade.tachiyomi.databinding.ReaderErrorBinding
 import eu.kanade.tachiyomi.source.model.Page
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomGestures
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomPagePresenter
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.bubblePageKey
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.detector.bubbleDetectionImage
@@ -73,7 +75,14 @@ class PagerPageHolder(
      * position: a right-to-left viewer reverses the adapter's list.
      */
     private val bubbleZoomKey = page.bubblePageKey()
-    private val bubbleZoomPresenter = BubbleZoomPagePresenter()
+    private val bubbleZoomPresenter = BubbleZoomPagePresenter(viewer.bubbleZoom)
+    private val bubbleZoomGestures = BubbleZoomGestures(
+        host = this,
+        viewer = viewer,
+        page = bubbleZoomKey,
+        imageView = { bubbleZoomImageView },
+        cardContains = bubbleZoomPresenter::cardContains,
+    )
     private var bubbleZoomJob: Job? = null
 
     init {
@@ -86,6 +95,10 @@ class PagerPageHolder(
             viewer.bubbleZoom.presentation.collect { applyBubbleZoom() }
         }
     }
+
+    /** Bubble Zoom's gestures go first: a double tap on a balloon, and any touch while its card is up. */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean =
+        bubbleZoomGestures.dispatch(ev) || super.dispatchTouchEvent(ev)
 
     /**
      * Shows whatever the session currently says for this page.
@@ -322,9 +335,8 @@ class PagerPageHolder(
         viewer.bubbleZoom.reset()
     }
 
-    /** A lifted card or a framed camera vetoes the delayed landscape re-frame. */
-    override fun isBubbleZoomPresenting(): Boolean =
-        bubbleZoomPresenter.isHoldingThePage(bubbleZoomImageView)
+    /** A lifted card vetoes the delayed landscape re-frame. */
+    override fun isBubbleZoomPresenting(): Boolean = bubbleZoomPresenter.isHoldingThePage()
 
     /**
      * Called when an image fails to decode.

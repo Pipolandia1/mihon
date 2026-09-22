@@ -5,20 +5,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * What a navigation event did, from the reader's point of view.
+ * What a navigation event became. Two outcomes: the event moved between bubbles and the reader
+ * must do nothing else, or it was not Bubble Zoom's and the reader behaves exactly as upstream.
  *
- * Three outcomes and not two, because the reader must treat the last one of a walk differently
- * from an ordinary page turn: `config.navigateToPan` makes a tap pan the image instead of
- * turning the page while the image can still be panned, and a page that has just been zoomed
- * onto a bubble always can. Without [ENDED_WALK] the tap that should leave the page would drag
- * the artwork sideways instead.
+ * There used to be a third, for the move that ended a walk: the phase P4 camera left the page
+ * zoomed, and upstream's `navigateToPan` would have panned it instead of turning it. Amendment
+ * E2 took the camera out — the page is never zoomed by the feature — so upstream's own check
+ * now answers that case correctly and the walk's end is an ordinary page turn.
  */
 enum class BubbleZoomStep {
     /** Moved to another bubble. The reader must not also turn the page. */
     CONSUMED,
-
-    /** The walk just ended. Turn the page, but do not pan. */
-    ENDED_WALK,
 
     /** Nothing to do with bubbles. Behave exactly as upstream Mihon does. */
     IGNORED,
@@ -31,13 +28,8 @@ enum class BubbleZoomStep {
  * the caller knows and this class deliberately does not.
  */
 fun BubbleZoomController.stepTowards(readingForward: Boolean): BubbleZoomStep {
-    val wasFocused = isFocused
     val moved = if (readingForward) tryMoveNext() else tryMovePrevious()
-    return when {
-        moved -> BubbleZoomStep.CONSUMED
-        wasFocused -> BubbleZoomStep.ENDED_WALK
-        else -> BubbleZoomStep.IGNORED
-    }
+    return if (moved) BubbleZoomStep.CONSUMED else BubbleZoomStep.IGNORED
 }
 
 /**

@@ -17,14 +17,28 @@ import android.view.animation.DecelerateInterpolator
 import androidx.core.animation.doOnEnd
 import androidx.core.graphics.withSave
 import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
+import logcat.LogPriority
+import tachiyomi.core.common.util.system.logcat
+
+/** Identifies one lifted card, and carries what a sharp decode of it needs. */
+interface CardToken {
+    /** The bubble's box with [BubbleZoomConfig.FOCUS_PADDING] applied: what the card shows. */
+    val padded: BubbleBox
+
+    /** The card's size on screen, which is all a decode needs to pick its sample size. */
+    val widthPx: Int
+    val heightPx: Int
+}
 
 /**
  * Lifts the focused bubble as a card above the page, leaving the page itself where it is.
  *
- * The card's pixels are a replay of the page view through a magnifying matrix, captured once
- * per focused bubble into a card-sized bitmap. Nothing is re-decoded and no second copy of the
- * page is kept: the replay reads whatever tiles the image view is already holding, which for a
- * page whose fit scale is above about two thirds is the full-resolution image.
+ * The card's pixels arrive twice. First a replay of the page view through a magnifying matrix,
+ * captured at once into a card-sized bitmap, so the card is on screen the frame it was asked
+ * for — only as sharp as the tiles the view holds for the fit scale, which is not very. Then,
+ * some tens of milliseconds later, the balloon's own pixels out of the page's encoded bytes,
+ * decoded by the presenter off the main thread and swapped in through [upgrade]: the same card,
+ * the same mask, native resolution. Amendment E2 in docs/BUBBLE_ZOOM_SPEC.md.
  *
  * The capture is taken once rather than replayed every frame on purpose. Drawing the live view
  * from inside [onDraw] would hold references to tile bitmaps that the library recycles as it
@@ -40,8 +54,8 @@ import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView
  * that moves the page under it — a pan, a fling, a pinch, a double tap — makes it a lie, and
  * [onPageMoved] dismisses it instead of showing stale pixels.
  *
- * The view never handles touch. "Dismiss on tap outside" cannot be built here: the pager feeds
- * its gesture detector unconditionally, so a tap consumed for dismissal would navigate as well.
+ * The view never handles touch. The gestures that are Bubble Zoom's live in [BubbleZoomGestures],
+ * ahead of the image view, where they can be taken before the library acts on them.
  */
 class BubbleZoomOverlayView(
     context: Context,
@@ -55,7 +69,14 @@ class BubbleZoomOverlayView(
      * decide what they may recycle, and three fields that must agree about which bitmap is
      * which is exactly the bookkeeping that went wrong before.
      */
-    private class Card(val bitmap: Bitmap, val mask: Bitmap?, val rect: RectF) {
+    private class Card(
+        var bitmap: Bitmap,
+        val mask: Bitmap?,
+        val rect: RectF,
+        override val padded: BubbleBox,
+        override val widthPx: Int,
+        override val heightPx: Int,
+    ) : CardToken {
         fun recycle() {
             bitmap.recycle()
             mask?.recycle()
@@ -133,44 +154,51 @@ class BubbleZoomOverlayView(
     val isShowing: Boolean get() = current != null
 
     /**
-     * Lifts [box], or returns false when this bubble is better served by the P4 camera.
+     * Whether ([x], [y]) in this view's coordinates falls on the lifted card.
      *
-     * Refusals are all cheap checks made before anything is allocated: the image must be ready
-     * and sized, the padded bubble must be wholly on screen, and the magnification must fall in
-     * the band where a frozen capture still adds detail. Failing to trace the bubble's shape is
-     * not one of them — that only costs the card its silhouette, not its existence.
+     * The resting rectangle, not the one the entrance animation is drawing: a double tap that
+     * lands while the card is still growing means the card the reader can see, and the two
+     * differ by at most the 8 % the lift starts from.
      */
-    fun show(box: BubbleBox): Boolean {
-        if (!imageView.isReady) return false
+    fun cardContains(x: Float, y: Float): Boolean = current?.rect?.contains(x, y) == true
+
+    /**
+     * Lifts [box], or returns null when it cannot: the image is not ready or has no size, or the
+     * capture bitmap could not be allocated. Since amendment E2 nothing else refuses. A balloon
+     * partly off screen is lifted from what the view can replay and completed by [upgrade], and
+     * there is no magnification band because the sharp pixels no longer come from the tiles.
+     * Failing to trace the bubble's shape only costs the card its silhouette, not its existence.
+     *
+     * The token identifies this card for [upgrade] and carries what a decode of it needs.
+     */
+    fun show(box: BubbleBox): CardToken? {
+        if (!imageView.isReady) return null
         val viewportWidth = imageView.width.toFloat()
         val viewportHeight = imageView.height.toFloat()
-        if (viewportWidth <= 0f || viewportHeight <= 0f) return false
+        if (viewportWidth <= 0f || viewportHeight <= 0f) return null
 
         val sourceWidth = imageView.sWidth.toFloat()
         val sourceHeight = imageView.sHeight.toFloat()
-        if (sourceWidth <= 0f || sourceHeight <= 0f) return false
+        if (sourceWidth <= 0f || sourceHeight <= 0f) return null
 
         val padded = box.padded(BubbleZoomConfig.FOCUS_PADDING)
         val topLeft = imageView.sourceToViewCoord(padded.x * sourceWidth, padded.y * sourceHeight)
-            ?: return false
+            ?: return null
         val bottomRight = imageView
             .sourceToViewCoord(padded.right * sourceWidth, padded.bottom * sourceHeight)
-            ?: return false
-
+            ?: return null
         val onScreen = CardRect(topLeft.x, topLeft.y, bottomRight.x, bottomRight.y)
-        if (!BubbleCardGeometry.fullyVisible(onScreen, viewportWidth, viewportHeight)) return false
 
         val scale = BubbleCardGeometry.cardScale(
             paddedWidthSourcePx = padded.width * sourceWidth,
             paddedHeightSourcePx = padded.height * sourceHeight,
             viewportWidthPx = viewportWidth,
             viewportHeightPx = viewportHeight,
+            currentViewScale = imageView.scale,
         )
-        if (!BubbleCardGeometry.magnificationAllows(scale, imageView.scale)) return false
-
         val cardWidth = padded.width * sourceWidth * scale
         val cardHeight = padded.height * sourceHeight * scale
-        if (cardWidth < 1f || cardHeight < 1f) return false
+        if (cardWidth < 1f || cardHeight < 1f) return null
 
         val target = BubbleCardGeometry.place(
             cardWidthPx = cardWidth,
@@ -184,7 +212,7 @@ class BubbleZoomOverlayView(
 
         // Captured before anything is torn down, so a refusal leaves the current card untouched
         // and the walk never flashes the bare page between two bubbles.
-        val pixels = captureCard(onScreen, cardWidth, cardHeight) ?: return false
+        val pixels = captureCard(onScreen, cardWidth, cardHeight) ?: return null
         val mask = traceShape(
             capture = pixels,
             paddedLongSourcePx = maxOf(padded.width * sourceWidth, padded.height * sourceHeight),
@@ -194,7 +222,15 @@ class BubbleZoomOverlayView(
 
         outgoing?.recycle()
         outgoing = current
-        current = Card(pixels, mask, RectF(target.left, target.top, target.right, target.bottom))
+        val card = Card(
+            bitmap = pixels,
+            mask = mask,
+            rect = RectF(target.left, target.top, target.right, target.bottom),
+            padded = padded,
+            widthPx = cardWidth.toInt().coerceAtLeast(1),
+            heightPx = cardHeight.toInt().coerceAtLeast(1),
+        )
+        current = card
         exiting = null
 
         // Rewound rather than continued. A card that replaces another arrives with progress
@@ -202,6 +238,28 @@ class BubbleZoomOverlayView(
         // the outgoing one drawn at an opacity of zero, so the walk jumps between bubbles.
         progress = 0f
         animateTo(1f, BubbleZoomConfig.CARD_ENTER_DURATION_MS)
+        return card
+    }
+
+    /**
+     * Swaps the card's replayed tiles for [sharp], the balloon decoded from the page's own bytes.
+     *
+     * Only for the card [token] was issued for, and only while it is still the current one and
+     * not on its way out — a decode that lands late is the normal case, not a corner, because
+     * a walk can outrun it. Returns whether [sharp] was taken; a caller that hears false owns it
+     * still and should recycle it. The silhouette traced from the replay is reused as it is:
+     * it is a stencil stretched over the card, and the balloon's shape did not change.
+     */
+    fun upgrade(token: CardToken, sharp: Bitmap): Boolean {
+        val card = current as? Card ?: return false
+        if (card !== token || exiting === card || sharp.isRecycled) return false
+        val mutable = if (sharp.isMutable) sharp else sharp.copy(Bitmap.Config.ARGB_8888, true) ?: return false
+        if (mutable !== sharp) sharp.recycle()
+        card.mask?.let { if (!it.isRecycled) cutOut(mutable, it) }
+        val replay = card.bitmap
+        card.bitmap = mutable
+        replay.recycle()
+        invalidate()
         return true
     }
 
@@ -294,16 +352,19 @@ class BubbleZoomOverlayView(
         // createScaledBitmap hands back the original when nothing had to change.
         if (reduced !== capture) reduced.recycle()
 
-        val shape = BubbleMask.extract(
-            pixels = pixels,
-            width = width,
-            height = height,
-            growPasses = BubbleCardGeometry.outlineGrowPasses(
-                maskLongSidePx = maxOf(width, height),
-                paddedLongSourcePx = paddedLongSourcePx,
-                pageWidthSourcePx = pageWidthSourcePx,
-            ),
-        ) ?: return null
+        val passes = BubbleCardGeometry.outlineGrowPasses(
+            maskLongSidePx = maxOf(width, height),
+            paddedLongSourcePx = paddedLongSourcePx,
+            pageWidthSourcePx = pageWidthSourcePx,
+        )
+        val shape = BubbleMask.extract(pixels, width, height, passes)
+        // Whether the balloon's own outline could be followed is the difference between the
+        // card the amendment asks for and the rounded rectangle it falls back to, and from
+        // outside they look like two different features. Said out loud, once per card.
+        logcat(LogPriority.INFO) {
+            "BubbleZoom mask ${width}x$height grow=$passes -> ${if (shape == null) "NONE" else "traced"}"
+        }
+        if (shape == null) return null
         for (index in pixels.indices) {
             pixels[index] = if (shape[index]) Color.WHITE else Color.TRANSPARENT
         }

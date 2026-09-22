@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import tachiyomi.core.common.preference.Preference
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.coroutineContext
 
 /**
@@ -39,7 +40,8 @@ import kotlin.coroutines.coroutineContext
 class BubbleZoomSession(
     private val enabled: Preference<Boolean>,
     debug: Preference<Boolean>,
-    private val scope: CoroutineScope,
+    /** The viewer's scope. Also where the presenter's card decodes run, so they die with it. */
+    internal val scope: CoroutineScope,
     /** Swapped wholesale in P9. Nothing above this line knows what kind of detector it is. */
     private val detector: BubbleDetector = FakeBubbleDetector(),
     /**
@@ -49,6 +51,12 @@ class BubbleZoomSession(
      * until a real model turned it into a dropped frame.
      */
     private val detectionDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    /**
+     * Whether the reader is cropping page borders. With that preference on the image view's
+     * frame is the cropped page while every box is a fraction of the file, so nothing here
+     * would line up; the feature simply does not look at those pages.
+     */
+    private val cropBorders: () -> Boolean = { false },
     /**
      * The page the reader is on, read lazily: switching the feature on has to give the walk a
      * subject, and the reader will not call `activatePage` again until it turns a page.
@@ -77,7 +85,7 @@ class BubbleZoomSession(
      * are alive at a time and each holder drops its own entry on the way out. This is not the
      * phase P11 cache and must not grow into one here.
      */
-    private val detections = mutableMapOf<BubblePageKey, PageDetection>()
+    private val detections = ConcurrentHashMap<BubblePageKey, PageDetection>()
 
     /**
      * Pages whose holder has confirmed an image that can actually be zoomed.
@@ -90,7 +98,14 @@ class BubbleZoomSession(
      */
     private val ready = mutableSetOf<BubblePageKey>()
 
-    private class PageDetection(var job: Job? = null) {
+    private class PageDetection(
+        /**
+         * Kept after inference, for the card: it is the balloon's only source of native pixels
+         * that matches what is on screen. A few megabytes per live page, released in [forget].
+         */
+        val image: BubbleDetectionImage,
+        var job: Job? = null,
+    ) {
         var bubbles: List<BubbleDetection>? = null
         var failure: Throwable? = null
     }
@@ -145,6 +160,38 @@ class BubbleZoomSession(
 
     val isFocused: Boolean get() = controller.isFocused
 
+    /** Whether a bubble of [page] is lifted right now — the gestures' "a card is up" question. */
+    fun isFocusedOn(page: BubblePageKey): Boolean {
+        val ready = controller.state.value as? BubbleZoomState.Ready ?: return false
+        return ready.page == page && ready.focusedIndex >= 0
+    }
+
+    /** The bytes [page] is displayed from, while its holder lives. Null before detection. */
+    fun imageFor(page: BubblePageKey): BubbleDetectionImage? = detections[page]?.image
+
+    /**
+     * A double tap at the normalized point ([nx], [ny]) of [page]. Returns whether it was Bubble
+     * Zoom's, in which case the caller keeps it from the image view; otherwise it is the
+     * library's own double tap zoom, exactly as upstream.
+     *
+     * Amendment E2's rule. With no card up, a tap on a detected balloon lifts it and a tap
+     * anywhere else falls through. With a card up, a tap on another balloon jumps to it, and
+     * a tap on the lifted balloon or on empty art puts the card down and is consumed — so no
+     * zoom of the page is ever born from this feature. Before detection has answered, or with
+     * the feature off, the state is not Ready and nothing here applies.
+     */
+    fun onDoubleTap(page: BubblePageKey, nx: Float, ny: Float): Boolean {
+        val ready = controller.state.value as? BubbleZoomState.Ready ?: return false
+        if (ready.page != page) return false
+        val hit = BubbleHitTest.find(ready.bubbles, nx, ny, BubbleZoomConfig.DOUBLE_TAP_HIT_TOLERANCE)
+        if (ready.focusedIndex < 0) {
+            return hit >= 0 && controller.selectBubble(hit)
+        }
+        if (hit >= 0 && hit != ready.focusedIndex) return controller.selectBubble(hit)
+        controller.reset()
+        return true
+    }
+
     fun activatePage(page: BubblePageKey, entry: PageEntry) {
         controller.activatePage(page, entry)
         // The answer may already be waiting. activatePage leaves the state Detecting, which is
@@ -169,19 +216,26 @@ class BubbleZoomSession(
         // A detector that has already found it cannot work - no model, no native library - is
         // not asked again, and no page's bytes are copied for it. The first page pays the one
         // attempt that discovers this; every page after that costs what the feature costs off.
-        if (!isEnabled || !detector.available) return
+        if (!isEnabled || !detector.available || cropBorders()) return
         // Read here, synchronously, on whatever thread the holder is decoding on: what the
         // lambda peeks at is only valid before the viewer takes the source. Everything that
         // touches this object's state happens on the main thread, below.
         val prepared = image() ?: return
 
+        // Registered here, on the decoding thread, and not inside the coroutine below. The
+        // holder can detach before a coroutine dispatched to the main thread ever starts, and
+        // a `forget` that arrives in that window used to find nothing to remove — leaving the
+        // page's bytes, now megabytes of them, in this map until the reader closed. Atomic
+        // because this is the one method not confined to the main thread, and it doubles as
+        // the idempotency guard: the holder calls it from a collector that runs on every step.
+        val entry = PageDetection(prepared)
+        if (detections.putIfAbsent(page, entry) != null) return
+
         // On the viewer's scope, which PagerViewer.destroy() cancels. The page holder's own
         // scope is a MainScope that is never cancelled, so a job left there would outlive the
         // holder, the viewer, and the activity whose view it holds.
         scope.launch {
-            if (detections.containsKey(page)) return@launch
-            val entry = PageDetection(job = coroutineContext[Job])
-            detections[page] = entry
+            entry.job = coroutineContext[Job]
             try {
                 val found = withContext(detectionDispatcher) { detector.detect(prepared) }
                 entry.bubbles = found
@@ -221,6 +275,11 @@ class BubbleZoomSession(
     fun forget(page: BubblePageKey) {
         ready.remove(page)
         detections.remove(page)?.job?.cancel()
+        // The holder for the subject itself is going away, which happens when the reader
+        // changes a setting that rebuilds every page rather than when it turns a page. Its
+        // bubbles were fractions of bytes that are about to be replaced, so the page stops
+        // being the subject instead of keeping boxes that may no longer describe it.
+        if ((controller.state.value as? BubbleZoomState.OnPage)?.page == page) controller.deactivate()
     }
 
     private fun deliver(page: BubblePageKey) {
@@ -273,6 +332,7 @@ fun BubbleZoomSession(
         fake = FakeBubbleDetector(),
         real = OnnxBubbleDetector(context.applicationContext),
     ),
+    cropBorders = { preferences.cropBorders.get() },
     currentPage = currentPage,
 )
 

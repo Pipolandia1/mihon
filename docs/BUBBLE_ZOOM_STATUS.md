@@ -5,9 +5,12 @@
 
 ## Fase atual
 
-P9 concluída. Próxima: **P10 — filtro de confiança e BubbleDetectionConfig.**
+P9 concluída. **E2 em andamento** — emenda do usuário: o card é a única apresentação
+(a câmera da P4 sai), com pixels em resolução nativa, e o gesto é o do Play Books
+(duplo-toque ativa, swipe anda, duplo-toque desativa). Depois: **P10**.
 
-Ordem executada até aqui: P0 → P1 → P2 → P3 → P4 → P5 → P6 → **P16** → **E1** → P7 → P8 → P9.
+Ordem executada até aqui: P0 → P1 → P2 → P3 → P4 → P5 → P6 → **P16** → **E1** → P7 → P8 → P9
+→ **E2**.
 
 > **Ordem alterada pelo usuário (19/09/2026):** a **P16 (overlay visual / card do balão)**
 > sobe para logo depois da **P6**, antes de P7–P15. Motivo: a P4 move a câmera, mas a
@@ -53,8 +56,8 @@ Ordem executada até aqui: P0 → P1 → P2 → P3 → P4 → P5 → P6 → **P1
 - [ ] P11 cache em memória + prefetch
 - [ ] P12 detecção de painéis + BubbleOrderResolver + testes
 - [ ] P13 cache em disco com modelVersion
-- [ ] P14 teclas de volume
-- [ ] P15 double tap
+- [ ] P14 teclas de volume — absorvida pela E2 (já andam pelo gancho da P6)
+- [ ] P15 double tap — é a E2
 - [x] P16 BubbleZoomOverlayView  (antecipada, feita logo após a P6)
 - [ ] P17 debug HUD
 - [ ] P18 dataset de 30 páginas + tuning
@@ -910,6 +913,166 @@ reais e deixar o card para balões grandes.
 
 Testes JVM: 137 no pacote, 26 novos (11 no decodificador, o resto na sessão e no detector
 falso). O `FakeBubbleDetector` continua selecionável por preferência, para A/B no mesmo lugar.
+
+## E2 — o que o Play Books faz, medido antes de escrever código
+
+O usuário abriu o Google Play Books no emulador com uma amostra de HQ e pediu que o Bubble
+Zoom funcionasse como lá. A observação está resumida na emenda E2 da spec; aqui fica o que a
+spec não carrega — como foi medido e o que deu errado no caminho.
+
+**Injeção de gestos.** `input tap` duas vezes não faz duplo-toque: cada chamada é um
+processo Java de 300–500 ms. Dois processos em paralelo (`input tap & input tap`) dão
+intervalo incontrolável — ora duplo-toque, ora dois toques simples, ora dois dedos — e
+produziram resultados contraditórios (o mesmo gesto avançou de balão numa captura e deu
+zoom de página na seguinte). `sendevent` por evento também é lento demais no emulador (o
+"duplo-toque" virou dois toques simples na zona esquerda: voltou de página e foi ao balão
+anterior). O que funcionou: `adb root` (a imagem é userdebug), e cada fase do toque como um
+arquivo de `struct input_event` (24 bytes, protocolo B, sem `BTN_TOUCH`) escrito com um
+único `cat > /dev/input/event2` — down, 50 ms, up, 100 ms, down, 50 ms, up. Validado contra
+o zoom nativo do Play Books em arte vazia (liga e desliga). Cuidado herdado: `adb shell`
+junta os argumentos e o shell do aparelho re-parseia, então o comando vai como **uma**
+string, senão `sh -c cat … > dev` vira um `cat` lendo stdin para sempre. E o menu do Play
+Books, quando aberto, engole tudo — três lotes foram descartados por isso até o driver
+normalizar o estado (menu, zoom, página por correlação) antes de cada teste.
+
+**Medição dos cards** (diferença de pixels entre captura com e sem card; balão medido pela
+caixa de pixels claros):
+
+| balão | balão em tela | card | ampliação | card / largura da tela |
+|---|---|---|---|---|
+| WHAT THE HELL (p2) | 152×90 | 387×263 | 2,55× | 0,36 |
+| HERE, INSIDE A NIGHT (legenda, p1) | 258×103 | 676×291 | 2,62× | 0,63 |
+| A NIGHT WITHOUT MORNING (p1) | 175×54 | 473×168 | 2,70× | 0,44 |
+| HERE, IN THIS PLACE (p1) | 199×85 | 661×256 | 3,32× | 0,61 |
+
+A altura do card inclui a sombra, por isso a razão vertical sai maior. O card ficou centrado
+no balão em dois casos (desvio ≤ 10 px) e deslocado em dois (95 e 150 px para baixo e para a
+direita), sem regra que eu tenha conseguido ler de quatro amostras. Nada disso é constante
+única de 60 % de viewport: é ampliação fixa com teto.
+
+**Sequências capturadas** (todas em `tools/shots/pb-*.png` e `_pb-*.png`, gitignored):
+dicas 1–4 do app; duplo-toque em balão, em arte vazia (com e sem card), sobre o card, noutro
+balão; swipe para cima e para baixo com card, na fronteira do primeiro e do último balão;
+toque na borda com e sem card; toque no centro com e sem card; tecla de volume; swipe
+horizontal com card. A animação de entrada não foi gravada: o emulador caiu antes do lote
+(`adb devices` vazio), e eu não o inicio.
+
+**O que muda no veredito da P9.** A observação da HQ real dizia que o card da E1 nunca
+aparecia numa página real e que a câmera da P4 era "o caminho que serve". A E2 decide o
+contrário: a câmera sai e o card passa a ser construído da imagem nativa, o que remove a
+razão da faixa de 2,6×. A tabela de magnificação daquela seção (15 % dentro da faixa) vira
+histórico.
+
+## E2 — o que a revisão achou, e o que ela não chegou a olhar
+
+A revisão adversarial bateu no limite de sessão: das quatro lentes, **três responderam**
+(toque, ciclo de vida, máquina de estados) e a de **geometria/decodificação não rodou**; os
+**onze verificadores morreram**. Os 18 achados foram recuperados do journal e **julgados à
+mão contra o código**, como na P9. Cinco eram reais e estão corrigidos, mais um erro meu de
+documento.
+
+**Corrigidos:**
+
+1. **Swipe vertical sem card virava a página.** Eu tinha deixado o swipe ativo também numa
+   página em repouso com balões, com um KDoc afirmando que era o que o Play Books faz. Um
+   flick para baixo chamava `moveToPrevious()` e **voltava de página** num pager horizontal,
+   onde o Mihon não faz nada com arrasto vertical — regressão de leitura normal com a
+   preferência ligada. Agora o swipe só existe com card erguido. (Corrige também o
+   *quick-scale* — duplo-toque-e-arrasta — que era contado como swipe.)
+2. **Duplo-toque sobre o card pulava para o vizinho.** O ponto ia para o espaço da página, e
+   o card é ~2,8× o balão: ele cobre os vizinhos, então o toque caía na caixa de outro balão
+   e o card trocava em vez de sumir. Agora o retângulo do card decide primeiro.
+3. **Um card recusado prendia a caminhada.** Na recusa eu chamava `session.reset()`; o evento
+   que selecionou o balão já tinha sido consumido, então o próximo passo selecionava o mesmo
+   balão, era recusado de novo, e a página **nunca podia ser virada** por toque, volume ou
+   swipe. Agora o foco fica onde está: uma parada silenciosa, e o passo seguinte a ultrapassa.
+4. **Decodificação cancelada vazava o bitmap.** `withContext` descarta o resultado ao ser
+   cancelado, então o bitmap decodificado nunca era reciclado; e numa caminhada rápida as
+   decodificações se acumulavam num pool ilimitado. Agora o resultado sai por um holder que o
+   `finally` sempre vê, e um mutex serializa as decodificações desta página.
+5. **Corrida `detect`/`forget` retinha os bytes da página.** O holder registra os bytes na
+   thread de decodificação e a inserção no mapa era feita dentro da corrotina; um holder que
+   se desprendesse nessa janela deixava os bytes — agora megabytes, porque o card lê deles —
+   presos até o leitor fechar. O registro passou a ser síncrono e atômico. Além disso,
+   esquecer a página que **é** o sujeito agora a desativa: quando o leitor muda uma
+   preferência que reconstrói todas as páginas (crop borders, rotação), as caixas antigas
+   descreviam bytes que estão sendo trocados.
+
+**Erro meu de documento, corrigido:** a spec dizia *"Sem card, swipe vertical não faz nada"*
+sobre o Play Books. As capturas `pb-G2`/`pb-G3` mostram o contrário — sem card, o swipe para
+baixo vira para a página anterior e já entra no **último balão** dela (a legenda "THIS PRISON
+OF GODS" aparece ampliada e com sombra). A medição está corrigida, e o desvio em relação ao
+Play Books agora está declarado como escolha, não como imitação.
+
+**Julgados como não-defeito:** o toque simples continuar chegando ao pager com card erguido
+(é o que mantém as zonas funcionando, e é intencional); o primeiro toque de um duplo-toque
+ainda confirmar um *single tap* na image view 300 ms depois (`performClick` → `onViewClicked`,
+que no pager não tem consumidor); a caminhada terminar com *pan* numa página que o **usuário**
+ampliou antes de erguer o card (é o comportamento do upstream com a feature desligada, logo
+está certo); e `isHoldingThePage` permanecer verdadeiro durante os 180 ms do fade de saída.
+
+**Não revisado:** geometria e decodificação — `cardScale`, `regionOf`, `sampleSize`, a
+verificação de quadro do `BubbleCardDecoder`, e se a máscara traçada do *replay* estica
+corretamente sobre o bitmap nítido de outro tamanho. A lente morreu antes de rodar e eu não a
+substituí por leitura própria. É a parte da E2 com menos cobertura crítica.
+
+**Testes:** 163 no pacote (eram 137 antes da E2), incluindo 12 para o hit test e três para as
+corridas corrigidas. Um buraco conhecido: a recusa do card e o gesto em si não têm teste JVM —
+`BubbleZoomOverlayView` e `BubbleZoomGestures` dependem de `Bitmap` e `MotionEvent`, e este
+projeto não tem Robolectric.
+
+## E2 verificada no aparelho, e um defeito da E1 que só agora deu para ver
+
+Edição #2 da mesma HQ, 33 páginas, uma página com nove detecções. Toques injetados por evdev
+(o pacote precisa de `ABS_MT_TOUCH_MAJOR` e `ABS_MT_PRESSURE`: sem eles o InputReader deste
+emulador não os promove a toque, e nada acontece — uma hora foi perdida nisso depois de o
+emulador reiniciar). Tudo medido em pixels, não olhado:
+
+| o que | resultado |
+|---|---|
+| duplo-toque num balão | card ergue, **3,13× × 3,75×** a caixa de texto |
+| **a página se move?** | diferença fora do card: **média 0,00, máximo 0** — nem um pixel |
+| swipe para cima | card vai para outro balão |
+| swipe para baixo | volta ao card anterior, **diferença 0,00** (exato) |
+| duplo-toque no card | card some; página intocada (**0,00 / 0**) |
+| swipe vertical sem card | **0,00** — upstream preservado |
+| duplo-toque em arte vazia, sem card | página amplia (**202,06**), segundo duplo-toque volta exato |
+| decodificação nativa | 262×188 e 225×148 px, **68–71 ms**, sample 1 |
+| detalhe do card | Laplaciano **1,32×** o de um upscale bicúbico da tela — a decodificação nativa entrega detalhe que os tiles não tinham |
+| duplo-toque noutro balão | pula para ele; página intocada (**0,00 / 0**) |
+| toque na zona de avanço com card | anda para o próximo balão |
+| andar além do último balão | **vira a página no 8º toque** — sem armadilha |
+
+**O defeito:** o card sai como o **retângulo arredondado**, não no formato do balão. A máscara
+da E1 é recusada em toda a página. A razão, medida e não suposta: o detector caixa o **texto**,
+e a caixa acolchoada por `FOCUS_PADDING` (0,20 do menor lado) **não contém o balão** — a elipse
+é cortada pela captura e a cauda fica aberta, então o preenchimento escapa pela borda inferior
+(27 pixels de borda, em `tools/shots/_e2leak.png` dá para ver o verde saindo pela cauda). O
+guard de escape recusa, corretamente: ele não distingue um vazamento de um contorno com falha.
+
+Varrendo o padding sobre os nove balões desta página: **0,2 → 0/9**, 0,4 → 1/9, 0,5 → 2/9,
+0,6 → 3/9, **0,7–1,0 → 4/9**, 1,3 → 2/9 (aí a máscara fica pequena demais e cai no outro
+guard). Mais padding ajuda e satura em menos da metade.
+
+Isto **não é regressão da E2**: é a primeira vez que o card aparece numa HQ real — na P9 ele
+era recusado em toda página real pela faixa de magnificação, então a máscara da E1 nunca tinha
+sido exercida fora das páginas sintéticas, onde a caixa detectada era quase o balão e o
+traçado funcionava. A P9 já tinha previsto em texto: *"o modelo devolve texto e não balão,
+então `boxPadding` é a alavanca que faz o traçado da E1 alcançar o contorno"*. Agora está
+medido.
+
+**Não corrigido de propósito.** Mudar como a E1 traça é redesenhar uma emenda que o usuário
+pediu, e a regra é uma fase por sessão. O caminho que a E2 abriu e que parece certo: traçar a
+máscara a partir de uma **região maior que o card**, decodificada em resolução nativa pelo
+`BubbleCardDecoder` (que agora existe), e recortar a máscara para o retângulo do card — a
+captura passaria a conter o balão inteiro e a cauda, e o contorno estaria nítido em vez de
+reduzido a 192 px a partir de tiles borrados. Custa uma segunda decodificação por card.
+Decisão do usuário.
+
+Uma linha de log nova diz, por card, se a silhueta foi traçada. No aparelho ela sai
+`BubbleZoom mask 192x151 grow=8 -> NONE` em **todos** os cards, que é a confirmação de que a
+análise offline acima descreve o app e não uma aproximação dele. Sem essa linha, os dois
+cards são duas features diferentes vistas de fora, e foi o que me custou a investigação.
 
 ## Próxima fase
 

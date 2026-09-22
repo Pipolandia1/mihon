@@ -19,21 +19,26 @@ object BubbleCardGeometry {
     /**
      * How many view pixels one source pixel becomes inside the card.
      *
-     * Deliberately the same number `focusOnBubble` uses as its target scale. The card and the
-     * P4 camera therefore frame a bubble identically, which is what makes falling back to the
-     * camera invisible, and what makes the two equally sharp: the tile resolution the image
-     * view serves is a function of scale and nothing else.
+     * [BubbleZoomConfig.CARD_MAGNIFICATION] times the scale the page is drawn at, held to the
+     * viewport fractions for a balloon too large for that (amendment E2). The number used to be
+     * shared with the P4 camera, so that falling back to it was invisible; the camera is gone.
      */
     fun cardScale(
         paddedWidthSourcePx: Float,
         paddedHeightSourcePx: Float,
         viewportWidthPx: Float,
         viewportHeightPx: Float,
+        currentViewScale: Float,
     ): Float {
         if (paddedWidthSourcePx <= 0f || paddedHeightSourcePx <= 0f) return 0f
         val byWidth = BubbleZoomConfig.TARGET_WIDTH_FRACTION * viewportWidthPx / paddedWidthSourcePx
         val byHeight = BubbleZoomConfig.TARGET_HEIGHT_FRACTION * viewportHeightPx / paddedHeightSourcePx
-        return minOf(byWidth, byHeight)
+        // Since E2 the fractions are a ceiling, not the target: the card is CARD_MAGNIFICATION
+        // times what is on screen, and only a balloon too large for that is held to the
+        // viewport. An unknown view scale (zero or less) leaves the ceiling alone.
+        val byMagnification =
+            if (currentViewScale > 0f) BubbleZoomConfig.CARD_MAGNIFICATION * currentViewScale else Float.MAX_VALUE
+        return minOf(byWidth, byHeight, byMagnification)
     }
 
     /**
@@ -66,18 +71,36 @@ object BubbleCardGeometry {
     }
 
     /**
-     * Whether a card is worth lifting for this bubble, or the P4 camera should take it instead.
+     * The padded balloon as integer source pixels, for a region decoder.
      *
-     * Below the lower bound the card would be the same size as the bubble already on screen and
-     * would read as a pointless frame. Above the upper bound it becomes empty magnification:
-     * past that the camera can reach a finer tile level that a frozen capture never asked for,
-     * so the camera genuinely shows more, not just bigger.
+     * Clamped to the image and never empty: a region decoder throws on an empty rectangle, and
+     * a padded box truncated at the page edge can round to one.
      */
-    fun magnificationAllows(cardScale: Float, currentViewScale: Float): Boolean {
-        if (currentViewScale <= 0f || cardScale <= 0f) return false
-        val magnification = cardScale / currentViewScale
-        return magnification >= BubbleZoomConfig.CARD_MIN_MAGNIFICATION &&
-            magnification <= BubbleZoomConfig.CARD_MAX_MAGNIFICATION
+    fun regionOf(padded: BubbleBox, sourceWidth: Int, sourceHeight: Int): SourceRegion? {
+        if (sourceWidth <= 0 || sourceHeight <= 0) return null
+        val left = (padded.x * sourceWidth).toInt().coerceIn(0, sourceWidth - 1)
+        val top = (padded.y * sourceHeight).toInt().coerceIn(0, sourceHeight - 1)
+        val right = (padded.right * sourceWidth).roundToInt().coerceIn(left + 1, sourceWidth)
+        val bottom = (padded.bottom * sourceHeight).roundToInt().coerceIn(top + 1, sourceHeight)
+        return SourceRegion(left, top, right, bottom)
+    }
+
+    /**
+     * The power-of-two sample size for decoding [region] into a card [cardWidthPx] by
+     * [cardHeightPx]: the largest that still leaves a source pixel per card pixel, and never so
+     * small that the decode exceeds [BubbleZoomConfig.CARD_MAX_DECODE_PIXELS].
+     */
+    fun sampleSize(region: SourceRegion, cardWidthPx: Float, cardHeightPx: Float): Int {
+        var sample = 1
+        while (region.width / (sample * 2f) >= cardWidthPx && region.height / (sample * 2f) >= cardHeightPx) {
+            sample *= 2
+        }
+        while ((region.width.toLong() / sample) * (region.height.toLong() / sample) >
+            BubbleZoomConfig.CARD_MAX_DECODE_PIXELS
+        ) {
+            sample *= 2
+        }
+        return sample
     }
 
     /**
@@ -106,20 +129,13 @@ object BubbleCardGeometry {
             .roundToInt()
             .coerceIn(1, BubbleZoomConfig.MASK_MAX_GROW_PASSES)
     }
+}
 
-    /**
-     * Whether the padded bubble is wholly on screen right now.
-     *
-     * The card is captured by replaying the page view through a magnifying matrix, so anything
-     * the view is not currently drawing comes out blank. A partly scrolled-off bubble would
-     * produce a card with an empty band, which is worse than no card at all.
-     */
-    fun fullyVisible(bubbleOnScreen: CardRect, viewportWidthPx: Float, viewportHeightPx: Float): Boolean {
-        return bubbleOnScreen.left >= 0f &&
-            bubbleOnScreen.top >= 0f &&
-            bubbleOnScreen.right <= viewportWidthPx &&
-            bubbleOnScreen.bottom <= viewportHeightPx &&
-            bubbleOnScreen.width > 0f &&
-            bubbleOnScreen.height > 0f
-    }
+/**
+ * A rectangle of source pixels as a region decoder wants it: left and top inclusive, right and
+ * bottom exclusive.
+ */
+data class SourceRegion(val left: Int, val top: Int, val right: Int, val bottom: Int) {
+    val width: Int get() = right - left
+    val height: Int get() = bottom - top
 }

@@ -301,11 +301,187 @@ class BubbleZoomSessionTest {
 
         fixture.preference.set(false)
 
-        // Not ENDED_WALK: that return value tells moveRight to skip its pan check for one
-        // event, which would be a divergence from upstream on the very first tap after the
-        // reader switched the feature off.
         assertFalse(fixture.session.isFocused)
         assertEquals(BubbleZoomStep.IGNORED, fixture.session.stepTowards(readingForward = true))
+    }
+
+    // --- the double tap and the card's bytes (amendment E2) --------------------------------
+
+    private val BubbleZoomSession.focusedIndex: Int
+        get() = (presentation.value.state as BubbleZoomState.Ready).focusedIndex
+
+    @Test
+    fun `a double tap on a detected balloon lifts it and one on empty art falls through`() = sessionTest { fixture ->
+        fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
+        fixture.supply(page)
+        advanceUntilIdle()
+
+        // Empty art: the library's own double tap zoom, untouched.
+        assertFalse(fixture.session.onDoubleTap(page, 0.9f, 0.9f))
+        assertFalse(fixture.session.isFocused)
+
+        assertTrue(fixture.session.onDoubleTap(page, 0.55f, 0.55f))
+        assertEquals(1, fixture.session.focusedIndex)
+    }
+
+    @Test
+    fun `a double tap before the detector has answered is not Bubble Zoom's`() = sessionTest(
+        latencyMs = 300,
+    ) { fixture ->
+        fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
+        fixture.supply(page)
+
+        assertFalse(fixture.session.onDoubleTap(page, 0.15f, 0.15f))
+
+        advanceUntilIdle()
+        assertTrue(fixture.session.onDoubleTap(page, 0.15f, 0.15f))
+    }
+
+    @Test
+    fun `with a card up, a double tap jumps to another balloon and puts the card down otherwise`() =
+        sessionTest { fixture ->
+            fixture.session.activatePage(page, PageEntry.FORWARD)
+            fixture.ready(page)
+            fixture.supply(page)
+            advanceUntilIdle()
+            assertTrue(fixture.session.onDoubleTap(page, 0.15f, 0.15f))
+            assertEquals(0, fixture.session.focusedIndex)
+
+            assertTrue(fixture.session.onDoubleTap(page, 0.55f, 0.55f))
+            assertEquals(1, fixture.session.focusedIndex)
+
+            // On the lifted balloon itself: down, and consumed, so the page does not zoom.
+            assertTrue(fixture.session.onDoubleTap(page, 0.55f, 0.55f))
+            assertFalse(fixture.session.isFocused)
+
+            assertTrue(fixture.session.onDoubleTap(page, 0.15f, 0.15f))
+            // On empty art with a card up: down, and consumed.
+            assertTrue(fixture.session.onDoubleTap(page, 0.9f, 0.9f))
+            assertFalse(fixture.session.isFocused)
+        }
+
+    @Test
+    fun `a double tap on a page that is not the subject is not Bubble Zoom's`() = sessionTest { fixture ->
+        fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
+        fixture.supply(page)
+        advanceUntilIdle()
+
+        assertFalse(fixture.session.onDoubleTap(other, 0.15f, 0.15f))
+        assertFalse(fixture.session.isFocused)
+    }
+
+    @Test
+    fun `off means a double tap is never Bubble Zoom's`() = sessionTest(enabled = false) { fixture ->
+        fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
+        fixture.supply(page)
+        advanceUntilIdle()
+
+        assertFalse(fixture.session.onDoubleTap(page, 0.15f, 0.15f))
+        assertFalse(fixture.session.isFocusedOn(page))
+        assertEquals(null, fixture.session.imageFor(page))
+    }
+
+    @Test
+    fun `the page's bytes stay with the session for the card until the page is forgotten`() = sessionTest { fixture ->
+        assertEquals(null, fixture.session.imageFor(page))
+        fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
+        fixture.supply(page)
+        advanceUntilIdle()
+
+        val image = fixture.session.imageFor(page)
+        assertEquals(1600, image?.width)
+        assertFalse(fixture.session.isFocusedOn(page))
+
+        fixture.session.onDoubleTap(page, 0.15f, 0.15f)
+        assertTrue(fixture.session.isFocusedOn(page))
+        assertFalse(fixture.session.isFocusedOn(other))
+
+        fixture.session.forget(page)
+        assertEquals(null, fixture.session.imageFor(page))
+    }
+
+    @Test
+    fun `with crop borders on, no page is prepared or detected`() = sessionTest(cropBorders = true) { fixture ->
+        fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
+        fixture.supply(page)
+        advanceUntilIdle()
+
+        assertFalse(fixture.prepared, "the page was prepared although its frame is not the file's")
+        assertEquals(0, fixture.detector.calls)
+        assertEquals(BubbleZoomStep.IGNORED, fixture.session.stepTowards(readingForward = true))
+    }
+
+    @Test
+    fun `a holder that detaches before the detection is registered leaves nothing behind`() = runTest {
+        // The holder prepares the bytes on its decoding thread and the session registers them;
+        // the reader can fling past the page before a coroutine dispatched to the main thread
+        // ever starts. Standard, not Unconfined, so that window is a thing this test can stand
+        // in. Registering only inside the coroutine used to leave the page's bytes - megabytes
+        // of them, since the card reads from them - in the session until the reader closed.
+        val detector = RecordingDetector(found, latencyMs = 300)
+        val session = BubbleZoomSession(
+            enabled = FakePreference("bubble_zoom", true),
+            debug = FakePreference("bubble_zoom_debug", false),
+            scope = CoroutineScope(StandardTestDispatcher(testScheduler)),
+            detector = detector,
+            detectionDispatcher = StandardTestDispatcher(testScheduler),
+        ) { null }
+
+        var prepared = 0
+        session.detect(page) {
+            prepared++
+            BubbleDetectionImage(1600, 2400) { ByteArrayInputStream(ByteArray(0)) }
+        }
+        assertEquals(1, prepared)
+        assertEquals(1600, session.imageFor(page)?.width, "the bytes are registered before the coroutine runs")
+
+        session.forget(page)
+        advanceUntilIdle()
+
+        assertEquals(null, session.imageFor(page), "the page's bytes outlived its holder")
+    }
+
+    @Test
+    fun `forgetting the page that is the subject gives up the subject with it`() = sessionTest { fixture ->
+        // Every holder is rebuilt when the reader changes a setting that touches the image -
+        // crop borders, rotate to fit - without the reader ever turning a page. The boxes
+        // describe bytes that are about to be replaced, so the page stops being the subject
+        // rather than keeping them.
+        fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
+        fixture.supply(page)
+        advanceUntilIdle()
+        fixture.session.onDoubleTap(page, 0.15f, 0.15f)
+        assertTrue(fixture.session.isFocusedOn(page))
+
+        fixture.session.forget(page)
+
+        assertFalse(fixture.session.isFocusedOn(page))
+        assertFalse(fixture.session.onDoubleTap(page, 0.15f, 0.15f), "stale boxes still answered a double tap")
+    }
+
+    @Test
+    fun `forgetting a page the reader has moved on from leaves the new subject alone`() = sessionTest { fixture ->
+        fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
+        fixture.supply(page)
+        advanceUntilIdle()
+        fixture.session.activatePage(other, PageEntry.FORWARD)
+        fixture.ready(other)
+        fixture.supply(other)
+        advanceUntilIdle()
+        fixture.session.onDoubleTap(other, 0.15f, 0.15f)
+
+        // The ordinary page turn: the page left behind is detached a moment later.
+        fixture.session.forget(page)
+
+        assertTrue(fixture.session.isFocusedOn(other), "the page the reader is on lost its bubble")
     }
 
     // --- the debug boxes ------------------------------------------------------------------
@@ -364,6 +540,7 @@ class BubbleZoomSessionTest {
         latencyMs: Long = 0,
         failure: Throwable? = null,
         availableAfterFailure: Boolean = true,
+        cropBorders: Boolean = false,
         body: suspend TestScope.(Fixture) -> Unit,
     ) = runTest {
         val preference = FakePreference("bubble_zoom", enabled)
@@ -376,6 +553,7 @@ class BubbleZoomSessionTest {
             // Standard rather than Unconfined, so latency and cancellation are things this test
             // steps through rather than things that have already happened by the time it looks.
             detectionDispatcher = StandardTestDispatcher(testScheduler),
+            cropBorders = { cropBorders },
         ) { null }
         body(Fixture(session, detector, preference))
     }

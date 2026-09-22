@@ -1,7 +1,6 @@
 package eu.kanade.tachiyomi.ui.reader.bubblezoom
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -15,18 +14,48 @@ class BubbleCardGeometryTest {
     private val padded = box0.padded(BubbleZoomConfig.FOCUS_PADDING)
 
     @Test
-    fun `the card is framed at exactly the camera's target scale`() {
-        // Why it matters: the tile resolution the image view serves is a function of scale, so
-        // framing the card identically to the P4 camera is what makes the fallback invisible
-        // and what makes the two equally sharp.
+    fun `a balloon too wide for the magnification is held to the viewport fraction`() {
+        // Debug box 0 at 2.8x of the fit scale would be 1.89; 60 % of the width is less, and
+        // the fraction is the ceiling.
         val scale = BubbleCardGeometry.cardScale(
             paddedWidthSourcePx = padded.width * 1600f,
             paddedHeightSourcePx = padded.height * 2400f,
             viewportWidthPx = 1080f,
             viewportHeightPx = 2400f,
+            currentViewScale = 0.675f,
         )
 
         assertEquals(1.4161f, scale, 1e-3f)
+    }
+
+    @Test
+    fun `a small balloon is shown at exactly CARD_MAGNIFICATION, not framed to fill the screen`() {
+        // A text box 5 % wide: framing it to 60 % of the viewport would be 6.5x, which is what
+        // the P9 verification saw asked of every real balloon. Play Books shows about 2.8x.
+        val small = BubbleBox(0.4f, 0.4f, 0.05f, 0.03f).padded(BubbleZoomConfig.FOCUS_PADDING)
+        val scale = BubbleCardGeometry.cardScale(
+            paddedWidthSourcePx = small.width * 1600f,
+            paddedHeightSourcePx = small.height * 2400f,
+            viewportWidthPx = 1080f,
+            viewportHeightPx = 2400f,
+            currentViewScale = 0.675f,
+        )
+
+        assertEquals(BubbleZoomConfig.CARD_MAGNIFICATION * 0.675f, scale, 1e-4f)
+    }
+
+    @Test
+    fun `an unknown view scale leaves only the viewport ceiling`() {
+        val small = BubbleBox(0.4f, 0.4f, 0.05f, 0.03f).padded(BubbleZoomConfig.FOCUS_PADDING)
+        val scale = BubbleCardGeometry.cardScale(
+            paddedWidthSourcePx = small.width * 1600f,
+            paddedHeightSourcePx = small.height * 2400f,
+            viewportWidthPx = 1080f,
+            viewportHeightPx = 2400f,
+            currentViewScale = 0f,
+        )
+
+        assertEquals(0.6f * 1080f / (small.width * 1600f), scale, 1e-3f)
     }
 
     @Test
@@ -37,6 +66,8 @@ class BubbleCardGeometryTest {
             paddedHeightSourcePx = padded.height * 2400f,
             viewportWidthPx = 2400f,
             viewportHeightPx = 1080f,
+            // Above the magnification, so only the axes decide here.
+            currentViewScale = 1f,
         )
 
         assertEquals(1.378f, scale, 1e-2f)
@@ -113,38 +144,35 @@ class BubbleCardGeometryTest {
     }
 
     @Test
-    fun `the magnification band refuses a card that adds nothing and one that adds only size`() {
-        assertTrue(BubbleCardGeometry.magnificationAllows(cardScale = 1.4161f, currentViewScale = 0.675f))
+    fun `a region is the padded box in whole source pixels`() {
+        val region = BubbleCardGeometry.regionOf(BubbleBox(0.1f, 0.2f, 0.3f, 0.4f), 1000, 2000)
 
-        // Barely larger than what is already on screen: a pointless frame.
-        assertFalse(BubbleCardGeometry.magnificationAllows(cardScale = 0.70f, currentViewScale = 0.675f))
-        // Past the band the camera reaches a finer tile level that a frozen capture cannot.
-        assertFalse(BubbleCardGeometry.magnificationAllows(cardScale = 2.0f, currentViewScale = 0.675f))
-        // Degenerate input is a refusal, never a division by zero.
-        assertFalse(BubbleCardGeometry.magnificationAllows(cardScale = 1.4f, currentViewScale = 0f))
-        assertFalse(BubbleCardGeometry.magnificationAllows(cardScale = 0f, currentViewScale = 0.675f))
+        assertEquals(SourceRegion(100, 400, 400, 1200), region)
     }
 
     @Test
-    fun `a bubble only partly on screen refuses a card`() {
-        val viewportW = 1080f
-        val viewportH = 2400f
+    fun `a region never leaves the image and is never empty`() {
+        assertEquals(
+            SourceRegion(900, 1800, 1000, 2000),
+            BubbleCardGeometry.regionOf(BubbleBox(0.9f, 0.9f, 0.1f, 0.1f), 1000, 2000),
+        )
+        // A box thinner than a pixel still decodes one column, because a decoder throws on none.
+        val hairline = BubbleCardGeometry.regionOf(BubbleBox(0.5f, 0.5f, 1e-4f, 0.1f), 100, 100)
+        assertEquals(1, hairline?.width)
+        assertEquals(null, BubbleCardGeometry.regionOf(BubbleBox(0.1f, 0.1f, 0.1f, 0.1f), 0, 100))
+    }
 
-        assertTrue(
-            BubbleCardGeometry.fullyVisible(CardRect(10f, 10f, 500f, 500f), viewportW, viewportH),
-        )
-        assertFalse(
-            BubbleCardGeometry.fullyVisible(CardRect(-1f, 10f, 500f, 500f), viewportW, viewportH),
-            "a bubble scrolled off the left must refuse",
-        )
-        assertFalse(
-            BubbleCardGeometry.fullyVisible(CardRect(10f, 10f, 1081f, 500f), viewportW, viewportH),
-            "a bubble scrolled off the right must refuse",
-        )
-        assertFalse(
-            BubbleCardGeometry.fullyVisible(CardRect(10f, 10f, 10f, 500f), viewportW, viewportH),
-            "an empty rectangle must refuse",
-        )
+    @Test
+    fun `the sample size is the largest that keeps a source pixel per card pixel`() {
+        assertEquals(2, BubbleCardGeometry.sampleSize(SourceRegion(0, 0, 800, 600), 300f, 200f))
+        assertEquals(1, BubbleCardGeometry.sampleSize(SourceRegion(0, 0, 300, 200), 600f, 400f))
+        assertEquals(32, BubbleCardGeometry.sampleSize(SourceRegion(0, 0, 5000, 5000), 100f, 100f))
+    }
+
+    @Test
+    fun `the sample size doubles until the decode fits the pixel budget`() {
+        // 3000 x 3000 for a 2000 x 2000 card would be 9 megapixels at sample 1.
+        assertEquals(4, BubbleCardGeometry.sampleSize(SourceRegion(0, 0, 3000, 3000), 2000f, 2000f))
     }
 
     @Test
@@ -156,16 +184,13 @@ class BubbleCardGeometryTest {
                 paddedHeightSourcePx = p.height * 2400f,
                 viewportWidthPx = 1080f,
                 viewportHeightPx = 2400f,
+                currentViewScale = 0.675f,
             )
             val w = p.width * 1600f * scale
             val h = p.height * 2400f * scale
 
             assertTrue(w <= 1080f, "card wider than the viewport for $box")
             assertTrue(h <= 2400f, "card taller than the viewport for $box")
-            assertTrue(
-                BubbleCardGeometry.magnificationAllows(scale, 0.675f),
-                "the debug box $box would fall back to the camera at fit scale",
-            )
         }
     }
 

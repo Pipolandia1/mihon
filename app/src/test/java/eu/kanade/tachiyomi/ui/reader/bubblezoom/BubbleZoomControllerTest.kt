@@ -359,17 +359,18 @@ class BubbleZoomControllerTest {
     }
 
     @Test
-    fun `stepTowards distinguishes the move that ends a walk from an ordinary page turn`() {
+    fun `the move that leaves the page is an ordinary page turn`() {
         val controller = controllerOn(pageOne, 1, PageEntry.FORWARD)
 
         // Not in a walk yet: the reader must behave exactly as upstream, panning included.
         assertEquals(BubbleZoomStep.IGNORED, controller.stepTowards(readingForward = false))
 
-        controller.stepTowards(readingForward = true)
+        assertEquals(BubbleZoomStep.CONSUMED, controller.stepTowards(readingForward = true))
 
-        // The move that leaves the page. The reader turns the page but must NOT pan, because
-        // the page is still zoomed at the instant the tap is handled.
-        assertEquals(BubbleZoomStep.ENDED_WALK, controller.stepTowards(readingForward = true))
+        // The move that leaves the page. The walk ends and the reader turns the page exactly as
+        // it would with the feature off; nothing marks it, because since amendment E2 the page
+        // was never zoomed by the feature, so upstream's own pan check answers correctly.
+        assertEquals(BubbleZoomStep.IGNORED, controller.stepTowards(readingForward = true))
         assertEquals(-1, controller.index)
 
         // In the reader that event turned the page, so a new page is the subject by now. In
@@ -389,11 +390,9 @@ class BubbleZoomControllerTest {
     }
 
     @Test
-    fun `the backward walk leaves the page from rest, so it never reports ENDED_WALK`() {
-        // The asymmetry is the stop model, not an oversight: forwards the page is left FROM the
-        // last bubble, so that move both un-focuses and turns the page (ENDED_WALK). Backwards
-        // the page is left from the resting page, which was already reached by an ordinary
-        // CONSUMED step, so by then there is no zoom for the pan check to trip over.
+    fun `the backward walk leaves the page from rest`() {
+        // The stop model: forwards the page is left FROM the last bubble, backwards it is left
+        // from the resting page, which was itself reached by an ordinary step.
         val controller = controllerOn(pageOne, 2, PageEntry.BACKWARD)
 
         assertEquals(BubbleZoomStep.CONSUMED, controller.stepTowards(readingForward = false))
