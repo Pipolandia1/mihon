@@ -592,6 +592,75 @@ class BubbleZoomSessionTest {
         )
     }
 
+    // --- what the instrument panel is told --------------------------------------------------
+
+    @Test
+    fun `the panel reports the page the reader is on, its timing and its model`() = sessionTest(
+        latencyMs = 300,
+    ) { fixture ->
+        fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
+        fixture.supply(page)
+
+        // While the model is still running there is a page but no answer yet.
+        val running = fixture.session.debugFor(page)
+        assertEquals(0, running?.bubbles)
+        assertEquals(null, running?.detectionMs)
+        assertEquals("detecting…", running?.summary)
+
+        advanceUntilIdle()
+
+        val done = fixture.session.debugFor(page)
+        assertEquals(found.size, done?.bubbles)
+        assertEquals(7, done?.modelVersion, "the fake's version, so it can never pass for the model")
+        assertTrue((done?.detectionMs ?: -1) >= 0)
+        assertFalse(done!!.prefetched)
+        assertEquals(-1, done.focusedIndex)
+    }
+
+    @Test
+    fun `the panel follows the walk`() = sessionTest { fixture ->
+        fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
+        fixture.supply(page)
+        advanceUntilIdle()
+
+        fixture.session.onDoubleTap(page, 0.55f, 0.55f)
+
+        val info = fixture.session.debugFor(page)!!
+        assertEquals(1, info.focusedIndex)
+        assertEquals(found[1].confidence, info.focusedConfidence)
+        assertEquals("2/2 · 100%", info.focus)
+    }
+
+    @Test
+    fun `a page fetched ahead says so, which is why it was instant`() = sessionTest { fixture ->
+        val ahead = aheadPage()
+        fixture.session.prefetch(listOf(ahead))
+        advanceUntilIdle()
+
+        assertTrue(fixture.session.debugFor(ahead.key)!!.prefetched)
+    }
+
+    @Test
+    fun `a failure is reported as one, not as a page with no balloons`() = sessionTest(
+        failure = java.io.IOException("no model"),
+    ) { fixture ->
+        fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
+        fixture.supply(page)
+        advanceUntilIdle()
+
+        val info = fixture.session.debugFor(page)!!
+        assertEquals("IOException", info.failure)
+        assertEquals("failed: IOException", info.summary)
+    }
+
+    @Test
+    fun `a page nothing is known about has no panel at all`() = sessionTest { fixture ->
+        assertEquals(null, fixture.session.debugFor(other))
+    }
+
     // --- the debug boxes ------------------------------------------------------------------
 
     @Test

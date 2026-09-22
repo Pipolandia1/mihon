@@ -119,6 +119,14 @@ class BubbleZoomSession(
     ) {
         var bubbles: List<BubbleDetection>? = null
         var failure: Throwable? = null
+
+        /**
+         * How long this page waited for its answer, queue included. Null while it still is.
+         *
+         * Measured around the whole detection, not around the model call, because the two
+         * differ by the queue and the queue is the part a reader feels.
+         */
+        var elapsedMs: Long? = null
     }
 
     /**
@@ -181,6 +189,31 @@ class BubbleZoomSession(
     fun hasBubbles(page: BubblePageKey): Boolean {
         val ready = controller.state.value as? BubbleZoomState.Ready ?: return false
         return ready.page == page && ready.bubbles.isNotEmpty()
+    }
+
+    /**
+     * What the debug overlay shows for [page], or null when there is nothing to say about it.
+     *
+     * Built on demand rather than pushed through the presentation flow: it changes for reasons
+     * the flow does not carry — a detection finishing for a page that is not the subject — and
+     * it is read once per draw of an overlay that only exists while the debug preference is on.
+     */
+    fun debugFor(page: BubblePageKey): BubbleZoomDebugInfo? {
+        val entry = detections[page] ?: return null
+        val ready = controller.state.value as? BubbleZoomState.Ready
+        val onThisPage = ready?.page == page
+        val bubbles = if (onThisPage) ready!!.bubbles else entry.bubbles.orEmpty()
+        val focused = if (onThisPage) ready!!.focusedIndex else -1
+        return BubbleZoomDebugInfo(
+            bubbles = bubbles.size,
+            shaped = bubbles.count { it.shape != null },
+            detectionMs = entry.elapsedMs,
+            prefetched = entry.prefetched,
+            modelVersion = detector.modelVersion,
+            focusedIndex = focused,
+            focusedConfidence = bubbles.getOrNull(focused)?.confidence,
+            failure = entry.failure?.let { it::class.simpleName ?: "error" },
+        )
     }
 
     /** The bytes [page] is displayed from, while its holder lives. Null before detection. */
@@ -258,7 +291,9 @@ class BubbleZoomSession(
         scope.launch {
             entry.job = coroutineContext[Job]
             try {
+                val started = System.nanoTime()
                 val found = withContext(detectionDispatcher) { detector.detect(prepared) }
+                entry.elapsedMs = (System.nanoTime() - started) / 1_000_000
                 entry.bubbles = found
                 deliver(page)
             } catch (cancelled: CancellationException) {

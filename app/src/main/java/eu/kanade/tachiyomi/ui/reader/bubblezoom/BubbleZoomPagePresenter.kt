@@ -99,7 +99,7 @@ class BubbleZoomPagePresenter(private val session: BubbleZoomSession) {
             ?.bubbles
             ?.map { it.box }
             .orEmpty()
-        applyBoxes(host, imageView, presentation.showBoxes, detected)
+        applyBoxes(host, imageView, presentation.showBoxes, detected, page)
         present(page, presentation.state.focusFor(page))
     }
 
@@ -233,6 +233,7 @@ class BubbleZoomPagePresenter(private val session: BubbleZoomSession) {
         imageView: SubsamplingScaleImageView,
         show: Boolean,
         detected: List<BubbleBox>,
+        page: BubblePageKey,
     ) {
         if (!show) {
             BubbleZoomDebugOverlay.detach(host, boxes)
@@ -241,5 +242,6 @@ class BubbleZoomPagePresenter(private val session: BubbleZoomSession) {
         }
         val overlay = boxes ?: BubbleZoomDebugOverlay.attach(host, imageView).also { boxes = it }
         overlay.boxes = detected
+        overlay.info = session.debugFor(page)
     }
 }

@@ -5,9 +5,12 @@
 
 ## Fase atual
 
-P9 concluída. **E2 em andamento** — emenda do usuário: o card é a única apresentação
-(a câmera da P4 sai), com pixels em resolução nativa, e o gesto é o do Play Books
-(duplo-toque ativa, swipe anda, duplo-toque desativa). Depois: **P10**.
+**P17 concluída** (painel de depuração). Antes dela: P12 (ordem de leitura), prefetch,
+E4 (modelo de segmentação), E3, E2, P10 (fechada por medição).
+
+Depois da P17, a sessão fez a **comparação extensiva com o Google Play Books na mesma HQ**
+(Flashpoint 2011 #1, emulador). O resultado está em "Onde estamos contra o Play Books",
+no fim deste arquivo — é a lista do que falta, com o que já foi medido de cada item.
 
 Ordem executada até aqui: P0 → P1 → P2 → P3 → P4 → P5 → P6 → **P16** → **E1** → P7 → P8 → P9
 → **E2**.
@@ -1310,6 +1313,69 @@ o que é ruído, então nenhum filtro de área pode separar ruído de balão nes
 A P10 fica fechada assim: o que dela valia já está feito, e o resto seria afinar contra um
 problema que os dados não mostram existir — com risco de apagar balões reais. Se um dia aparecer
 uma fonte com falso positivo visível, os números acima são a linha de base para comparar.
+
+## P17 — painel de depuração
+
+O overlay de depuração deixou de ser só retângulos magenta. Agora cada caixa leva **o número
+da sua posição na ordem de leitura** — que é a P12 visível sem ler log — e um painel no canto
+diz, para a página em que o leitor está:
+
+    5 bubbles · 8611ms · ahead · v2
+    3/5 · 87%
+
+Quantos balões, quantos com silhueta (só aparece quando os dois diferem, porque com o modelo
+da E4 todos têm), quanto a página **esperou pela resposta**, se ela foi detectada antes de o
+leitor chegar (`ahead`), a versão do detector, e a posição do passeio com a confiança do
+modelo naquele balão. Enquanto o modelo roda diz `detecting…`, e se falhou diz `failed: …` —
+nunca "0 bubbles", que é uma página sem balão e é outra coisa.
+
+Dois números que a spec pedia não estão: **painéis** (a P12 decidiu não detectá-los) e
+**cache HIT/MISS** (a fase de cache foi abandonada quando o prefetch a tornou inútil). No
+lugar deles entrou o `ahead`, que é o fato que hoje explica por que uma página é instantânea.
+
+**O `8611ms` inclui fila.** A detecção é serializada numa thread; uma página oferecida com
+três à frente lê várias vezes o tempo do modelo (medido: HUD 8611 ms contra 2048 ms do modelo
+no logcat, na mesma página). É de propósito — é o que o leitor espera —, e está escrito no
+código para ninguém ler como tempo de inferência.
+
+Verificado no aparelho: as tags 1‑2‑3 saem na ordem certa e legíveis sobre arte clara e
+escura, `ahead` aparece em página buscada à frente, `detecting…` aparece no lugar certo.
+14 testes novos (9 de redação do painel, 5 de sessão).
+
+## Onde estamos contra o Play Books — medido em 22/09/2026
+
+Mesma HQ aberta nos dois leitores, mesmas páginas, emulador. O que a comparação achou, em
+ordem de quanto pesa:
+
+**1. Recall. É o problema, e não é de limiar nem de resolução.** Página 9 (densa): nós 11
+paradas, o Play Books ≥15. A medição offline com os mesmos pesos: 13 caixas a 640, **13 a
+1024**, 14 partindo a página ao meio. E o limiar: 13 em 0,25 → 15 em **0,02** — os escores
+são bimodais (0,49–0,94 e depois nada até 0,14). Os balões que faltam o modelo **não vê**,
+em nenhuma configuração. São balões cortados pela borda do quadrinho e legendas amarelas
+("HE FOUND LOVE.", "I KNOW SOME THINGS HAPPEN BY CHANCE") que o Play Books pega.
+
+**2. Página dupla: 0 de 6.** A spread 2000×1537 dá **0 balões** inteira a 640, 2 a 1024 e
+**5 de 6 partida em duas metades a 640 cada** (~0,7 s no desktop). Aqui, ao contrário do item
+1, partir resolve — porque a letterbox quadrada joga fora metade da altura de uma página
+deitada.
+
+**3. Falsos positivos viram card de arte.** Na página 7 o passeio para num **rosto** (55 %) e
+numa **mão** (27 %); na página 5, num **relógio** (45 %). Limiar não separa: balões reais
+medidos a 0,43 e 0,49. Falta um teste de "isto é balão" no recorte que já decodificamos.
+
+**4. Ordem atravessa quadrinhos.** Na página 9 lemos a fileira do meio como uma faixa
+horizontal; o Play Books lê quadrinho a quadrinho. É o limite documentado da P12 — com a
+diferença de que nesta HQ as calhas são **pretas e retas**, o que a E1 não tinha no mangá.
+
+**5. Rotação joga fora tudo.** Medido: depois de girar, `prefetch known=0` e o card some;
+a página volta a `detecting…` por segundos. Normalizadas ou não, as detecções não sobrevivem
+à recriação da Activity.
+
+**Gestos: paridade.** Duplo-toque entra e sai, swipe anda, toque nas zonas anda, toque no
+centro dispensa, duplo-toque na arte é o zoom do próprio Mihon, pinça dispensa o card, virar
+página com card levanta o card. O passeio atravessa a virada de página igual ao Play Books
+(uma parada na página inteira entre uma página e a seguinte, nos dois). A única diferença de
+gesto: no Play Books o **toque simples avança**; aqui ele dispensa, e quem avança é a zona.
 
 ## Próxima fase
 
