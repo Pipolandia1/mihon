@@ -484,6 +484,114 @@ class BubbleZoomSessionTest {
         assertTrue(fixture.session.isFocusedOn(other), "the page the reader is on lost its bubble")
     }
 
+    // --- fetching ahead of the reader -------------------------------------------------------
+
+    private val prefetchKeys = mutableListOf<BubblePageKey>()
+
+    /** A page the reader has not reached, with bytes ready the way the viewer supplies them. */
+    private fun aheadPage(): PrefetchPage {
+        val key = BubblePageKey(Any())
+        prefetchKeys += key
+        return PrefetchPage(key) { BubbleDetectionImage(1600, 2400) { ByteArrayInputStream(ByteArray(0)) } }
+    }
+
+    @Test
+    fun `pages fetched ahead are detected without a holder ever asking`() = sessionTest { fixture ->
+        // The whole point: a page the reader has not reached is looked at anyway, so that by
+        // the time they turn to it the answer is already there.
+        val ahead = List(3) { aheadPage() }
+
+        fixture.session.prefetch(ahead)
+        advanceUntilIdle()
+
+        assertEquals(3, fixture.detector.calls)
+        ahead.forEach { assertTrue(fixture.session.imageFor(it.key) != null) }
+    }
+
+    @Test
+    fun `a page already known is not fetched again`() = sessionTest { fixture ->
+        val page = aheadPage()
+        fixture.session.prefetch(listOf(page))
+        advanceUntilIdle()
+
+        fixture.session.prefetch(listOf(page, page))
+        advanceUntilIdle()
+
+        assertEquals(1, fixture.detector.calls)
+    }
+
+    @Test
+    fun `off means nothing is fetched ahead, and no page's bytes are read`() =
+        sessionTest(enabled = false) { fixture ->
+            fixture.session.prefetch(List(3) { aheadPage() })
+            advanceUntilIdle()
+
+            assertEquals(0, fixture.detector.calls)
+        }
+
+    @Test
+    fun `with crop borders on nothing is fetched ahead either`() = sessionTest(cropBorders = true) { fixture ->
+        fixture.session.prefetch(List(3) { aheadPage() })
+        advanceUntilIdle()
+
+        assertEquals(0, fixture.detector.calls)
+    }
+
+    @Test
+    fun `fetching ahead forever does not keep every page forever`() = sessionTest { fixture ->
+        // Nothing forgets a page the reader never reached, and each one holds that page's
+        // encoded bytes, so without this a long chapter accumulates all of it.
+        val walked = mutableListOf<PrefetchPage>()
+        repeat(6) {
+            val ahead = List(3) { aheadPage() }
+            walked += ahead
+            fixture.session.prefetch(ahead)
+            advanceUntilIdle()
+        }
+
+        val kept = walked.count { fixture.session.imageFor(it.key) != null }
+        assertEquals(3, kept, "only the pages still ahead of the reader should be kept")
+    }
+
+    @Test
+    fun `the page about to be reached is never the one dropped`() = sessionTest { fixture ->
+        // The bug this replaced: dropping the OLDEST entry when the map grew meant dropping
+        // the page queued longest ago, which is the nearest page ahead — the very one the
+        // reader is about to need. It cancelled exactly the work it was added to do, and the
+        // measured wait per page did not move.
+        val near = aheadPage()
+        val far = List(2) { aheadPage() }
+        fixture.session.prefetch(listOf(near) + far)
+        advanceUntilIdle()
+
+        // One page on: the nearest is still ahead, so it must survive, and so must its answer.
+        val newest = aheadPage()
+        fixture.session.prefetch(listOf(near) + far.drop(1) + listOf(newest))
+        advanceUntilIdle()
+
+        assertTrue(fixture.session.imageFor(near.key) != null, "the next page was thrown away")
+        assertEquals(null, fixture.session.imageFor(far.first().key), "a page left behind was kept")
+    }
+
+    @Test
+    fun `the page the reader is on survives the eviction that its neighbours do not`() = sessionTest { fixture ->
+        fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
+        fixture.supply(page)
+        advanceUntilIdle()
+
+        // Many pages fetched ahead, none of which is the page being read.
+        repeat(BubbleZoomConfig.PREFETCH_PAGES * 4) {
+            fixture.session.prefetch(listOf(aheadPage()))
+            advanceUntilIdle()
+        }
+
+        assertTrue(
+            fixture.session.imageFor(page) != null,
+            "the page being read was evicted in favour of pages ahead of it",
+        )
+    }
+
     // --- the debug boxes ------------------------------------------------------------------
 
     @Test

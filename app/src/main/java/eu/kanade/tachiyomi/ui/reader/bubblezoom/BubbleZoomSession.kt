@@ -21,8 +21,10 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import logcat.LogPriority
 import tachiyomi.core.common.preference.Preference
-import java.util.concurrent.ConcurrentHashMap
+import tachiyomi.core.common.util.system.logcat
+import java.util.Collections
 import kotlin.coroutines.coroutineContext
 
 /**
@@ -85,7 +87,8 @@ class BubbleZoomSession(
      * are alive at a time and each holder drops its own entry on the way out. This is not the
      * phase P11 cache and must not grow into one here.
      */
-    private val detections = ConcurrentHashMap<BubblePageKey, PageDetection>()
+    private val detections: MutableMap<BubblePageKey, PageDetection> =
+        Collections.synchronizedMap(LinkedHashMap())
 
     /**
      * Pages whose holder has confirmed an image that can actually be zoomed.
@@ -105,6 +108,8 @@ class BubbleZoomSession(
          */
         val image: BubbleDetectionImage,
         var job: Job? = null,
+        /** Fetched before the reader reached the page, so nothing will forget it for us. */
+        val prefetched: Boolean = false,
     ) {
         var bubbles: List<BubbleDetection>? = null
         var failure: Throwable? = null
@@ -234,7 +239,11 @@ class BubbleZoomSession(
         // page's bytes, now megabytes of them, in this map until the reader closed. Atomic
         // because this is the one method not confined to the main thread, and it doubles as
         // the idempotency guard: the holder calls it from a collector that runs on every step.
-        val entry = PageDetection(prepared)
+        start(page, prepared, prefetched = false)
+    }
+
+    private fun start(page: BubblePageKey, prepared: BubbleDetectionImage, prefetched: Boolean) {
+        val entry = PageDetection(prepared, prefetched = prefetched)
         if (detections.putIfAbsent(page, entry) != null) return
 
         // On the viewer's scope, which PagerViewer.destroy() cancels. The page holder's own
@@ -260,6 +269,70 @@ class BubbleZoomSession(
                 deliver(page)
             }
         }
+    }
+
+    /**
+     * Starts detection for pages the reader has not reached, from their own byte streams.
+     *
+     * The lead a page holder gives is only however long the reader spends on the page before,
+     * and a segmentation model takes seconds — measured on the device, 1.2 to 2.3 seconds of
+     * waiting per page for anyone turning briskly. These are queued AFTER whatever the holders
+     * asked for, which is the order that matters: the page about to be shown was enqueued when
+     * its holder was built, so it stays at the head and a page further off never overtakes it.
+     *
+     * Cheap when there is nothing to do: a page already known is skipped without reading a
+     * byte, and [BubbleZoomPrefetch] hands back nothing at all when the reader's settings mean
+     * the bytes on disk are not the bytes on screen.
+     */
+    fun prefetch(pages: List<PrefetchPage>) {
+        if (!isEnabled || !detector.available || cropBorders()) return
+        var started = 0
+        var known = 0
+        var unreadable = 0
+        for (page in pages) {
+            // Checked before the bytes are read: reading them means copying a page, and a page
+            // already known needs nothing.
+            if (detections.containsKey(page.key)) {
+                known++
+                continue
+            }
+            val prepared = page.image()
+            if (prepared == null) {
+                unreadable++
+                continue
+            }
+            start(page.key, prepared, prefetched = true)
+            started++
+        }
+        // Said out loud because this feature is invisible when it works and invisible when it
+        // does not: nothing on screen distinguishes "fetched three pages ahead" from "found
+        // nothing to fetch", and the difference is seconds of waiting per page.
+        logcat(LogPriority.INFO) {
+            "BubbleZoom prefetch offered=${pages.size} started=$started known=$known unreadable=$unreadable"
+        }
+        dropPagesNoLongerAhead(pages.mapTo(HashSet()) { it.key })
+    }
+
+    /**
+     * Forgets pages fetched ahead that the reader is no longer heading towards.
+     *
+     * Nothing else will: a holder drops the page it was built for, and a page the reader never
+     * reached never had one. Each entry keeps that page's encoded bytes, because the card reads
+     * from them, so without this a long chapter accumulates every page it ever looked at.
+     *
+     * By POSITION and not by age, which is the whole point. An earlier version dropped the
+     * oldest entry once the map grew past a bound, and the oldest entry is the page queued
+     * longest ago — which is the NEAREST page ahead, the one about to be needed. It cancelled
+     * exactly the work it had been added to do, and the measured wait per page did not move.
+     */
+    private fun dropPagesNoLongerAhead(ahead: Set<BubblePageKey>) {
+        val subject = (controller.state.value as? BubbleZoomState.OnPage)?.page
+        val stale = synchronized(detections) {
+            detections.entries
+                .filter { it.value.prefetched && it.key !in ahead && it.key != subject && it.key !in ready }
+                .map { it.key }
+        }
+        stale.forEach { detections.remove(it)?.job?.cancel() }
     }
 
     /**
@@ -291,8 +364,17 @@ class BubbleZoomSession(
     private fun deliver(page: BubblePageKey) {
         if (page !in ready) return
         val entry = detections[page] ?: return
+        val before = controller.state.value
         entry.bubbles?.let { controller.onBubblesReady(page, it) }
         entry.failure?.let { controller.onDetectionFailed(page, it) }
+        // The one moment the reader can see: this page now has its balloons. Timed against the
+        // reader's own "page selected" line, it says whether the answer was waiting when they
+        // arrived or whether they waited for it — which a screenshot cannot say, because
+        // grabbing one takes about a second and every wait shorter than that looks the same.
+        val after = controller.state.value
+        if (after !== before && after is BubbleZoomState.Ready && after.page == page) {
+            logcat(LogPriority.INFO) { "BubbleZoom page ready with ${after.bubbles.size} bubbles" }
+        }
     }
 
     fun deactivate() = controller.deactivate()

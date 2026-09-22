@@ -12,6 +12,7 @@ import androidx.core.view.isVisible
 import androidx.viewpager.widget.ViewPager
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomPrefetch
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomSession
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomStep
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.PageEntry
@@ -255,6 +256,15 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
         bubbleZoom.activatePage(
             page.bubblePageKey(),
             if (forward) PageEntry.FORWARD else PageEntry.BACKWARD,
+        )
+        // Look for the balloons of the pages after the next one, which has a holder already.
+        // Queued after it on purpose, so the page about to be shown is never overtaken.
+        bubbleZoom.prefetch(
+            BubbleZoomPrefetch.upcoming(
+                items = adapter.items,
+                currentIndex = pager.currentItem,
+                processesPages = config.dualPageSplit || config.dualPageRotateToFit,
+            ).map(BubbleZoomPrefetch::readable),
         )
         val pages = page.chapter.pages ?: return
         logcat { "onReaderPageSelected: ${page.number}/${pages.size}" }

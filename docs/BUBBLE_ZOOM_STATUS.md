@@ -1176,6 +1176,63 @@ modelo (63 âncoras → 43 acima do piso → **8 balões** depois do NMS, igual 
 falha se alguém voltar a ler o tensor como adjacente em vez de canal-major, e dois para o
 refinamento.
 
+## Prefetch — a detecção chega antes do leitor (parte da P11)
+
+Pedido do usuário depois da E4: *"detecte os balões da página enquanto estou na anterior, assim
+não tem delay"*. O modelo de segmentação leva ~2,2 s por página, e isso aparecia.
+
+**Uma página já era detectada adiante, por acidente:** o pager mantém um holder de cada lado,
+cada holder decodifica ao nascer, e decodificar é o que dispara a detecção. Mas essa dianteira
+é só o tempo que o leitor passa na página anterior.
+
+**Agora as três páginas seguintes à próxima são detectadas a partir dos bytes da própria
+página**, sem esperar um holder que não existe. Três decisões:
+
+- **Só quando os bytes em disco são os bytes na tela** — `process()` do holder é a identidade
+  quando *dual page split* e *rotate to fit* estão desligados. Com qualquer um ligado, o
+  prefetch devolve nada e volta à dianteira de uma página. A alternativa seria reimplementar
+  `process()` aqui, e uma segunda cópia divergindo da primeira é como uma detecção acaba
+  descrevendo o retângulo errado sem nada avisar. Um `InsertPage` é recusado sempre: seu stream
+  é o do pai, e devolveria a página dupla inteira.
+- **Enfileiradas depois do que os holders pediram**, que é a ordem que importa: a página
+  prestes a aparecer foi enfileirada quando seu holder nasceu, então nada distante a ultrapassa.
+- **Esquecidas por posição, não por idade** (ver abaixo).
+
+**Medido no relógio do app**, não em capturas de tela:
+
+| pausa na página | balões ao chegar |
+|---|---|
+| 6 s | já estavam lá |
+| 3 s | já estavam lá |
+| 1 s | já estavam lá |
+| 0 s, virando o mais rápido possível | o modelo não dá conta |
+
+Dentro do capítulo, com um segundo ou mais por página, **não há mais espera**. Com zero, a fila
+enche mais rápido do que esvazia — aritmética do modelo de 2,2 s, não do prefetch.
+
+### Dois erros meus nesta parte, e o que cada um ensinou
+
+**O instrumento mediu a si mesmo.** Reportei "1,2 a 2,3 s de espera por página" e depois "o
+prefetch não melhorou nada". Os dois números vieram de um laço que tira capturas de tela — e uma
+captura leva **~1,0 s** neste emulador. Tudo que eu media como 1,2 s era *"os balões já estavam
+lá na primeira olhada"*. O piso do instrumento nunca tinha sido estabelecido. A medição que
+vale saiu de duas linhas de log do próprio app e é precisa em milissegundos.
+
+**Apresentei uma hipótese como diagnóstico.** A primeira eviction descartava a entrada mais
+antiga quando o mapa crescia — e a mais antiga é a página enfileirada há mais tempo, ou seja a
+**mais próxima**, a que o leitor vai alcançar. Era um defeito real e está corrigido, com um
+teste chamado *"a página prestes a ser alcançada nunca é a descartada"*. Mas eu disse que era
+*a* causa do atraso, e corrigi-la não moveu a medição: não era. O prefetch já funcionava, e o
+que faltava era um instrumento honesto.
+
+Duas linhas de log ficam, porque esta feature é invisível quando funciona e invisível quando
+não: `BubbleZoom prefetch offered=3 started=1 known=2 unreadable=0` e `BubbleZoom page ready
+with N bubbles`. Sem elas, três diagnósticos seguidos foram adivinhação.
+
+Testes: 189 no pacote, 12 novos — seis para a escolha das páginas (transição no meio, página
+não carregada, `InsertPage`, fim da lista, settings que reescrevem a página) e seis para a
+sessão (busca adiante, página já conhecida, desligado, crop borders, e as duas de eviction).
+
 ## Próxima fase
 
 P10 — filtro de confiança e `BubbleDetectionConfig`. Chega com cinco fatos, não três: o piso

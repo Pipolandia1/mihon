@@ -74,6 +74,16 @@ object BubbleZoomConfig {
     /** How long it takes to fade away. Slightly quicker, so dismissing feels responsive. */
     const val CARD_EXIT_DURATION_MS = 180L
 
+    /**
+     * How many pages past the next one are looked at before the reader gets there.
+     *
+     * The pager already gives a lead of one page, and that lead is only as long as the reader
+     * lingers; with a model that takes seconds, briskly turned pages arrive first. Three more
+     * is enough that an ordinary reading pace never catches up, and few enough that the bytes
+     * they hold stay small next to what the reader already holds decoded.
+     */
+    const val PREFETCH_PAGES = 3
+
     /** Gap kept between the card and the edge of the viewport, in dp. */
     const val CARD_SCREEN_MARGIN_DP = 12f
 
