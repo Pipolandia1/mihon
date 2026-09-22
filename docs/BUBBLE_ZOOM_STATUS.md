@@ -52,7 +52,7 @@ Ordem executada até aqui: P0 → P1 → P2 → P3 → P4 → P5 → P6 → **P1
 - [x] P7  preferência Bubble Zoom (off = vanilla)
 - [x] P8  interface BubbleDetector + FakeBubbleDetector
 - [x] P9  detector ONNX real + pipeline de imagem
-- [ ] P10 confidence filtering + BubbleDetectionConfig
+- [x] P10 confidence filtering + BubbleDetectionConfig (parte feita na E4, resto fechado por medição)
 - [x] P11 prefetch (metade feita; o cache em disco é a P13)
 - [x] P12 BubbleOrderResolver (ordem de leitura sem detectar painéis — ver abaixo)
 - [ ] P13 cache em disco com modelVersion
@@ -1274,6 +1274,42 @@ Testes: 197 no pacote, 8 novos — fileiras antes do que está dentro delas, qua
 nas duas direções, fileira com quadrinhos de alturas diferentes, aglomerado que não corta, a
 página real que abriu o assunto, e a propriedade que um corte recursivo quebra em silêncio:
 **todo balão volta exatamente uma vez**.
+
+## P10 — fechada por medição, não por implementação
+
+A spec pedia seis coisas. Duas existem e estão medidas: `confidenceThreshold` (0,25 — o 0,35 da
+spec cortava balão real) e `inputSize` (640 — 576 já perde três balões numa página). Uma ficou
+obsoleta: `boxPadding` existia para o traçado da E1 alcançar o contorno, e o modelo da E4
+devolve a máscara. Sobravam três filtros de área e quantidade, todos escritos quando a
+preocupação era ruído de um detector de caixas.
+
+**Medidos sobre 72 páginas do capítulo em cache, 576 detecções acima de 0,05:**
+
+| | resultado |
+|---|---|
+| detecções mantidas ao piso de 0,25 | 511, **7,1 por página** (mediana 8, máximo 28, 16 páginas sem nenhuma) |
+| área das mantidas | mín 0,070 %, p5 0,17 %, mediana 0,62 %, p95 2,11 %, **máx 4,45 %** |
+| cobrem mais de um quarto da página | **0** |
+| abaixo de um milésimo da página | 3 |
+| correlação confiança × área | **0,065** |
+
+**`maxBoxArea` não tem o que filtrar:** a maior caixa do capítulo inteiro cobre 4,45 % da
+página. O caso que ela existe para pegar não acontece.
+
+**`minBoxArea` faria mal:** as menores caixas mantidas pontuam 0,74, 0,80, 0,85 e 0,89, e estão
+quase todas na página que a P9 registrou à mão como *"enxame de 18 balões minúsculos"*. Um piso
+de área apagaria exatamente o que o modelo acerta com mais certeza.
+
+**`maxDetections` também não:** o máximo é 28, na mesma página do enxame, onde a contagem manual
+da P9 deu 29 regiões de texto.
+
+E o número que fecha o argumento: **confiança e área não têm correlação**. Em toda faixa de
+confiança, de 0,05 a 1,0, a área mediana é a mesma ~0,5 %. A área não carrega informação sobre
+o que é ruído, então nenhum filtro de área pode separar ruído de balão neste material.
+
+A P10 fica fechada assim: o que dela valia já está feito, e o resto seria afinar contra um
+problema que os dados não mostram existir — com risco de apagar balões reais. Se um dia aparecer
+uma fonte com falso positivo visível, os números acima são a linha de base para comparar.
 
 ## Próxima fase
 

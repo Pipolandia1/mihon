@@ -405,6 +405,14 @@ Só a lista de boxes sobrevive. Nunca uma segunda cópia da página em memória.
 (0.15–0.25 da menor dimensão do box), `inputSize`, `maxDetections`, `minBoxArea`
 (descarta ruído minúsculo), `maxBoxArea` (descarta box que cobre a página inteira).
 
+> **Medido depois da E4, e esta lista não sobreviveu.** `confidenceThreshold` e `inputSize`
+> existem e estão medidos (0,25 e 640; o 0,35 desta seção cortava balão real). `boxPadding`
+> ficou obsoleto quando o modelo passou a devolver a máscara. Os outros três foram medidos
+> sobre 72 páginas e **não entram**: a maior caixa do capítulo cobre 4,45 % da página, então
+> `maxBoxArea` não tem o que filtrar; as menores caixas pontuam 0,74 a 0,89, então `minBoxArea`
+> apagaria balões que o modelo acerta; e a correlação entre confiança e área é 0,065, ou seja,
+> a área não diz nada sobre o que é ruído. Ver a P10 em BUBBLE_ZOOM_STATUS.md.
+
 ---
 
 ## 8. Ordem de leitura
