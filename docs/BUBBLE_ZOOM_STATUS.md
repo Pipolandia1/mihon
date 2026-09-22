@@ -5,7 +5,8 @@
 
 ## Fase atual
 
-**E5 concluída** (página dupla partida em duas). Antes dela: **P17** (painel de depuração). Antes dela: P12 (ordem de leitura), prefetch,
+**E6 concluída** (a página chega ao modelo com os pixels médios, não amostrados). Antes dela:
+**E5** (página dupla partida em duas) e **P17** (painel de depuração). Antes dela: P12 (ordem de leitura), prefetch,
 E4 (modelo de segmentação), E3, E2, P10 (fechada por medição).
 
 Depois da P17, a sessão fez a **comparação extensiva com o Google Play Books na mesma HQ**
@@ -1384,6 +1385,48 @@ Cinco balões onde antes eram zero; página retrato com a mesma contagem de ante
 mesmo tempo. O card abre nos balões da spread com o recorte certo (2/5 e 3/5 conferidos na
 tela). 11 testes novos.
 
+## E6 — o que o modelo via não era a página
+
+O item 3 da lista e a discrepância entre aparelho e desktop eram o mesmo defeito.
+
+A página chegava ao modelo por `Canvas.drawBitmap` com `FILTER_BITMAP`, que é bilinear: para
+cada pixel de saída lê os quatro vizinhos do ponto em que ele cai e **ignora todos os outros**.
+Reduzir uma página de 983 px de altura para 640 assim joga fora mais de um terço dela, e
+lettering é exatamente o detalhe fino que vai embora.
+
+Reproduzido fora do app, três caminhos para o mesmo quadrado de 640:
+
+| caminho | página densa | página com rosto e mão |
+|---|---|---|
+| A resolução inteira, reamostragem correta | 13 | 3 |
+| **B** `inSampleSize=2` + bilinear ingênuo (**o app até aqui**) | **11** | **6** — com o rosto a 0,72 e a mão |
+| C `inSampleSize=2` + reamostragem correta | **14** | **3** — nenhum dos dois |
+
+B reproduz o aparelho exatamente, o que confirma o diagnóstico: o *aliasing* **inventa**
+estrutura que não está na página — o bastante, num rosto, para pontuar 0,72 — e **destrói** a
+que está. Por isso o conserto acha mais balões e ao mesmo tempo deixa de parar num rosto.
+
+`AreaResample` (puro, 10 testes) faz cada pixel de saída ser a média ponderada de todos os
+pixels de origem que ele cobre. O primeiro teste é a propriedade que o caminho antigo quebrava:
+**um tabuleiro reduzido à metade é cinza, não um dos seus cantos.**
+
+O detector deixou de usar Canvas, Paint e o bitmap de entrada: lê os pixels do recorte, tira a
+média direto para o array de onde o tensor é montado e preenche a borda com o cinza do treino —
+menos código e menos um bitmap vivo.
+
+**Medido no aparelho, antes → depois:**
+
+| página | antes | depois |
+|---|---|---|
+| 1280×1966 com rosto e mão entre as paradas | 6 (dois eram arte) | **4, todas legenda real** |
+| 1280×1966 densa | 11 | **12** |
+| spread 2000×1537 | 5 | 4 |
+| as cinco páginas sintéticas | 3, 0, 3, 8, 4 | iguais |
+
+O tempo não mudou (~2,2 s por recorte). A spread perdeu uma legenda — é o único lado ruim da
+troca, e vale bem menos que dois falsos positivos a menos e um balão real a mais numa página
+comum. "HE FOUND LOVE." continua não saindo, que é o item 1: o modelo.
+
 ## Onde estamos contra o Play Books — medido em 22/09/2026
 
 Mesma HQ aberta nos dois leitores, mesmas páginas, emulador. O que a comparação achou, em
@@ -1399,9 +1442,11 @@ em nenhuma configuração. São balões cortados pela borda do quadrinho e legen
 **2. Página dupla: 0 de 6.** ✅ **Feito — E5.** A spread dá 0 balões inteira e 5 partida em
 duas metades; no aparelho, 5 balões em 4441 ms, contra 0 antes.
 
-**3. Falsos positivos viram card de arte.** Na página 7 o passeio para num **rosto** (55 %) e
-numa **mão** (27 %); na página 5, num **relógio** (45 %). Limiar não separa: balões reais
-medidos a 0,43 e 0,49. Falta um teste de "isto é balão" no recorte que já decodificamos.
+**3. Falsos positivos viram card de arte.** ✅ **Feito — E6**, e não pelo filtro que eu tinha
+proposto. O rosto e a mão eram invenção do *aliasing* da reamostragem e sumiram quando ela foi
+corrigida. O filtro de "isto é balão" chegou a ser medido sobre 589 detecções e **não
+separava**: as de menor contraste do capítulo inteiro são todas balão real, de texto branco
+sobre fundo escuro.
 
 **4. Ordem atravessa quadrinhos.** Na página 9 lemos a fileira do meio como uma faixa
 horizontal; o Play Books lê quadrinho a quadrinho. É o limite documentado da P12 — com a

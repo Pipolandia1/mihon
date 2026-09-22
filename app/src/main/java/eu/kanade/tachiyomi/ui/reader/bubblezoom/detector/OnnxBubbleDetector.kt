@@ -6,10 +6,7 @@ import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Rect
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleDetection
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleDetectionConfig
 import kotlinx.coroutines.ensureActive
@@ -42,8 +39,9 @@ import kotlin.math.roundToInt
  *     one tile. Never at full size for a page large enough to matter: a 1200px scanlation page
  *     decodes at 600 and is upscaled a little, rather than being held at 1200x1700 in ARGB next
  *     to the viewer's own tiles of the same page.
- *  2. Paint each tile into a reusable square input bitmap through the same [Letterbox] the
- *     decoder will use to undo it, on the grey the model was trained with.
+ *  2. Average each tile down into the square input through the same [Letterbox] the decoder
+ *     will use to undo it, on the grey the model was trained with. Averaged, not sampled: see
+ *     [AreaResample], where the measurement is.
  *  3. Pack it as an NCHW float tensor, RGB, 0..1.
  *  4. Run. The session is created once, lazily, and lives until [close]; a [Mutex] means one
  *     inference at a time, so the reusable buffers are never shared.
@@ -84,12 +82,11 @@ class OnnxBubbleDetector(
     @Volatile
     private var closed = false
 
-    // One of each, reused under the mutex. The input bitmap is the only bitmap ever held.
-    private var inputBitmap: Bitmap? = null
+    // One of each, reused under the mutex, and all of them small: the square the model sees,
+    // the page scaled to fit inside it, and the tensor. No bitmap is held between inferences.
     private var inputPixels: IntArray? = null
+    private var scaledPixels: IntArray? = null
     private var inputTensor: FloatBuffer? = null
-
-    private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
 
     override suspend fun detect(image: BubbleDetectionImage): List<BubbleDetection> {
         try {
@@ -137,7 +134,7 @@ class OnnxBubbleDetector(
                     sourceHeight = sidePixels(tile.height, image.height),
                     inputSize = inputSize,
                 )
-                paintInput(page, tile, letterbox)
+                fillInput(page, tile, letterbox)
                 val output = run(session, packTensor())
                 YoloSegDecoder.decode(
                     output = output.boxes,
@@ -233,44 +230,57 @@ class OnnxBubbleDetector(
             ?: throw IOException("page could not be decoded")
     }
 
-    private fun paintInput(page: Bitmap, tile: PageTiles.Tile, letterbox: Letterbox) {
-        val target = inputBitmap ?: Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
-            .also { inputBitmap = it }
-        val canvas = Canvas(target)
-        canvas.drawColor(LETTERBOX_FILL)
-        // Source and destination rectangles rather than a matrix, so the tile is the only thing
-        // that lands in the input: a matrix scales the whole decoded page, which would paint the
-        // neighbouring half over the grey padding the model expects there. The decoded page is
-        // smaller than the source by the sample size, so the source rectangle is taken against
-        // ITS size; the letterbox geometry came from the source and decides the destination.
+    /**
+     * Fills the model's square with [tile] of [page], padded with the training grey.
+     *
+     * Only the tile is read, so the neighbouring half of a spread can never end up over the
+     * padding — and the pixels are averaged rather than sampled, which is the whole of
+     * amendment E6. The decoded page is smaller than the source by the sample size, so the
+     * rectangle is taken against ITS size; the letterbox came from the source and says where
+     * the result goes and how big it is.
+     */
+    private fun fillInput(page: Bitmap, tile: PageTiles.Tile, letterbox: Letterbox) {
+        val input = inputPixels ?: IntArray(inputSize * inputSize).also { inputPixels = it }
+        input.fill(LETTERBOX_FILL)
+
         val left = (tile.x * page.width).roundToInt().coerceIn(0, page.width - 1)
         val top = (tile.y * page.height).roundToInt().coerceIn(0, page.height - 1)
-        val source = Rect(
-            left,
-            top,
-            ((tile.x + tile.width) * page.width).roundToInt().coerceIn(left + 1, page.width),
-            ((tile.y + tile.height) * page.height).roundToInt().coerceIn(top + 1, page.height),
-        )
-        val destination = Rect(
-            letterbox.padX,
-            letterbox.padY,
-            letterbox.padX + letterbox.scaledWidth,
-            letterbox.padY + letterbox.scaledHeight,
-        )
-        canvas.drawBitmap(page, source, destination, paint)
+        val right = ((tile.x + tile.width) * page.width).roundToInt().coerceIn(left + 1, page.width)
+        val bottom = ((tile.y + tile.height) * page.height).roundToInt().coerceIn(top + 1, page.height)
+        val tileWidth = right - left
+        val tileHeight = bottom - top
+
+        // Not retained: it is as large as the decoded tile, and it is wanted for the length of
+        // one inference. The small buffers on either side of it are the ones worth keeping.
+        val source = IntArray(tileWidth * tileHeight)
+        page.getPixels(source, 0, tileWidth, left, top, tileWidth, tileHeight)
+
+        val scaledWidth = letterbox.scaledWidth.coerceIn(1, inputSize)
+        val scaledHeight = letterbox.scaledHeight.coerceIn(1, inputSize)
+        val scaled = scaledPixels?.takeIf { it.size >= scaledWidth * scaledHeight }
+            ?: IntArray(scaledWidth * scaledHeight).also { scaledPixels = it }
+        AreaResample.resample(source, tileWidth, tileHeight, scaled, scaledWidth, scaledHeight)
+
+        for (y in 0 until scaledHeight) {
+            System.arraycopy(
+                scaled,
+                y * scaledWidth,
+                input,
+                (letterbox.padY + y) * inputSize + letterbox.padX,
+                scaledWidth,
+            )
+        }
     }
 
     /** ARGB pixels to three float planes, R then G then B, each 0..1. */
     private fun packTensor(): FloatBuffer {
-        val target = inputBitmap ?: error("input bitmap missing")
         val count = inputSize * inputSize
-        val pixels = inputPixels ?: IntArray(count).also { inputPixels = it }
+        val pixels = inputPixels ?: error("the input has not been filled")
         val tensor = inputTensor ?: ByteBuffer.allocateDirect(count * 3 * Float.SIZE_BYTES)
             .order(ByteOrder.nativeOrder())
             .asFloatBuffer()
             .also { inputTensor = it }
 
-        target.getPixels(pixels, 0, inputSize, 0, 0, inputSize, inputSize)
         tensor.rewind()
         for (i in 0 until count) tensor.put(i, ((pixels[i] shr 16) and 0xFF) / 255f)
         for (i in 0 until count) tensor.put(count + i, ((pixels[i] shr 8) and 0xFF) / 255f)
@@ -324,13 +334,13 @@ class OnnxBubbleDetector(
         runCatching { session?.close() }
         session = null
         inputName = null
-        inputBitmap?.recycle()
-        inputBitmap = null
         inputPixels = null
+        scaledPixels = null
         inputTensor = null
     }
 
     private companion object {
+        /** The training grey, as one opaque ARGB pixel: the input is filled with it directly. */
         val LETTERBOX_FILL = Color.rgb(
             BubbleDetectionConfig.LETTERBOX_PAD_VALUE,
             BubbleDetectionConfig.LETTERBOX_PAD_VALUE,
