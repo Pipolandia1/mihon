@@ -20,14 +20,17 @@ package eu.kanade.tachiyomi.ui.reader.bubblezoom
  * tone nearly all the way across, split there, then do the same with columns, and recurse. The
  * leaves are the panels.
  *
- * Both ways of being wrong were measured on real pages, and they are not symmetric. **Finding
- * too few** is what happens on a busy page whose panels are separated by a line rather than a
- * gutter; the balloons of the panels that were not separated then fall in one group and are
- * ordered exactly as they are today, which is where this started. **Finding too many** happens
- * on a page of flat white, where the recursion runs past the panels and down to the lettering
- * itself; each balloon then becomes its own group, which is also what happens today. Neither
- * failure can put a balloon somewhere a reader would not look, which is what makes this safe to
- * apply to every page.
+ * A leaf only counts as a panel if it is **drawn on**. On a page of mostly empty paper the
+ * paper itself reads as gutter, and the division comes back as the strips the lettering happens
+ * to sit in — which are not panels, and which would have the page read down its columns instead
+ * of across its rows. Measured: a real comic's panels are 54 to 86 percent drawn on, those
+ * strips 3 to 9. So the sparse page is refused outright and its balloons are ordered by
+ * themselves, the way they were before any of this.
+ *
+ * What is left of being wrong is **finding too few**, on a busy page whose panels are separated
+ * by a line rather than a gutter: the balloons of the panels that were not separated fall in one
+ * group and are ordered exactly as they were, which is where this started. That failure cannot
+ * put a balloon somewhere a reader would not look, which is what makes this safe on every page.
  *
  * Pure Kotlin over one grey plane, so every rule above is a JVM test.
  */
@@ -46,13 +49,22 @@ object PanelFinder {
         val minPanel = maxOf(4, (BubbleDetectionConfig.PANEL_MIN_SIZE * longSide).toInt())
         if (width < 2 * minPanel && height < 2 * minPanel) return emptyList()
 
-        val tone = marginTone(luma, width, height)
-        val leaves = ArrayList<BubbleBox>()
-        cut(Page(luma, width, height, tone, minGutter, minPanel), 0, 0, width, height, 0, leaves)
+        val page = Page(luma, width, height, marginTone(luma, width, height), minGutter, minPanel)
+        val leaves = ArrayList<Rect>()
+        cut(page, 0, 0, width, height, 0, leaves)
+        // A panel is a drawn area. On a page of mostly empty paper — a sparse synthetic page, a
+        // chapter's title page — the paper itself reads as gutter, and what comes back is the
+        // strips the lettering happens to sit in, which are not panels and would have the page
+        // read down its columns. Measured: a real comic's panels are 54 to 86 percent drawn on,
+        // those strips 3 to 9.
+        val drawn = leaves.filter { ink(page, it) >= BubbleDetectionConfig.PANEL_MIN_INK }
         // One leaf is the page itself: nothing was found, and saying so is not the same as
         // saying "the whole page is one panel", which would make every caller special-case it.
-        return if (leaves.size < 2) emptyList() else leaves
+        return if (drawn.size < 2) emptyList() else drawn.mapNotNull { box(page, it) }
     }
+
+    /** A leaf, in the reduction's own pixels, before it becomes a fraction of the page. */
+    private class Rect(val x0: Int, val y0: Int, val x1: Int, val y1: Int)
 
     private class Page(
         val luma: IntArray,
@@ -97,13 +109,26 @@ object PanelFinder {
         return 0
     }
 
-    private fun cut(page: Page, x0: Int, y0: Int, x1: Int, y1: Int, depth: Int, out: MutableList<BubbleBox>) {
+    /** How much of [rect] is drawn on rather than gutter. */
+    private fun ink(page: Page, rect: Rect): Float {
+        var drawn = 0
+        var total = 0
+        for (y in rect.y0 until rect.y1) {
+            for (x in rect.x0 until rect.x1) {
+                if (!page.isGutter(x, y)) drawn++
+                total++
+            }
+        }
+        return if (total == 0) 0f else drawn.toFloat() / total
+    }
+
+    private fun cut(page: Page, x0: Int, y0: Int, x1: Int, y1: Int, depth: Int, out: MutableList<Rect>) {
         val regionWidth = x1 - x0
         val regionHeight = y1 - y0
         if (depth >= BubbleDetectionConfig.PANEL_MAX_DEPTH ||
             regionWidth < page.minPanel || regionHeight < page.minPanel
         ) {
-            emit(page, x0, y0, x1, y1, out)
+            out += Rect(x0, y0, x1, y1)
             return
         }
         // Rows first and columns second, which is the order a page is built in: a comic is rows
@@ -119,7 +144,7 @@ object PanelFinder {
             }
             return
         }
-        emit(page, x0, y0, x1, y1, out)
+        out += Rect(x0, y0, x1, y1)
     }
 
     /**
@@ -173,13 +198,11 @@ object PanelFinder {
         return if (pieces.size >= 2) pieces else null
     }
 
-    /** Adds a leaf, as a fraction of the page. Silently drops one too thin to be a rectangle. */
-    private fun emit(page: Page, x0: Int, y0: Int, x1: Int, y1: Int, out: MutableList<BubbleBox>) {
-        BubbleBox.clampedOrNull(
-            x = x0.toFloat() / page.width,
-            y = y0.toFloat() / page.height,
-            width = (x1 - x0).toFloat() / page.width,
-            height = (y1 - y0).toFloat() / page.height,
-        )?.let { out += it }
-    }
+    /** A leaf as a fraction of the page, or null when it is too thin to be a rectangle. */
+    private fun box(page: Page, rect: Rect): BubbleBox? = BubbleBox.clampedOrNull(
+        x = rect.x0.toFloat() / page.width,
+        y = rect.y0.toFloat() / page.height,
+        width = (rect.x1 - rect.x0).toFloat() / page.width,
+        height = (rect.y1 - rect.y0).toFloat() / page.height,
+    )
 }

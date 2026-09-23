@@ -144,6 +144,34 @@ class PanelFinderTest {
     }
 
     @Test
+    fun `empty paper is not a panel, however straight the space between the words`() {
+        // The regression this rule exists for, drawn the way a real sparse page is: lettering
+        // in lines, which breaks every horizontal band into fragments too short to divide on,
+        // so the only division left is down the page. Those columns are paper with a few words
+        // in them, and grouping by them would have the page read down its columns.
+        val page = Page(width, height, background = WHITE)
+        for (corner in listOf(6, 120)) {
+            for (line in 0 until 5) {
+                val y = corner + line * 4
+                page.paint(10, y, 34, y + 2, tone = 20)
+                page.paint(66, y, 90, y + 2, tone = 20)
+            }
+        }
+
+        assertEquals(emptyList<BubbleBox>(), page.panels(), "those columns are paper, not panels")
+    }
+
+    @Test
+    fun `a division with only one drawn side is not a division`() {
+        // Half a page of art and half a page of nothing: one panel, and one panel is not a
+        // division, so the balloons decide the order by themselves.
+        val page = Page(width, height, background = BLACK)
+        page.paint(4, 4, 96, 70)
+
+        assertEquals(emptyList<BubbleBox>(), page.panels())
+    }
+
+    @Test
     fun `a page it cannot read is no page at all`() {
         assertEquals(emptyList<BubbleBox>(), PanelFinder.find(IntArray(0), 0, 0))
         assertEquals(emptyList<BubbleBox>(), PanelFinder.find(IntArray(4), 10, 10), "array too short")

@@ -5,9 +5,11 @@
 
 ## Fase atual
 
-**E8 concluída** (a ordem de leitura segue os quadrinhos da página). Antes dela: **E7** (as
-detecções sobrevivem a girar a tela), **E6** (a página chega ao modelo com os pixels médios,
-não amostrados), **E5** (página dupla partida em duas) e **P17** (painel de depuração). Antes dela: P12 (ordem de leitura), prefetch,
+**E9 concluída** (o detector trocado por um treinado em HQ ocidental). Antes dela: **E8** (a
+ordem segue os quadrinhos), **E7** (as detecções sobrevivem a girar a tela), **E6** (a página
+chega ao modelo com os pixels médios) e **P17** (painel de depuração).
+
+Com a E9 o **item 1** da lista de comparação — o último — está fechado. Antes dela: P12 (ordem de leitura), prefetch,
 E4 (modelo de segmentação), E3, E2, P10 (fechada por medição).
 
 Depois da P17, a sessão fez a **comparação extensiva com o Google Play Books na mesma HQ**
@@ -1501,12 +1503,66 @@ Nas páginas reais o detector achou 3 quadrinhos na página 7 (as três fileiras
 na página dupla, que é full-bleed — todos certos. O custo não aparece na medição: 2325 ms contra
 2311 ms na mesma página antes, ou seja, dentro do ruído.
 
+## E9 — outro modelo, e o item 1 fecha
+
+O detector era um YOLOv8m de segmentação treinado em mangá. Passou a ser um **RT-DETR-v2
+treinado em ~11 mil imagens de mangá, webtoon, manhua e HQ ocidental**
+([ogkalu/comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector),
+Apache-2.0), na variante **int8 de 11 MB**.
+
+**Medido antes de trocar**, com os mesmos pesos em cada caso:
+
+| | o que saiu (109 MB, GPL-3) | o que entrou (11 MB, Apache-2) |
+|---|---|---|
+| página densa | 12 | **19** — todos os balões da página |
+| página 7 | 4 | **6**, inclui "HE FOUND LOVE." |
+| página dupla | 4 (com o corte da E5) | **9, numa passada só** |
+| página da Batman, legendas soltas | 7 | **23** |
+| capítulo inteiro, 92 páginas | 589 | **842** (mais em 70, menos em 4, por 1 ou 2) |
+| páginas sintéticas | 3/8/3/0/4 | idênticas |
+| tempo, mesma página no desktop | 375 ms | **221 ms** |
+
+As variantes maiores do mesmo modelo (int8 de 44 MB, fp32 de 168 MB) acham 918 contra 842 no
+capítulo — 9% a mais, no máximo 6 numa página — o que não paga 15× o tamanho.
+
+**No aparelho:** 19 na densa, 9 na spread, 7 na página 7; **700 a 860 ms** por página contra
+2200 a 2300; APK de **210,7 MB para 128,7 MB**.
+
+**As três classes.** O modelo devolve `bubble`, `text_bubble` e `text_free`. O passeio para em
+`bubble` (o balão inteiro, que é também o que o card deve recortar) e em `text_free` (legenda
+sem balão — metade do conteúdo de uma página moderna). `text_bubble` é a mesma parada vista
+duas vezes e sai; em 92 páginas só 6 delas ficaram fora de algum balão. Limiar 0,5, escolhido
+olhando: abaixo disso `text_free` traz capa, créditos, anúncio e placa de loja.
+
+**O que se perdeu:** a máscara. O card volta a traçar a silhueta nos pixels da página (E3) e a
+cair para retângulo quando não dá — e conferido na tela, os cards continuam saindo recortados,
+porque agora a caixa é a **do balão** e não a do texto, que era o que fazia a E3 sofrer.
+
+**Apagado, porque a troca tornou morto:** `OnnxBubbleDetector`, `YoloSegDecoder`, `Letterbox` e
+`PageTiles` com seus testes, mais nove constantes. O corte da página dupla (E5) some junto: com
+este modelo a spread inteira dá 9 numa passada e partir ao meio acrescenta no máximo um, por
+duas inferências. Tudo isso está no histórico se um dia fizer falta.
+
+**Uma regressão da E8 apareceu nesta verificação.** Na página sintética dos quatro cantos a
+ordem tinha virado coluna-a-coluna: numa página de branco esparso o **próprio papel** conta como
+calha, e o `PanelFinder` devolvia as tiras em que o lettering calhava de estar. Agora um
+quadrinho precisa ser **desenhado**: medido, os quadrinhos reais de HQ têm 54 a 86% de tinta e
+aquelas tiras 3 a 9%. Com a regra em 0,35 as cinco páginas sintéticas voltam a 0 quadrinhos — e
+com isso à ordem que sempre tiveram — e as reais mantêm os seus.
+
+Fica aberto: `text_free` ainda para em crédito, logotipo e anúncio em página de rosto. São 107
+em 92 páginas. Os quadrinhos que a E8 acha dão um filtro possível — texto fora de quadrinho em
+página sem quadrinho nenhum é front matter — e isso é medição de outra vez.
+
 ## Onde estamos contra o Play Books — medido em 22/09/2026
 
 Mesma HQ aberta nos dois leitores, mesmas páginas, emulador. O que a comparação achou, em
 ordem de quanto pesa:
 
-**1. Recall. É o problema, e não é de limiar nem de resolução.** Página 9 (densa): nós 11
+**1. Recall.** ✅ **Feito — E9**, trocando o modelo. O que está abaixo continua valendo como
+o diagnóstico: com aqueles pesos não era limiar nem resolução, era o modelo.
+
+**O diagnóstico original:** Página 9 (densa): nós 11
 paradas, o Play Books ≥15. A medição offline com os mesmos pesos: 13 caixas a 640, **13 a
 1024**, 14 partindo a página ao meio. E o limiar: 13 em 0,25 → 15 em **0,02** — os escores
 são bimodais (0,49–0,94 e depois nada até 0,14). Os balões que faltam o modelo **não vê**,

@@ -5,7 +5,7 @@ import androidx.lifecycle.ViewModelStoreOwner
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.detector.BubbleDetectionImage
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.detector.BubbleDetector
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.detector.FakeBubbleDetector
-import eu.kanade.tachiyomi.ui.reader.bubblezoom.detector.OnnxBubbleDetector
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.detector.RtDetrBubbleDetector
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.detector.SwitchingBubbleDetector
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import kotlinx.coroutines.CancellationException
@@ -501,7 +501,7 @@ fun BubbleZoomSession(
     detector = SwitchingBubbleDetector(
         useFake = preferences.bubbleZoomFakeDetector,
         fake = FakeBubbleDetector(),
-        real = OnnxBubbleDetector(context.applicationContext),
+        real = RtDetrBubbleDetector(context.applicationContext),
     ),
     cropBorders = { preferences.cropBorders.get() },
     rightToLeft = rightToLeft,
