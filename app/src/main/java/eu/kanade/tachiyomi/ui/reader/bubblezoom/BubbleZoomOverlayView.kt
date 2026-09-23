@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.PointF
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.PorterDuffXfermode
@@ -257,6 +258,63 @@ class BubbleZoomOverlayView(
         progress = 0f
         animateTo(1f, BubbleZoomConfig.CARD_ENTER_DURATION_MS)
         return card
+    }
+
+    /**
+     * Brings the balloon on screen if the page is zoomed past it, and says whether it had to.
+     *
+     * Amendment E11, and the one place this feature moves the page. A spread is read zoomed, so
+     * half of it is off screen, and a card lifted from there would be lifted from tiles the view
+     * is not drawing. When it returns true the caller must wait: [onArrived] runs once the page
+     * has stopped, and showing the card is its job.
+     *
+     * The animation's own origin is `ORIGIN_ANIM`, which the page holder ignores — a move the
+     * reader did not make must not be read as one, or it would dismiss the very card it is
+     * being made for.
+     */
+    fun bringIntoView(detection: BubbleDetection, onArrived: () -> Unit): Boolean {
+        if (!imageView.isReady) return false
+        val sourceWidth = imageView.sWidth.toFloat()
+        val sourceHeight = imageView.sHeight.toFloat()
+        val centre = imageView.center ?: return false
+        val target = BubbleCardGeometry.panCentre(
+            box = detection.box,
+            sourceWidth = sourceWidth,
+            sourceHeight = sourceHeight,
+            viewportWidthPx = width.toFloat(),
+            viewportHeightPx = height.toFloat(),
+            scale = imageView.scale,
+            centreXSourcePx = centre.x,
+            centreYSourcePx = centre.y,
+            marginPx = screenMargin,
+        ) ?: return false
+
+        imageView.animateCenter(PointF(target.x, target.y))
+            ?.withDuration(BubbleZoomConfig.CARD_PAN_DURATION_MS)
+            ?.withInterruptible(true)
+            ?.withOnAnimationEventListener(
+                object : SubsamplingScaleImageView.DefaultOnAnimationEventListener() {
+                    private var done = false
+
+                    /**
+                     * Posted, never called from here, and never twice.
+                     *
+                     * This fires from inside the image view's `onDraw`, and lifting a card draws
+                     * that same view again to replay its tiles — which re-enters `onDraw` before
+                     * it has finished with the animation, so the listener fires again, and again,
+                     * until the main thread never comes back. Measured as an ANR: a stack of
+                     * `onComplete` -> `show` -> `captureCard` -> `onDraw` -> `onComplete` all the
+                     * way down.
+                     */
+                    override fun onComplete() {
+                        if (done) return
+                        done = true
+                        post(onArrived)
+                    }
+                },
+            )
+            ?.start() ?: return false
+        return true
     }
 
     /**

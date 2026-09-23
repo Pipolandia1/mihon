@@ -21,12 +21,19 @@ object BubbleZoomConfig {
      *
      * The target scale is the SMALLER of the two, so the box fits on both axes. Driving off
      * the width alone, as a first reading of the phase brief suggests, overflows vertically
-     * for a tall narrow bubble: a box twice as tall as it is wide, scaled so its width is 60%
-     * of a 1080px viewport, ends up 1290px tall on a 2400px screen — fine here, but on a
-     * landscape viewport of 1080px height it would be cut off.
+     * for a tall narrow bubble: a box twice as tall as it is wide, scaled so its width is a
+     * given fraction of a 1080px viewport, ends up far taller on a 2400px screen — fine there,
+     * but on a landscape viewport of 1080px height it would be cut off.
+     *
+     * **Amendment E11 divided this by 1.42 as well**, and for the same reason as
+     * [CARD_MAGNIFICATION]: 60 % was chosen when the card was framed on the LETTERING, and
+     * since E9 it is framed on the balloon, which measures 1.42 times the lettering on its
+     * smallest side. For a balloon wider than about a third of the page this fraction is what
+     * binds rather than the magnification, so leaving it would have left the biggest cards —
+     * the ones that take up the page — exactly as big as they were.
      */
-    const val TARGET_WIDTH_FRACTION = 0.60f
-    const val TARGET_HEIGHT_FRACTION = 0.60f
+    const val TARGET_WIDTH_FRACTION = 0.42f
+    const val TARGET_HEIGHT_FRACTION = 0.42f
 
     /**
      * How much larger than on screen the card shows the balloon, against the scale the page is
@@ -36,8 +43,14 @@ object BubbleZoomConfig {
      * the ceiling that stops a wide caption growing past the screen. Without this term a small
      * balloon is framed to fill 60 % of the viewport — 4× and more on a real page — which the
      * P9 verification saw refused for every real balloon there was.
+     *
+     * **Amendment E11 divided it by 1.42.** That figure was measured over 729 balloons matched
+     * to their own lettering: since E9 the card is framed on the BALLOON, and a balloon's box is
+     * 1.42 times its lettering's on the smallest side. The 2.8 above was calibrated against Play
+     * Books when the frame was the lettering, so keeping it made every card half again as big as
+     * the thing it was calibrated against — which is exactly what it looked like.
      */
-    const val CARD_MAGNIFICATION = 2.8f
+    const val CARD_MAGNIFICATION = 2.0f
 
     /**
      * How far outside a detected box a double tap may land and still mean that balloon, as a
@@ -70,6 +83,15 @@ object BubbleZoomConfig {
 
     /** How long the lifted card takes to appear, and to morph from one bubble to the next. */
     const val CARD_ENTER_DURATION_MS = 200L
+
+    /**
+     * How long the page takes to slide a balloon into view on a zoomed page. Amendment E11.
+     *
+     * A little longer than the card's own entrance, because this one moves the whole page and a
+     * move the reader did not ask for has to be legible as a move rather than a cut — and short
+     * enough that a walk of ten balloons does not feel like waiting on it.
+     */
+    const val CARD_PAN_DURATION_MS = 260L
 
     /** How long it takes to fade away. Slightly quicker, so dismissing feels responsive. */
     const val CARD_EXIT_DURATION_MS = 180L

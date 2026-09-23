@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.ui.reader.bubblezoom
 
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /** A rectangle in pixels, in whatever single space the caller is working in. */
@@ -29,16 +30,26 @@ object BubbleCardGeometry {
         viewportWidthPx: Float,
         viewportHeightPx: Float,
         currentViewScale: Float,
+        // Parameters so the tests pin this arithmetic rather than the numbers of the day.
+        magnification: Float = BubbleZoomConfig.CARD_MAGNIFICATION,
+        widthFraction: Float = BubbleZoomConfig.TARGET_WIDTH_FRACTION,
+        heightFraction: Float = BubbleZoomConfig.TARGET_HEIGHT_FRACTION,
     ): Float {
         if (paddedWidthSourcePx <= 0f || paddedHeightSourcePx <= 0f) return 0f
-        val byWidth = BubbleZoomConfig.TARGET_WIDTH_FRACTION * viewportWidthPx / paddedWidthSourcePx
-        val byHeight = BubbleZoomConfig.TARGET_HEIGHT_FRACTION * viewportHeightPx / paddedHeightSourcePx
-        // Since E2 the fractions are a ceiling, not the target: the card is CARD_MAGNIFICATION
+        val byWidth = widthFraction * viewportWidthPx / paddedWidthSourcePx
+        val byHeight = heightFraction * viewportHeightPx / paddedHeightSourcePx
+        // Since E2 the fractions are a ceiling, not the target: the card is [magnification]
         // times what is on screen, and only a balloon too large for that is held to the
         // viewport. An unknown view scale (zero or less) leaves the ceiling alone.
-        val byMagnification =
-            if (currentViewScale > 0f) BubbleZoomConfig.CARD_MAGNIFICATION * currentViewScale else Float.MAX_VALUE
-        return minOf(byWidth, byHeight, byMagnification)
+        val byMagnification = if (currentViewScale > 0f) magnification * currentViewScale else Float.MAX_VALUE
+        val fitted = minOf(byWidth, byHeight, byMagnification)
+        // Never smaller than the page it was lifted from. The ceilings above are fractions of
+        // the VIEWPORT, and a page read zoomed - a double-page spread - can already be drawing
+        // the balloon larger than that: the card then came out smaller than the thing it is
+        // magnifying, which is the one thing it must never be. Measured on a spread: the
+        // ceiling asked for 0.75 where the page was already at 1.56, so the lettering on the
+        // card was half the size of the lettering behind it.
+        return if (currentViewScale > 0f) maxOf(fitted, currentViewScale) else fitted
     }
 
     /**
@@ -116,6 +127,73 @@ object BubbleCardGeometry {
     }
 
     /**
+     * Where the view's centre has to go for [box] to be on screen, or null if it already is.
+     *
+     * Amendment E11. A page at fit shows all of itself, so until now nothing here ever had to
+     * move it — but a double-page spread is read zoomed, and half of it is off screen. Walking
+     * to a balloon over there used to lift a card from tiles the view is not drawing.
+     *
+     * The move is the SMALLEST one that brings the balloon inside, not a centring: the reader
+     * keeps their place on the page, and on a spread that is a sideways nudge rather than a
+     * jump. A balloon wider than the viewport cannot be brought inside at all, and is centred.
+     *
+     * In source pixels, like everything the image view is told. The view clamps the result to
+     * what it can actually show, so nothing here has to know the pannable range.
+     */
+    fun panCentre(
+        box: BubbleBox,
+        sourceWidth: Float,
+        sourceHeight: Float,
+        viewportWidthPx: Float,
+        viewportHeightPx: Float,
+        scale: Float,
+        centreXSourcePx: Float,
+        centreYSourcePx: Float,
+        marginPx: Float,
+    ): SourceCentre? {
+        if (scale <= 0f || viewportWidthPx <= 0f || viewportHeightPx <= 0f) return null
+        if (sourceWidth <= 0f || sourceHeight <= 0f) return null
+
+        val x = axisCentre(
+            low = box.x * sourceWidth,
+            high = box.right * sourceWidth,
+            centre = centreXSourcePx,
+            viewportPx = viewportWidthPx,
+            scale = scale,
+            marginPx = marginPx,
+        )
+        val y = axisCentre(
+            low = box.y * sourceHeight,
+            high = box.bottom * sourceHeight,
+            centre = centreYSourcePx,
+            viewportPx = viewportHeightPx,
+            scale = scale,
+            marginPx = marginPx,
+        )
+        // Sub-pixel differences are the arithmetic, not a move worth animating.
+        if (abs(x - centreXSourcePx) < 1f && abs(y - centreYSourcePx) < 1f) return null
+        return SourceCentre(x, y)
+    }
+
+    /** The nearest centre, on one axis, that leaves [low]..[high] inside the viewport. */
+    private fun axisCentre(
+        low: Float,
+        high: Float,
+        centre: Float,
+        viewportPx: Float,
+        scale: Float,
+        marginPx: Float,
+    ): Float {
+        val half = viewportPx / scale / 2f
+        val margin = marginPx / scale
+        val lowest = high + margin - half
+        val highest = low - margin + half
+        // Wider than the viewport: there is no centre that shows all of it, so show its middle.
+        if (lowest > highest) return (low + high) / 2f
+        return centre.coerceIn(lowest, highest)
+    }
+
+    /**
      * The padded balloon as integer source pixels, for a region decoder.
      *
      * Clamped to the image and never empty: a region decoder throws on an empty rectangle, and
@@ -175,6 +253,9 @@ object BubbleCardGeometry {
             .coerceIn(1, BubbleZoomConfig.MASK_MAX_GROW_PASSES)
     }
 }
+
+/** A point in the page's own pixels: where the image view is asked to centre itself. */
+data class SourceCentre(val x: Float, val y: Float)
 
 /**
  * A rectangle of source pixels as a region decoder wants it: left and top inclusive, right and

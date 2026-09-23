@@ -24,6 +24,12 @@ class BubbleCardGeometryTest {
     private val cardPadding = 0.20f
     private val padded = box0.padded(cardPadding)
 
+    /** The magnification these figures were worked out at, for the same reason as the padding. */
+    private val magnification = 2.8f
+
+    /** And the viewport ceiling they were worked out at. */
+    private val fraction = 0.60f
+
     @Test
     fun `a balloon too wide for the magnification is held to the viewport fraction`() {
         // Debug box 0 at 2.8x of the fit scale would be 1.89; 60 % of the width is less, and
@@ -34,9 +40,35 @@ class BubbleCardGeometryTest {
             viewportWidthPx = 1080f,
             viewportHeightPx = 2400f,
             currentViewScale = 0.675f,
+            magnification = magnification,
+            widthFraction = fraction,
+            heightFraction = fraction,
         )
 
         assertEquals(1.4161f, scale, 1e-3f)
+    }
+
+    @Test
+    fun `a card is never smaller than the page it was lifted from`() {
+        // A spread read zoomed: 2000x1537 filling a 1080x2400 viewport's height is a scale of
+        // 1.56, and a credits block a quarter of the spread wide is already drawn larger than
+        // the viewport ceiling allows. The ceiling asked for 0.75 - half the size the reader
+        // was already seeing - and the card came out as a shrunken copy of what was under it.
+        val block = BubbleBox(0.30f, 0.05f, 0.26f, 0.60f).padded(cardPadding)
+        val pageScale = 2400f / 1537f
+
+        val scale = BubbleCardGeometry.cardScale(
+            paddedWidthSourcePx = block.width * 2000f,
+            paddedHeightSourcePx = block.height * 1537f,
+            viewportWidthPx = 1080f,
+            viewportHeightPx = 2400f,
+            currentViewScale = pageScale,
+            magnification = magnification,
+            widthFraction = 0.42f,
+            heightFraction = 0.42f,
+        )
+
+        assertEquals(pageScale, scale, 1e-4f, "a card that shrinks its balloon is not a zoom")
     }
 
     @Test
@@ -50,9 +82,12 @@ class BubbleCardGeometryTest {
             viewportWidthPx = 1080f,
             viewportHeightPx = 2400f,
             currentViewScale = 0.675f,
+            magnification = magnification,
+            widthFraction = fraction,
+            heightFraction = fraction,
         )
 
-        assertEquals(BubbleZoomConfig.CARD_MAGNIFICATION * 0.675f, scale, 1e-4f)
+        assertEquals(magnification * 0.675f, scale, 1e-4f)
     }
 
     @Test
@@ -64,6 +99,9 @@ class BubbleCardGeometryTest {
             viewportWidthPx = 1080f,
             viewportHeightPx = 2400f,
             currentViewScale = 0f,
+            magnification = magnification,
+            widthFraction = fraction,
+            heightFraction = fraction,
         )
 
         assertEquals(0.6f * 1080f / (small.width * 1600f), scale, 1e-3f)
@@ -79,6 +117,9 @@ class BubbleCardGeometryTest {
             viewportHeightPx = 1080f,
             // Above the magnification, so only the axes decide here.
             currentViewScale = 1f,
+            magnification = magnification,
+            widthFraction = fraction,
+            heightFraction = fraction,
         )
 
         assertEquals(1.378f, scale, 1e-2f)

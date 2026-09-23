@@ -5,7 +5,8 @@
 
 ## Fase atual
 
-**E10 concluída** (o recorte do balão reajustado para a caixa nova). Antes dela: **E9** (o
+**E11 concluída** (a página vem até o balão quando está com zoom, e o card encolheu). Antes
+dela: **E10** (o recorte do balão reajustado para a caixa nova). Antes dela: **E9** (o
 detector trocado por um treinado em HQ ocidental). Antes dela: **E8** (a
 ordem segue os quadrinhos), **E7** (as detecções sobrevivem a girar a tela), **E6** (a página
 chega ao modelo com os pixels médios) e **P17** (painel de depuração).
@@ -1592,6 +1593,57 @@ balão.
 
 O que continua caindo para retângulo é o caso que a E1 já tinha medido e nenhum ajuste resolve:
 legenda cujo papel tem o mesmo tom do quadrinho atrás dela. Não há borda onde parar.
+
+## E11 — a página vem até o balão, e o card para de ocupar a página
+
+Dois pedidos do usuário, e os dois vieram da mesma raiz que a E10: a E9 trocou a caixa do
+**texto** pela do **balão** e nada que dependia desse tamanho foi recalibrado junto.
+
+**A página agora se move.** Uma página dupla é lida com zoom, então boa parte dela está fora da
+tela — e o card era levantado de ladrilhos que a view não está desenhando. `panCentre` calcula o
+**menor** deslocamento que põe o balão dentro do viewport (não uma centralização: o leitor
+mantém o lugar na página, e numa spread isso é um empurrão lateral). O passeio espera a
+animação terminar e só então levanta o card. A origem da animação é `ORIGIN_ANIM`, que o holder
+já ignora — senão ele leria o movimento como sendo do leitor e dispensaria justamente o card que
+está sendo feito. Página que cabe na tela não se move: `panCentre` devolve nulo.
+
+**O card encolheu por medição, não por gosto.** Sobre **729 balões casados com o próprio
+lettering**, a caixa do balão mede **1,42×** a caixa do texto no menor lado. Os dois números que
+enquadram o card foram calibrados contra o Play Books quando o quadro era o **texto**, então
+desde a E9 cada card saía metade maior do que aquilo contra o que foi calibrado. Os dois levaram
+o mesmo divisor:
+
+| | antes | agora |
+|---|---|---|
+| `CARD_MAGNIFICATION` | 2,8 | **2,0** (2,8 / 1,42) |
+| `TARGET_WIDTH/HEIGHT_FRACTION` | 0,60 | **0,42** (0,60 / 1,42) |
+
+O teto do viewport tinha que descer junto: para balão mais largo que um terço da página é ele
+que manda, e não a magnificação — ou seja, deixá-lo em 0,60 manteria exatamente os cards
+grandes, que eram a queixa.
+
+Verificado na tela: na spread o fundo anda entre uma parada e outra e o balão fica enquadrado;
+na página densa os cards continuam legíveis e ocupam bem menos.
+
+**Duas coisas a verificação do usuário achou, e as duas eram minhas.**
+
+*O card ficou menor que a página.* Numa spread com zoom o bloco de créditos saiu como uma cópia
+**encolhida** do que estava embaixo: o teto é fração do **viewport**, e a página já estava sendo
+desenhada a 1,56 enquanto o teto pedia 0,75. Agora há um piso — o card nunca é menor que a
+escala em que a página está. Para um balão que já ocupa mais que o teto na tela, a resposta
+honesta é mostrá-lo do tamanho em que está, recortado.
+
+*Um ANR.* O `onComplete` da animação dispara **de dentro do `onDraw`** da image view, e o card
+captura desenhando essa mesma view — reentrando no `onDraw`, que dispara o `onComplete` de novo,
+em recursão até a thread principal não voltar. O rastro do ANR é uma pilha de
+`onComplete → show → captureCard → onDraw → onComplete` até o fim. O callback agora é
+**postado** para fora do desenho e só corre uma vez. Depois do conserto: 22 paradas seguidas na
+spread com zoom, zero ANR.
+
+**Pela terceira vez** um ajuste de constante quebrou testes que liam a constante para montar a
+fixture — `FOCUS_PADDING` na E10, agora `CARD_MAGNIFICATION` e as frações. `cardScale` passou a
+receber os três como parâmetro com o valor de produção por padrão, e os testes escrevem o número
+em que foram calculados. Assim eles voltam a fixar a **aritmética**, que é o que dizem fixar.
 
 ## Onde estamos contra o Play Books — medido em 22/09/2026
 

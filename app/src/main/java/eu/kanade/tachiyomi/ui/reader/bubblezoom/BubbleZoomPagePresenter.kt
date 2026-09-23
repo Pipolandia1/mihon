@@ -57,6 +57,12 @@ class BubbleZoomPagePresenter(private val session: BubbleZoomSession) {
     /** What the last [apply] was told, so [isHoldingThePage] can answer without asking again. */
     private var enabled = false
 
+    /**
+     * The bubble the page was last moved for, so a balloon the view cannot bring fully into
+     * view is tried once and then shown where it is, rather than panned at on every re-apply.
+     */
+    private var panned: BubbleDetection? = null
+
     /** The bubble the card shows, so a re-apply of the same state does not rebuild the card. */
     private var shown: BubbleDetection? = null
 
@@ -142,6 +148,7 @@ class BubbleZoomPagePresenter(private val session: BubbleZoomSession) {
         if (focus == null) {
             cancelDecode()
             shown = null
+            panned = null
             card?.dismiss()
             return
         }
@@ -149,6 +156,14 @@ class BubbleZoomPagePresenter(private val session: BubbleZoomSession) {
         // The same bubble twice is not a new card, and must not be a second decode either.
         if (focus == shown && card?.isShowing == true) return
         cancelDecode()
+
+        // A spread is read zoomed, so the balloon may be off screen entirely. Bring it in first
+        // and come back: a card lifted from tiles the view is not drawing is a card of nothing.
+        if (focus != panned) {
+            panned = focus
+            val moving = card?.bringIntoView(focus) { present(page, focus) } == true
+            if (moving) return
+        }
 
         val token = card?.show(focus)
         if (token == null) {
