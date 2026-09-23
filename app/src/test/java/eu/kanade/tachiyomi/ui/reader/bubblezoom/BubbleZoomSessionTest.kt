@@ -592,6 +592,49 @@ class BubbleZoomSessionTest {
         )
     }
 
+    // --- what survives the phone being turned ----------------------------------------------
+
+    @Test
+    fun `a page detected before a rotation is not detected again after it`() = runTest {
+        // Rotation destroys the activity, the viewer and the session with it. The store belongs
+        // to the reader's view model, which it does not destroy, and the page objects come back
+        // from there too - so the new session asks about the same key and gets an answer.
+        val store = BubbleZoomStore()
+        val before = fixture(store = store)
+        before.session.activatePage(page, PageEntry.FORWARD)
+        before.ready(page)
+        before.supply(page)
+        advanceUntilIdle()
+        assertEquals(1, before.detector.calls)
+
+        val after = fixture(store = store)
+        after.session.activatePage(page, PageEntry.FORWARD)
+        after.ready(page)
+        after.supply(page)
+        advanceUntilIdle()
+
+        assertEquals(0, after.detector.calls, "the model ran again for a page already answered")
+        assertTrue(after.session.hasBubbles(page))
+        assertEquals(found.size, after.session.debugFor(page)?.bubbles)
+        assertTrue(after.session.debugFor(page)!!.remembered, "and the panel says where it came from")
+    }
+
+    @Test
+    fun `what another detector found is not served as this one's answer`() = runTest {
+        // The fake detector is one preference away, to be compared against the real one on the
+        // same page. An answer from the other one would make them indistinguishable.
+        val store = BubbleZoomStore()
+        store.remember(page, modelVersion = 999, bubbles = found, elapsedMs = 5)
+
+        val fixture = fixture(store = store)
+        fixture.session.activatePage(page, PageEntry.FORWARD)
+        fixture.ready(page)
+        fixture.supply(page)
+        advanceUntilIdle()
+
+        assertEquals(1, fixture.detector.calls, "it had to ask its own detector")
+    }
+
     // --- what the instrument panel is told --------------------------------------------------
 
     @Test
@@ -718,8 +761,21 @@ class BubbleZoomSessionTest {
         failure: Throwable? = null,
         availableAfterFailure: Boolean = true,
         cropBorders: Boolean = false,
+        store: BubbleZoomStore = BubbleZoomStore(),
         body: suspend TestScope.(Fixture) -> Unit,
     ) = runTest {
+        body(fixture(enabled, latencyMs, failure, availableAfterFailure, cropBorders, store))
+    }
+
+    /** One session with its own detector, so a test can build a second over the same store. */
+    private fun TestScope.fixture(
+        enabled: Boolean = true,
+        latencyMs: Long = 0,
+        failure: Throwable? = null,
+        availableAfterFailure: Boolean = true,
+        cropBorders: Boolean = false,
+        store: BubbleZoomStore = BubbleZoomStore(),
+    ): Fixture {
         val preference = FakePreference("bubble_zoom", enabled)
         val detector = RecordingDetector(found, latencyMs, failure, availableAfterFailure)
         val session = BubbleZoomSession(
@@ -731,8 +787,10 @@ class BubbleZoomSessionTest {
             // steps through rather than things that have already happened by the time it looks.
             detectionDispatcher = StandardTestDispatcher(testScheduler),
             cropBorders = { cropBorders },
-        ) { null }
-        body(Fixture(session, detector, preference))
+            currentPage = { null },
+            store = store,
+        )
+        return Fixture(session, detector, preference)
     }
 
     private class RecordingDetector(

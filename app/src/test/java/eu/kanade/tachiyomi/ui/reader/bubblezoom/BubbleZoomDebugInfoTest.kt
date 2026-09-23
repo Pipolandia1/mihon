@@ -20,7 +20,18 @@ class BubbleZoomDebugInfoTest {
         focused: Int = -1,
         confidence: Float? = null,
         failure: String? = null,
-    ) = BubbleZoomDebugInfo(bubbles, shaped, ms, prefetched, version, focused, confidence, failure)
+        remembered: Boolean = false,
+    ) = BubbleZoomDebugInfo(
+        bubbles = bubbles,
+        shaped = shaped,
+        detectionMs = ms,
+        prefetched = prefetched,
+        remembered = remembered,
+        modelVersion = version,
+        focusedIndex = focused,
+        focusedConfidence = confidence,
+        failure = failure,
+    )
 
     @Test
     fun `a finished page says what was found, how long it took and which model`() {
@@ -31,6 +42,13 @@ class BubbleZoomDebugInfoTest {
     fun `a page looked at before the reader reached it says so`() {
         // The one number that explains why a page is instant, now that the cache phase is gone.
         assertEquals("8 bubbles · 2143ms · ahead · v2", info(prefetched = true).summary)
+    }
+
+    @Test
+    fun `a page that came back from the store says so, and still says what it cost`() {
+        // After a rotation every page on screen reads like this. Without the word it would
+        // claim 2143ms for something that took none, which is how a cache hides.
+        assertEquals("8 bubbles · 2143ms · kept · v2", info(remembered = true).summary)
     }
 
     @Test

@@ -69,6 +69,7 @@ abstract class PagerViewer(val activity: ReaderActivity) : Viewer {
         preferences = readerPreferences,
         scope = scope,
         context = activity,
+        owner = activity,
         rightToLeft = { this is R2LPagerViewer },
     ) { (currentPage as? ReaderPage)?.bubblePageKey() }
 

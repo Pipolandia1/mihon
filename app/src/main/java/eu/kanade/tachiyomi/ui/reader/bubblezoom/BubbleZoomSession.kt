@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.reader.bubblezoom
 
 import android.content.Context
+import androidx.lifecycle.ViewModelStoreOwner
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.detector.BubbleDetectionImage
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.detector.BubbleDetector
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.detector.FakeBubbleDetector
@@ -66,6 +67,15 @@ class BubbleZoomSession(
      */
     private val rightToLeft: () -> Boolean = { false },
     /**
+     * Where answers outlive this object. Rotation destroys the viewer and everything it holds;
+     * it does not destroy the reader's view models, and this lives in one. Amendment E7.
+     *
+     * Defaulted so that every test of this class gets a store of its own and a page detected in
+     * one test can never answer for another. Declared before [currentPage] so that the lambda
+     * every caller writes as a trailing block still binds to the page and not to this.
+     */
+    private val store: BubbleZoomStore = BubbleZoomStore(),
+    /**
      * The page the reader is on, read lazily: switching the feature on has to give the walk a
      * subject, and the reader will not call `activatePage` again until it turns a page.
      *
@@ -119,6 +129,9 @@ class BubbleZoomSession(
     ) {
         var bubbles: List<BubbleDetection>? = null
         var failure: Throwable? = null
+
+        /** Answered from [BubbleZoomStore] rather than by the model. The panel says so. */
+        var remembered: Boolean = false
 
         /**
          * How long this page waited for its answer, queue included. Null while it still is.
@@ -209,6 +222,7 @@ class BubbleZoomSession(
             shaped = bubbles.count { it.shape != null },
             detectionMs = entry.elapsedMs,
             prefetched = entry.prefetched,
+            remembered = entry.remembered,
             modelVersion = detector.modelVersion,
             focusedIndex = focused,
             focusedConfidence = bubbles.getOrNull(focused)?.confidence,
@@ -281,9 +295,22 @@ class BubbleZoomSession(
         start(page, prepared, prefetched = false)
     }
 
-    private fun start(page: BubblePageKey, prepared: BubbleDetectionImage, prefetched: Boolean) {
+    /** Whether the model was actually asked. False when the answer was already known. */
+    private fun start(page: BubblePageKey, prepared: BubbleDetectionImage, prefetched: Boolean): Boolean {
         val entry = PageDetection(prepared, prefetched = prefetched)
-        if (detections.putIfAbsent(page, entry) != null) return
+        if (detections.putIfAbsent(page, entry) != null) return false
+
+        // Already answered, for this page, by this detector: a rotation, or a page walked back
+        // to. Delivered through the scope rather than from here because this method runs on
+        // whichever thread was decoding, and everything the controller touches is main-thread.
+        val remembered = store.recall(page, detector.modelVersion)
+        if (remembered != null) {
+            entry.bubbles = remembered.bubbles
+            entry.elapsedMs = remembered.elapsedMs
+            entry.remembered = true
+            scope.launch { deliver(page) }
+            return false
+        }
 
         // On the viewer's scope, which PagerViewer.destroy() cancels. The page holder's own
         // scope is a MainScope that is never cancelled, so a job left there would outlive the
@@ -295,6 +322,7 @@ class BubbleZoomSession(
                 val found = withContext(detectionDispatcher) { detector.detect(prepared) }
                 entry.elapsedMs = (System.nanoTime() - started) / 1_000_000
                 entry.bubbles = found
+                store.remember(page, detector.modelVersion, found, entry.elapsedMs ?: 0L)
                 deliver(page)
             } catch (cancelled: CancellationException) {
                 // Not a failure, and rethrowing matters: onDetectionFailed is not narrowed to
@@ -310,6 +338,7 @@ class BubbleZoomSession(
                 deliver(page)
             }
         }
+        return true
     }
 
     /**
@@ -329,6 +358,7 @@ class BubbleZoomSession(
         if (!isEnabled || !detector.available || cropBorders()) return
         var started = 0
         var known = 0
+        var remembered = 0
         var unreadable = 0
         for (page in pages) {
             // Checked before the bytes are read: reading them means copying a page, and a page
@@ -342,14 +372,14 @@ class BubbleZoomSession(
                 unreadable++
                 continue
             }
-            start(page.key, prepared, prefetched = true)
-            started++
+            if (start(page.key, prepared, prefetched = true)) started++ else remembered++
         }
         // Said out loud because this feature is invisible when it works and invisible when it
         // does not: nothing on screen distinguishes "fetched three pages ahead" from "found
         // nothing to fetch", and the difference is seconds of waiting per page.
         logcat(LogPriority.INFO) {
-            "BubbleZoom prefetch offered=${pages.size} started=$started known=$known unreadable=$unreadable"
+            "BubbleZoom prefetch offered=${pages.size} started=$started known=$known " +
+                "remembered=$remembered unreadable=$unreadable"
         }
         dropPagesNoLongerAhead(pages.mapTo(HashSet()) { it.key })
     }
@@ -452,6 +482,8 @@ fun BubbleZoomSession(
     preferences: ReaderPreferences,
     scope: CoroutineScope,
     context: Context,
+    /** The reader's activity: what the answers are kept on, so a rotation cannot lose them. */
+    owner: ViewModelStoreOwner,
     rightToLeft: () -> Boolean,
     currentPage: () -> BubblePageKey?,
 ): BubbleZoomSession = BubbleZoomSession(
@@ -468,6 +500,7 @@ fun BubbleZoomSession(
     cropBorders = { preferences.cropBorders.get() },
     rightToLeft = rightToLeft,
     currentPage = currentPage,
+    store = BubbleZoomStore.of(owner),
 )
 
 /**

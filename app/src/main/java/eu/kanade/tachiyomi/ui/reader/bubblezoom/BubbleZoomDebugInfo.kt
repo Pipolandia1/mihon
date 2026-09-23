@@ -34,6 +34,8 @@ data class BubbleZoomDebugInfo(
     val detectionMs: Long?,
     /** Whether this page was detected before the reader reached it. */
     val prefetched: Boolean,
+    /** Whether the answer came back from [BubbleZoomStore] instead of from the model. */
+    val remembered: Boolean = false,
     /** Which detector answered, so a stale cache or a fake can never be mistaken for the model. */
     val modelVersion: Int,
     /** The balloon the walk is on, or -1 for the page at rest. */
@@ -54,6 +56,9 @@ data class BubbleZoomDebugInfo(
                 if (bubbles != 1) append("s")
                 if (shaped != bubbles) append(", $shaped shaped")
                 append(" · ${detectionMs}ms")
+                // What the page cost when it was first answered, and then where this copy of
+                // that answer came from. "kept" is what a page reads after a rotation.
+                if (remembered) append(" · kept")
                 if (prefetched) append(" · ahead")
                 append(" · v$modelVersion")
             }

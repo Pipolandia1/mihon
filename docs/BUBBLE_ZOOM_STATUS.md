@@ -5,8 +5,9 @@
 
 ## Fase atual
 
-**E6 concluída** (a página chega ao modelo com os pixels médios, não amostrados). Antes dela:
-**E5** (página dupla partida em duas) e **P17** (painel de depuração). Antes dela: P12 (ordem de leitura), prefetch,
+**E7 concluída** (as detecções sobrevivem a girar a tela). Antes dela: **E6** (a página chega ao
+modelo com os pixels médios, não amostrados), **E5** (página dupla partida em duas) e **P17**
+(painel de depuração). Antes dela: P12 (ordem de leitura), prefetch,
 E4 (modelo de segmentação), E3, E2, P10 (fechada por medição).
 
 Depois da P17, a sessão fez a **comparação extensiva com o Google Play Books na mesma HQ**
@@ -1427,6 +1428,39 @@ O tempo não mudou (~2,2 s por recorte). A spread perdeu uma legenda — é o ú
 troca, e vale bem menos que dois falsos positivos a menos e um balão real a mais numa página
 comum. "HE FOUND LOVE." continua não saindo, que é o item 1: o modelo.
 
+## E7 — girar a tela não joga mais nada fora
+
+Item 5 da lista. A sessão vive no viewer, e o viewer é uma view: girar destrói a Activity, o
+viewer e tudo que qualquer um dos dois segurava. Medido antes: `prefetch known=0`, o card some,
+e a página que o leitor está olhando volta a dizer `detecting…` pelo tempo que o modelo levar.
+As respostas não tinham nada de errado — não tinham onde ficar.
+
+`BubbleZoomStore` é um `ViewModel`, que é exatamente esse lugar: sobrevive à mudança de
+configuração e é limpo quando o leitor termina de verdade. Guarda **só respostas** — caixas,
+confiança e silhuetas —, nunca os bytes da página.
+
+A chave continua sendo a identidade do objeto `ReaderPage` (`BubblePageKey`), e isso funciona
+porque os mesmos objetos voltam: a `ReaderActivity` não declara `configChanges`, então é
+recriada, mas lê `viewModel.state.value.viewerChapters` do view model que sobreviveu.
+
+Doze páginas, LRU **por uso** e não por inserção — quem volta numa página e segue não deve
+perder justamente a que fica revisitando. Doze cobre as três vivas mais as três do prefetch com
+folga, e limita o pior caso a uns 2 MB (uma silhueta de legenda larga tem ~20 mil células).
+
+O painel não esconde o cache: uma página vinda do store lê `4 bubbles · 2189ms · kept · v2` —
+o tempo é o que ela custou da primeira vez, e o `kept` diz de onde veio esta cópia. E o log do
+prefetch passou a contar separado o que ele realmente fez, porque `started` estava contando
+como iniciada uma página que só tinha sido lembrada.
+
+**Medido no aparelho, girando na mesma página:**
+
+    antes:   prefetch offered=3 started=3 known=0                    + "detecting…", 0 caixas
+    depois:  prefetch offered=3 started=0 known=0 remembered=3       + "kept", 4 caixas
+
+Zero inferências, página pronta em meio segundo, nos dois sentidos de rotação. E de brinde, o
+mesmo store faz voltar uma página já lida sair de graça: andando uma para trás e outra para a
+frente, `started=0 known=1 remembered=2`.
+
 ## Onde estamos contra o Play Books — medido em 22/09/2026
 
 Mesma HQ aberta nos dois leitores, mesmas páginas, emulador. O que a comparação achou, em
@@ -1452,9 +1486,9 @@ sobre fundo escuro.
 horizontal; o Play Books lê quadrinho a quadrinho. É o limite documentado da P12 — com a
 diferença de que nesta HQ as calhas são **pretas e retas**, o que a E1 não tinha no mangá.
 
-**5. Rotação joga fora tudo.** Medido: depois de girar, `prefetch known=0` e o card some;
-a página volta a `detecting…` por segundos. Normalizadas ou não, as detecções não sobrevivem
-à recriação da Activity.
+**5. Rotação joga fora tudo.** ✅ **Feito — E7.** As respostas passaram a morar num `ViewModel`,
+que a recriação da Activity não alcança: depois de girar, zero inferências e a página pronta em
+meio segundo. O card em si não volta — a página volta inteira, com os balões prontos.
 
 **Gestos: paridade.** Duplo-toque entra e sai, swipe anda, toque nas zonas anda, toque no
 centro dispensa, duplo-toque na arte é o zoom do próprio Mihon, pinça dispensa o card, virar
