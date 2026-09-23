@@ -17,23 +17,28 @@ object BubbleZoomConfig {
     const val FOCUS_PADDING = 0.08f
 
     /**
-     * Fraction of the usable viewport the padded box should occupy.
+     * The most of the viewport the card may take, on each axis: the ceiling on
+     * [CARD_MAGNIFICATION] for a balloon too large to be magnified that far and still fit.
      *
-     * The target scale is the SMALLER of the two, so the box fits on both axes. Driving off
-     * the width alone, as a first reading of the phase brief suggests, overflows vertically
-     * for a tall narrow bubble: a box twice as tall as it is wide, scaled so its width is a
-     * given fraction of a 1080px viewport, ends up far taller on a 2400px screen — fine there,
-     * but on a landscape viewport of 1080px height it would be cut off.
+     * The card's scale is the SMALLER of the two ceilings and the magnification, so the card
+     * fits on both axes. Driving off the width alone overflows vertically for a tall narrow
+     * bubble: a box twice as tall as it is wide, scaled so its width is a given fraction of a
+     * 1080px viewport, ends up far taller on a 2400px screen — fine there, but on a landscape
+     * viewport of 1080px height it would be cut off.
      *
-     * **Amendment E11 divided this by 1.42 as well**, and for the same reason as
-     * [CARD_MAGNIFICATION]: 60 % was chosen when the card was framed on the LETTERING, and
-     * since E9 it is framed on the balloon, which measures 1.42 times the lettering on its
-     * smallest side. For a balloon wider than about a third of the page this fraction is what
-     * binds rather than the magnification, so leaving it would have left the biggest cards —
-     * the ones that take up the page — exactly as big as they were.
+     * **Amendment E14 raised this to two thirds of the screen.** It had been a *target* — 60 %
+     * when the card was framed on the lettering, 42 % after E9 framed it on the balloon — and
+     * for a balloon wider than about a fifth of the page that target, not the magnification,
+     * was what bound: a balloon 44 % of the page wide asked for 0.52 where the page was already
+     * drawn at 0.54, so the floor answered with the page itself, and the widest balloons — the
+     * ones that most want a zoom — got none. At the full screen (0.92) the same balloon came
+     * out at 2×, a card over most of the page, which the user found too much. At 0.65 the
+     * magnification holds up to a balloon about a third of the page wide and tapers from there:
+     * that balloon lifts to 1.5×, on a card two thirds of the screen wide, and only a balloon
+     * wider than two thirds of the page is left as the page draws it.
      */
-    const val TARGET_WIDTH_FRACTION = 0.42f
-    const val TARGET_HEIGHT_FRACTION = 0.42f
+    const val TARGET_WIDTH_FRACTION = 0.65f
+    const val TARGET_HEIGHT_FRACTION = 0.65f
 
     /**
      * How much larger than on screen the card shows the balloon, against the scale the page is

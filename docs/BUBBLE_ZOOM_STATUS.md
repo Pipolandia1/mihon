@@ -1748,6 +1748,42 @@ decodificador uma vez por página e não por par.
 O log `BubbleZoom join … reach= ring= seam= -> joined|kept apart` fica: é o instrumento que
 achou o problema, e o que vai dizer onde o próximo está.
 
+## E14 — balão grande ganha zoom
+
+O usuário mostrou o balão 3 de uma página (a fala dupla "NO. THIS IS A PLACE THAT EXISTS
+BETWEEN THE SURFACE WORLD…", 44 % da página de largura) e o card saía em **1,0×**: a página,
+com uma moldura.
+
+A conta: página 1988×3057 num viewport de 1080, escala 0,543. Caixa acolchoada de 871 px. O
+teto por largura, `TARGET_WIDTH_FRACTION` 0,42 × 1080 / 871 = **0,52**, abaixo da escala em que
+a página já estava — e o piso da E11 ("nunca menor que a página") devolvia a página. Ou seja:
+para balões acima de ~um quinto da página o teto de 42 % mandava, e mandava "sem zoom". O
+balão que mais precisa de zoom era o único que não ganhava.
+
+As frações eram um *alvo* (60 % com o card no texto, 42 % depois da E9); a E11 tinha deixado
+claro que só para balões largos elas mandavam. Passam a ser um **teto**: o máximo do viewport
+que o card pode tomar em cada eixo. Balões normais não mudam nada — a magnificação 2,0 já
+mandava neles.
+
+**A primeira tentativa foi o teto na tela inteira (0,92).** O balão 3 foi a 2× — card de
+946 px numa tela de 1080, o dobro do que está na página — e o usuário achou grande demais
+(`tools/shots/e14-p9-stop3.png`, antes em `e14-b3-before.png`, onde o "card" é a própria
+página). **O teto ficou em 0,65: dois terços da tela.** Com ele a magnificação 2,0 vale até um
+balão de ~32 % da página de largura e afina a partir daí — o balão 3 vai a 0,65 × 1080 / 871 =
+0,81 de escala, **1,5×**, num card de ~700 px; um balão de 65 % da página fica como a página o
+desenha, e um desses já é legível sem zoom. O número é gosto, e é um só: quem quiser o card
+maior ou menor mexe nele.
+
+`BubbleCardGeometryTest` ganhou um teste com esse balão: preso a 0,42 dá a página; preso a 0,65
+dá o zoom que cabe em dois terços (1,4×); preso a 0,92 daria os 2,0×.
+
+**Verificado no aparelho**, na mesma página (9/30), com o usuário tendo reaberto a HQ — a
+fonte online não abre na minha sessão (Cloudflare) e a página não estava no cache de capítulos.
+Parada 3: região do card na tela **712×402 px** (era 1011×720 a 0,92 e ~473 a 0,42), letreiro
+1,5×, dois terços da largura (`tools/shots/e14b-p9-stop3.png`; a 0,92 em `e14-p9-stop3.png`;
+antes em `e14-b3-before.png`). Parada 1, um balão comum: 251×220 px nos dois builds. O log do
+card não muda (`card 871x490/1`) porque o que mudou é a escala em que ele é desenhado.
+
 ## Onde estamos contra o Play Books — medido em 22/09/2026
 
 Mesma HQ aberta nos dois leitores, mesmas páginas, emulador. O que a comparação achou, em

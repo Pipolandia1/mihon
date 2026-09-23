@@ -72,6 +72,34 @@ class BubbleCardGeometryTest {
     }
 
     @Test
+    fun `a wide balloon is magnified as far as its ceiling allows, not held to a target under its own size`() {
+        // Amendment E14. A joined balloon 44 % of a 1988-wide page, read fit to a 1080 viewport
+        // (scale 0.54): held to 42 % of the viewport it asks for 0.52, the floor answers with
+        // the page, and the widest balloon on the page is the one that gets no zoom. Held to
+        // two thirds of the screen it lifts to the zoom that fits there - short of the 2x a
+        // small balloon gets, but a zoom; held to the whole screen it would get the full 2x,
+        // which is what the user saw and found too much.
+        val wide = BubbleBox(0.33f, 0.05f, 0.40f, 0.14f).padded(cardPadding)
+        val pageScale = 1080f / 1988f
+        fun scaleHeldTo(fraction: Float) = BubbleCardGeometry.cardScale(
+            paddedWidthSourcePx = wide.width * 1988f,
+            paddedHeightSourcePx = wide.height * 3057f,
+            viewportWidthPx = 1080f,
+            viewportHeightPx = 2400f,
+            currentViewScale = pageScale,
+            magnification = 2.0f,
+            widthFraction = fraction,
+            heightFraction = fraction,
+        )
+
+        assertEquals(pageScale, scaleHeldTo(0.42f), 1e-4f, "held to a target under its own size: no zoom at all")
+        val held = scaleHeldTo(0.65f)
+        assertEquals(0.65f * 1080f / (wide.width * 1988f), held, 1e-4f, "held to two thirds: the zoom that fits there")
+        assertTrue(held > 1.3f * pageScale, "which is a real zoom: ${held / pageScale}x")
+        assertEquals(2.0f * pageScale, scaleHeldTo(0.92f), 1e-4f, "held to the screen: the full magnification")
+    }
+
+    @Test
     fun `a small balloon is shown at exactly CARD_MAGNIFICATION, not framed to fill the screen`() {
         // A text box 5 % wide: framing it to 60 % of the viewport would be 6.5x, which is what
         // the P9 verification saw asked of every real balloon. Play Books shows about 2.8x.
