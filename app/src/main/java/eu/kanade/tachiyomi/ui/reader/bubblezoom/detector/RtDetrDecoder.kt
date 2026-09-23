@@ -44,14 +44,15 @@ object RtDetrDecoder {
         scores: FloatArray,
         minimumConfidence: Float = BubbleDetectionConfig.DETECTION_CONFIDENCE,
         /**
-         * The page as one grey plane, when the caller has one. With it, the lobes of a balloon
-         * lettered as two bubbles are joined into one stop — see [JoinedBalloons], which needs
-         * the pixels to tell a waisted balloon from two that merely stand close. Without it
-         * every box is its own region, which is what this did before amendment E12.
+         * Pixels of a rectangle of the page and its margin, when the caller can supply them.
+         * With them, the lobes of a balloon lettered as two bubbles are joined into one stop —
+         * see [JoinedBalloons], which needs the pixels to tell a waisted balloon from two that
+         * merely stand close. Without them every box is its own region, which is what this did
+         * before amendment E12.
          */
-        page: IntArray? = null,
-        pageWidth: Int = 0,
-        pageHeight: Int = 0,
+        crop: ((BubbleBox) -> JoinedBalloons.Crop?)? = null,
+        /** Passed through to [JoinedBalloons.merge]: every candidate pair, and what became of it. */
+        reportJoin: ((BubbleBox, BubbleBox, JoinedBalloons.Spread, Boolean) -> Unit)? = null,
     ): List<BubbleDetection> {
         val queries = minOf(labels.size, scores.size, boxes.size / 4)
         val balloons = ArrayList<BubbleDetection>(queries)
@@ -79,11 +80,7 @@ object RtDetrDecoder {
             // is not a lobe of it, and the classes are the only place that is known.
             if (label == CLASS_BUBBLE) balloons += region else found += region
         }
-        val whole = if (page != null) {
-            JoinedBalloons.merge(balloons, page, pageWidth, pageHeight)
-        } else {
-            balloons
-        }
+        val whole = if (crop != null) JoinedBalloons.merge(balloons, crop, reportJoin) else balloons
         return whole + found
     }
 }

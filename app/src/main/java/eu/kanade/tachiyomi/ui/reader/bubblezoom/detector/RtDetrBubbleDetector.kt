@@ -7,10 +7,15 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleBox
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleCardDecoder
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleCardGeometry
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleDetection
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleDetectionConfig
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleType
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomConfig
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.JoinedBalloons
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.PanelFinder
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.SourceRegion
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import logcat.LogPriority
@@ -132,18 +137,32 @@ class RtDetrBubbleDetector(
         try {
             fillInput(page)
             val answer = run(session)
-            // One grey plane of the page, read while it is still decoded and used twice: to
-            // join the lobes of a balloon lettered as two, and to find the page's gutters.
-            // Re-decoding a page to look at it again would cost more than both looks do.
-            val grey = greyPlane(page)
             found = RtDetrDecoder.decode(
                 labels = answer.labels,
                 boxes = answer.boxes,
                 scores = answer.scores,
-                page = grey.luma,
-                pageWidth = grey.width,
-                pageHeight = grey.height,
+                // Each candidate pair of balloons is looked at in a crop decoded from the page's
+                // own bytes, at the resolution the join was calibrated on. Not the reduced plane
+                // the panels are read from: on the device that plane joined two speeches the
+                // calibration put far apart, and no re-measurement of the crops reproduced it.
+                crop = { around -> cropOf(image, around) },
+                reportJoin = { larger, smaller, spread, joined ->
+                    // Said per pair because a wrong join is a speech cut in half or two speeches
+                    // read as one, and from the screen those look like the model's fault.
+                    logcat(LogPriority.INFO) {
+                        val shape = "BubbleZoom join %.3f,%.3f %.3fx%.3f + %.3f,%.3f %.3fx%.3f " +
+                            "reach=%.2f ring=%.2f seam=%.2f -> %s"
+                        shape.format(
+                            larger.x, larger.y, larger.width, larger.height,
+                            smaller.x, smaller.y, smaller.width, smaller.height,
+                            spread.reach, spread.ring, spread.seam, if (joined) "joined" else "kept apart",
+                        )
+                    }
+                },
             )
+            // While the page is still decoded: the gutters are read from the same pixels, and
+            // re-decoding a page to look at them would cost more than the look does.
+            val grey = greyPlane(page)
             panels = PanelFinder.find(grey.luma, grey.width, grey.height)
         } finally {
             page.recycle()
@@ -280,6 +299,56 @@ class RtDetrBubbleDetector(
 
     /** The page reduced to one byte of brightness per pixel, and the size that came out. */
     private class GreyPlane(val luma: IntArray, val width: Int, val height: Int)
+
+    /**
+     * [around] of the page, plus [BubbleZoomConfig.JOIN_CROP_PADDING] of its smallest side on
+     * every edge, as a grey crop: decoded from the page's bytes by the card's own region decoder,
+     * sampled so its long side lands at or above [BubbleZoomConfig.JOIN_CROP_LONG_SIDE].
+     *
+     * The margin is added here, in pixels, because that is how the join was calibrated; a
+     * fraction of a box on a page twice as tall as it is wide would be a different margin on
+     * each axis.
+     *
+     * Blocking, like every decode here: this runs on the detection dispatcher, never the main
+     * thread. Null when the region cannot be decoded, and the pair is then left as two.
+     */
+    private fun cropOf(image: BubbleDetectionImage, around: BubbleBox): JoinedBalloons.Crop? {
+        val pair = BubbleCardGeometry.regionOf(around, image.width, image.height) ?: return null
+        val margin = (BubbleZoomConfig.JOIN_CROP_PADDING * minOf(pair.width, pair.height)).toInt()
+        val region = SourceRegion(
+            left = (pair.left - margin).coerceAtLeast(0),
+            top = (pair.top - margin).coerceAtLeast(0),
+            right = (pair.right + margin).coerceAtMost(image.width),
+            bottom = (pair.bottom + margin).coerceAtMost(image.height),
+        )
+        // The card's sample size is driven by both sides; this one by the long side alone, so a
+        // wide pair is not decoded at full width for the sake of its height.
+        var sample = 1
+        while (maxOf(region.width, region.height) / (sample * 2f) >= BubbleZoomConfig.JOIN_CROP_LONG_SIDE) {
+            sample *= 2
+        }
+        val bitmap = BubbleCardDecoder.decode(image, region, sample) ?: return null
+        try {
+            val width = bitmap.width
+            val height = bitmap.height
+            if (width <= 0 || height <= 0) return null
+            val pixels = IntArray(width * height)
+            bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+            val luma = IntArray(width * height) { i ->
+                val pixel = pixels[i]
+                (((pixel shr 16 and 0xFF) * 77) + ((pixel shr 8 and 0xFF) * 151) + ((pixel and 0xFF) * 28)) shr 8
+            }
+            val covered = BubbleBox.clampedOrNull(
+                x = region.left.toFloat() / image.width,
+                y = region.top.toFloat() / image.height,
+                width = region.width.toFloat() / image.width,
+                height = region.height.toFloat() / image.height,
+            ) ?: return null
+            return JoinedBalloons.Crop(luma, width, height, covered)
+        } finally {
+            bitmap.recycle()
+        }
+    }
 
     /**
      * The decoded page as one grey plane, small enough to sweep several times.

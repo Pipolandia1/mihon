@@ -248,14 +248,75 @@ object BubbleZoomConfig {
 
     /**
      * How much of the smaller lobe a fill from the larger one must cover for the two to be one
-     * balloon. Amendment E12.
+     * balloon. Amendments E12 and E13.
      *
-     * Measured over 246 pairs of balloons whose boxes cross, on 103 pages: a fill reaching
-     * between 0 and 0.13 of the other box was two separate speeches every time, and one
-     * reaching 0.37 or more was the two lobes of one balloon every time. Between those there
-     * were three pairs in the whole corpus, so a quarter sits in an all but empty gap.
+     * Measured over 389 pairs of balloons on 103 pages — 246 whose boxes cross and 143 within
+     * [JOIN_NEAR_GAP] of each other: a fill reaching between 0 and 0.13 of the other box was
+     * two separate speeches every time, and among the crossing pairs one reaching 0.37 or more
+     * was one balloon's lobes every time but the leaks [JOIN_MAX_RING_FILL] refuses. Between
+     * 0.14 and 0.36 there was not one pair, so a quarter sits in an empty gap. For the pairs
+     * that do not cross, reaching is necessary and not enough — see [JOIN_MIN_SEAM].
      */
     const val MERGE_REACH = 0.25f
+
+    /**
+     * How close two boxes must come, on both axes, to be asked whether they are one balloon —
+     * a fraction of the page. Amendment E13.
+     *
+     * The lobes of a butted balloon stand edge to edge, and their boxes, being the model's, can
+     * leave a hair between them; such a pair used to go untested. At 0.03 of the page the
+     * candidates are 143 more pairs over 103 pages, of which the fill reaches across 20 and the
+     * seam test below keeps the 5 that are one balloon.
+     */
+    const val JOIN_NEAR_GAP = 0.03f
+
+    /**
+     * The least of the band between two non-crossing boxes the fill must cover for them to be
+     * one balloon. Amendment E13.
+     *
+     * A fill crosses between two balloons that merely touch, or where a tail is lettered into
+     * the next balloon, as readily as through a waist, and half the pairs it crosses that way
+     * are two speakers. The width of the crossing tells them apart: measured over the 20 near
+     * pairs the fill crosses, a waisted or butted balloon fills 0.53 to 0.98 of the band, a
+     * touch or a tail 0.00 to 0.15. Crossing boxes have no band and are not asked.
+     */
+    const val JOIN_MIN_SEAM = 0.40f
+
+    /**
+     * How thick the band the seam is read across is, as a fraction of the smaller box's
+     * smallest side, when the gap between the boxes is thinner than that. Measured from 3 to
+     * 16 pixels the seam reads the same, so this only keeps the band from being one row.
+     */
+    const val JOIN_SEAM_BAND = 0.05f
+
+    /**
+     * The most of the margin around a pair the fill may cover and still join it.
+     * Amendment E13.
+     *
+     * A balloon on a panel whose paper is its own tone — a yellow sky, a magenta caption page —
+     * leaks: the fill floods the panel and reaches any box on it. Measured over the 389 pairs
+     * by the share of the margin filled, every genuine pair is at or under 0.32 and every leak
+     * at or over 0.54; four pairs in the corpus are leaks.
+     */
+    const val JOIN_MAX_RING_FILL = 0.40f
+
+    /**
+     * How far past the pair's rectangle the crop the join test reads reaches, as a fraction of
+     * that rectangle's smallest side in pixels, on every edge. The calibration crops were taken
+     * with this margin; it is where a leak shows, and it puts an outline on the edge of a box
+     * inside the crop rather than on its border.
+     */
+    const val JOIN_CROP_PADDING = 0.15f
+
+    /**
+     * The long side, in pixels, the crop of a pair is decoded down to for the join test, at
+     * the least: the decoder halves in powers of two, so a crop lands between this and twice it.
+     *
+     * At 192 an outline thins to under a pixel and the fill's verdict on a pair flips with a
+     * one-pixel shift of the crop; measured at 384 and at 768 every one of the 389 pairs reads
+     * the same, so 384 is the cheapest size that is stable.
+     */
+    const val JOIN_CROP_LONG_SIDE = 384
 
     /** How far the cut-out's two-tone halo reaches past its edge, in dp. */
     const val CARD_HALO_WIDTH_DP = 1f

@@ -1681,6 +1681,73 @@ lobos e achar as calhas da E8.
 só, e a página passou de 10 paradas para 9. Na outra página com lobos ("US." + "EVERYONE FALL
 IN. IT'S TIME TO VOTE."), idem.
 
+## E13 — a junção lê o recorte certo, recusa vazamento e exige cintura
+
+O usuário apontou duas coisas na E12: o balão 13 da página do Fox e do Bruce juntava a fala do
+Fox com "IT WON'T HAPPEN AGAIN, MR. FOX." do Bruce, e havia balões duplos noutras páginas que
+continuavam duas paradas.
+
+**A junção errada não era o critério, era o pixel.** O log por par mostrou o aparelho medindo
+**0,60** para os dois pares Fox↔Bruce que a calibração punha em **0,13** — e os outros pares da
+mesma página batendo. A E12 preenchia sobre o plano cinza da página reduzido a 600 no lado
+maior, o mesmo do PanelFinder; a calibração tinha medido recortes de cada par tirados da página
+inteira. Re-medir os recortes em 192, 256, 384 e 512 dá a mesma resposta; o plano reduzido não.
+Agora o detector decodifica **um recorte por par** dos bytes da página, com o `BubbleCardDecoder`
+do card, e a `JoinedBalloons` recebe os pixels por função — o mesmo caminho da calibração. No
+aparelho os números passaram a ser os do desktop, par a par.
+
+**192 é frágil; 384 não.** Medindo o mesmo par com o recorte deslocado um pixel, a 192 o
+veredito virava (0,84 → 0,00 de anel): o contorno fica com menos de um pixel. A 384 e a 768 os
+389 pares lêem igual. O recorte vai a 384.
+
+**Vazamento.** Quatro pares do corpus juntavam por preenchimento que saía do balão e inundava
+um quadrinho da cor do papel — um céu amarelo, uma página de legenda magenta. A guarda é a
+mesma do traçado do card: quanto do **anel** em volta do retângulo do par o preenchimento
+cobre. Todo par genuíno ≤ 0,32; todo vazamento ≥ 0,54. Limiar em 0,40.
+
+**Balões encostados sem caixa cruzando.** Um balão dividido em dois lobos *emendados pela
+borda* deixa um fio de página entre as caixas do modelo, e a E12 só olhava caixas que se
+cruzam. Agora um par a até 0,03 da página nos dois eixos também é candidato — 143 pares a mais
+nas 103 páginas. O preenchimento atravessa 20 deles, e aí está o problema: **dois balões de
+dois falantes se tocam num ponto tão frequentemente quanto os de um só**, e o letreirista
+desenha o rabicho de um balão *dentro* do vizinho ("C'MON, BARRY…" e "YOU BETTER RUB THE
+SAND…" na página 9). Não há pixel que separe "mesmo falante" de "outro falante" num toque — o
+que separa é a **largura da emenda**: na faixa entre as duas caixas, um balão com cintura ou
+emendado pela borda enche de 0,53 a 0,98 dela; um toque ou um rabicho, de 0,00 a 0,15
+("THANKS, LOIS." contra "OF COURSE." dá 0,12). Par sem cruzamento precisa de **0,40 da faixa**.
+Resultado no corpus: 5 duplos largos juntados, zero errados; os 11 toques de mesmo falante
+continuam duas paradas — que é o que eram, e o que o desenho mostra.
+
+**O preenchimento não atravessa outro balão.** A caixa de todo outro balão fica fechada ao
+preenchimento, para que um par não seja juntado por uma terceira fala entre eles. O lobo do
+meio de um balão de três continua juntando os vizinhos por conta própria; o union-find faz o
+resto. Custo no corpus: um par cruzado deixa de juntar direto, e junta pelos vizinhos.
+
+Constantes: `JOIN_CROP_LONG_SIDE` 384, `JOIN_CROP_PADDING` 0,15 (em pixels, no detector),
+`JOIN_MAX_RING_FILL` 0,40, `JOIN_NEAR_GAP` 0,03, `JOIN_MIN_SEAM` 0,40, `JOIN_SEAM_BAND` 0,05.
+`JoinedBalloonsTest` foi a 12 testes: lobos emendados pela borda, par além do vão, toque num
+ponto, quadrinho inundado, caixa de terceiro fechada.
+
+**Verificado no aparelho**, capítulo local, páginas 9, 11 e 12, log par a par contra a tabela do
+desktop: **idênticos no veredito, e a dois centésimos no número.** Página 12: o balão 13 virou
+três paradas (a fala do Fox, "IT WON'T HAPPEN AGAIN, MR. FOX." do Bruce, e "NOW YOU…"), os
+pares Fox↔Bruce em 0,05 e 0,08 (eram 0,60 no aparelho e 0,13 na calibração), e o duplo
+"ALL RIGHT, BOYS…"/"…GOTHAM NEEDS IT." segue um card (0,66). Página 11: "SEE, THERE'S A TRUE
+FRIEND…"/"BROKEN HEART ON A ROLL?" segue um card (0,70). Página 9: os dois duplos da E12 seguem
+juntos (0,52 e 0,56) e o aglomerado de sete balões de dois falantes segue sete paradas — os
+quatro pares que o preenchimento atravessa lêem 0,05 a 0,16 de emenda. Screenshots
+`tools/shots/e13-p9.png`, `e13-p11.png`, `e13-p12.png` (`_e13-*.png` reduzidos).
+
+**Custo.** A página 12 tem 11 pares candidatos e a detecção foi de ~950 para ~1500 ms; a
+página 9, com 17 pares, ficou em ~950. É o decodificador de região abrindo os bytes da página
+uma vez por par: ~60 ms por par na 12 contra ~5 ms na 9, pelos carimbos do log, o que sugere
+um JPEG que ele não consegue endereçar por região e decodifica inteiro. Corre no dispatcher de
+detecção, depois da página já exibida; se pesar num aparelho real, o próximo passo é abrir o
+decodificador uma vez por página e não por par.
+
+O log `BubbleZoom join … reach= ring= seam= -> joined|kept apart` fica: é o instrumento que
+achou o problema, e o que vai dizer onde o próximo está.
+
 ## Onde estamos contra o Play Books — medido em 22/09/2026
 
 Mesma HQ aberta nos dois leitores, mesmas páginas, emulador. O que a comparação achou, em
