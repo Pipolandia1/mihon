@@ -4,6 +4,7 @@ import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleBox
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleDetection
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleDetectionConfig
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleType
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.JoinedBalloons
 
 /**
  * Turning one RT-DETR answer into the regions the reader walks. Amendment E9.
@@ -42,8 +43,18 @@ object RtDetrDecoder {
         boxes: FloatArray,
         scores: FloatArray,
         minimumConfidence: Float = BubbleDetectionConfig.DETECTION_CONFIDENCE,
+        /**
+         * The page as one grey plane, when the caller has one. With it, the lobes of a balloon
+         * lettered as two bubbles are joined into one stop — see [JoinedBalloons], which needs
+         * the pixels to tell a waisted balloon from two that merely stand close. Without it
+         * every box is its own region, which is what this did before amendment E12.
+         */
+        page: IntArray? = null,
+        pageWidth: Int = 0,
+        pageHeight: Int = 0,
     ): List<BubbleDetection> {
         val queries = minOf(labels.size, scores.size, boxes.size / 4)
+        val balloons = ArrayList<BubbleDetection>(queries)
         val found = ArrayList<BubbleDetection>(queries)
         for (i in 0 until queries) {
             val label = labels[i]
@@ -55,7 +66,7 @@ object RtDetrDecoder {
             val right = boxes[i * 4 + 2]
             val bottom = boxes[i * 4 + 3]
             val box = BubbleBox.clampedOrNull(left, top, right - left, bottom - top) ?: continue
-            found += BubbleDetection(
+            val region = BubbleDetection(
                 box = box,
                 confidence = score.coerceIn(0f, 1f),
                 type = BubbleType.TEXT,
@@ -64,7 +75,15 @@ object RtDetrDecoder {
                 // far smaller question than it was when the box was the lettering.
                 shape = null,
             )
+            // Kept apart only long enough to join the lobes: a caption standing over a balloon
+            // is not a lobe of it, and the classes are the only place that is known.
+            if (label == CLASS_BUBBLE) balloons += region else found += region
         }
-        return found
+        val whole = if (page != null) {
+            JoinedBalloons.merge(balloons, page, pageWidth, pageHeight)
+        } else {
+            balloons
+        }
+        return whole + found
     }
 }

@@ -132,10 +132,19 @@ class RtDetrBubbleDetector(
         try {
             fillInput(page)
             val answer = run(session)
-            found = RtDetrDecoder.decode(answer.labels, answer.boxes, answer.scores)
-            // While the page is still decoded: the gutters are read from the same pixels, and
-            // re-decoding a page to look at them would cost more than the look does.
-            panels = findPanels(page)
+            // One grey plane of the page, read while it is still decoded and used twice: to
+            // join the lobes of a balloon lettered as two, and to find the page's gutters.
+            // Re-decoding a page to look at it again would cost more than both looks do.
+            val grey = greyPlane(page)
+            found = RtDetrDecoder.decode(
+                labels = answer.labels,
+                boxes = answer.boxes,
+                scores = answer.scores,
+                page = grey.luma,
+                pageWidth = grey.width,
+                pageHeight = grey.height,
+            )
+            panels = PanelFinder.find(grey.luma, grey.width, grey.height)
         } finally {
             page.recycle()
         }
@@ -269,14 +278,17 @@ class RtDetrBubbleDetector(
         }
     }
 
+    /** The page reduced to one byte of brightness per pixel, and the size that came out. */
+    private class GreyPlane(val luma: IntArray, val width: Int, val height: Int)
+
     /**
-     * The page's panels, from the decoded page as one grey plane.
+     * The decoded page as one grey plane, small enough to sweep several times.
      *
      * Reduced by averaging for the same reason the model's input is: a gutter is a flat band,
      * and a naive reduction that samples every other pixel puts a stripe of artwork through one
      * often enough to matter.
      */
-    private fun findPanels(page: Bitmap): List<BubbleBox> {
+    private fun greyPlane(page: Bitmap): GreyPlane {
         val longSide = maxOf(page.width, page.height)
         val scan = minOf(BubbleDetectionConfig.PANEL_SCAN_LONG_SIDE, longSide)
         val width = (page.width.toLong() * scan / longSide).toInt().coerceAtLeast(1)
@@ -296,7 +308,7 @@ class RtDetrBubbleDetector(
                     ((pixel and 0xFF) * 28)
                 ) shr 8
         }
-        return PanelFinder.find(luma, width, height)
+        return GreyPlane(luma, width, height)
     }
 
     private fun releaseUnderLock() {

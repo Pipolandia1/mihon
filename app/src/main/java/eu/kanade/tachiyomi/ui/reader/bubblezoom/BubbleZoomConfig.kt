@@ -246,6 +246,17 @@ object BubbleZoomConfig {
      */
     const val MASK_TONE_BINS = 32
 
+    /**
+     * How much of the smaller lobe a fill from the larger one must cover for the two to be one
+     * balloon. Amendment E12.
+     *
+     * Measured over 246 pairs of balloons whose boxes cross, on 103 pages: a fill reaching
+     * between 0 and 0.13 of the other box was two separate speeches every time, and one
+     * reaching 0.37 or more was the two lobes of one balloon every time. Between those there
+     * were three pairs in the whole corpus, so a quarter sits in an all but empty gap.
+     */
+    const val MERGE_REACH = 0.25f
+
     /** How far the cut-out's two-tone halo reaches past its edge, in dp. */
     const val CARD_HALO_WIDTH_DP = 1f
 }

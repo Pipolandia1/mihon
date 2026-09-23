@@ -5,7 +5,8 @@
 
 ## Fase atual
 
-**E11 concluída** (a página vem até o balão quando está com zoom, e o card encolheu). Antes
+**E12 concluída** (os lobos de um balão são uma parada só). Antes dela: **E11** (a página vem
+até o balão quando está com zoom, e o card encolheu). Antes
 dela: **E10** (o recorte do balão reajustado para a caixa nova). Antes dela: **E9** (o
 detector trocado por um treinado em HQ ocidental). Antes dela: **E8** (a
 ordem segue os quadrinhos), **E7** (as detecções sobrevivem a girar a tela), **E6** (a página
@@ -1645,6 +1646,41 @@ fixture — `FOCUS_PADDING` na E10, agora `CARD_MAGNIFICATION` e as frações. `
 receber os três como parâmetro com o valor de produção por padrão, e os testes escrevem o número
 em que foram calculados. Assim eles voltam a fixar a **aritmética**, que é o que dizem fixar.
 
+## E12 — balão com cintura é uma fala, não duas
+
+HQ escreve uma fala longa em dois ou três lobos que dividem o mesmo contorno. O modelo devolve
+uma caixa por lobo, então o passeio parava duas vezes e o card cortava a fala no meio — foi o
+usuário quem mostrou, com "SEE, THERE'S A TRUE FRIEND…" separado de "BROKEN HEART ON A ROLL?".
+
+**Caixa cruzando não é o teste.** Balão é redondo e caixa não: dois vizinhos na diagonal cruzam
+as caixas sem se tocar. Medido em 103 páginas, **246 pares de balões têm caixas que se cruzam**
+— mergir por isso arruinaria metade das páginas.
+
+O teste é o papel. Lobos de um balão dividem a superfície, então um preenchimento saído de um
+alcança o outro; dois balões apenas vizinhos têm dois contornos e a arte entre eles. Medido
+naqueles 246 pares, pelo quanto da caixa menor o preenchimento da maior cobre:
+
+| alcance | o que eram |
+|---|---|
+| 0,00 – 0,13 | falas separadas, **todas** — "I ATE THE ZOO." ao lado de "I KNOW YOU DID, BUDDY" |
+| 0,14 – 0,36 | **três pares no corpus inteiro** |
+| 0,37 – 0,69 | lobos de um balão, **todos** |
+
+O limiar ficou em 0,25, num vão praticamente vazio, e usa o mesmo preenchimento, tom e
+tolerância que o card já usa para traçar — é a mesma pergunta, feita uma vez à página em vez de
+depois que o leitor já viu a metade errada.
+
+`JoinedBalloons` (puro, 7 testes) faz union-find sobre os balões: três lobos em fila viram um, e
+o primeiro só conhece o terceiro através do meio. O preenchimento roda **dentro do retângulo do
+par**, não da página — página inteira por par seriam megabytes de lixo a cada balão.
+
+O plano cinza da página agora é lido **uma vez** no detector e serve a dois usos: juntar os
+lobos e achar as calhas da E8.
+
+**Verificado no aparelho**, na página que o usuário mandou: o card traz a fala inteira num card
+só, e a página passou de 10 paradas para 9. Na outra página com lobos ("US." + "EVERYONE FALL
+IN. IT'S TIME TO VOTE."), idem.
+
 ## Onde estamos contra o Play Books — medido em 22/09/2026
 
 Mesma HQ aberta nos dois leitores, mesmas páginas, emulador. O que a comparação achou, em
@@ -1685,11 +1721,22 @@ gesto: no Play Books o **toque simples avança**; aqui ele dispensa, e quem avan
 
 ## Próxima fase
 
-P10 — filtro de confiança e `BubbleDetectionConfig`. Chega com cinco fatos, não três: o piso
-é 0,25 e o 0,35 da spec corta balão real; o modelo devolve texto e não balão, então
-`boxPadding` é a alavanca que faz o traçado da E1 alcançar o contorno — e também a que decide
-se o card entra na faixa de magnificação; `minBoxArea`/`maxBoxArea` têm distribuição medida
-nas páginas sintéticas; numa HQ real o recall a 640 é 55 % e a 1280 as caixas extras são
-balões, então `INPUT_SIZE` e o limiar se decidem juntos; e o card da E1 não aparece em página
-real com a geometria de hoje, o que é decisão do usuário antes de ser código.
+**O MVP está fechado contra a sua própria definição de pronto**, e a lista da comparação com o
+Play Books também. Da spec: P13 foi abandonada (o prefetch a tornou inútil), P10 fechada por
+medição, P14 e P15 absorvidas pela E2, e P18 (dataset) perdeu o valor quando a P10 mostrou que
+não havia o que afinar.
 
+O que sobra não é fase, é verificação e duas pontas:
+
+1. **O aparelho físico.** Tudo até aqui foi verificado no emulador x86_64. Num telefone ARM o
+   int8 costuma ser mais rápido, não mais lento, mas isso é conjectura até alguém medir — e
+   fluidez de animação e ANR são coisas que só o aparelho real mostra.
+2. **Mangá não foi medido.** O modelo da E9 diz ter sido treinado em mangá, webtoon, manhua e
+   HQ ocidental; as 92 páginas em cache são todas ocidentais. Um capítulo de mangá na
+   biblioteca resolve a dúvida numa tarde.
+3. **`text_free` para em crédito, logotipo e anúncio** de página de rosto: 107 em 92 páginas.
+   Os quadrinhos que a E8 acha dão um filtro possível — texto fora de balão numa página **sem
+   quadrinho nenhum** é front matter, não diálogo. É medição de uma tarde, não projeto.
+
+Custos aceitos e escritos: o painel mostra o tempo **com fila** (o do modelo está no logcat), e
+o emulador morre em builds grandes, que é ambiente e não código.
