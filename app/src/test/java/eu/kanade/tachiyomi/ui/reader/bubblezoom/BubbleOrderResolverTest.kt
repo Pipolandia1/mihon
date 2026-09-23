@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.reader.bubblezoom
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
@@ -22,6 +23,10 @@ class BubbleOrderResolverTest {
     }
 
     private fun List<BubbleDetection>.names() = map { bubble -> named.entries.first { it.value === bubble }.key }
+
+    /** A panel the page's gutters produced: structure, never a stop. */
+    private fun panel(x: Float, y: Float, w: Float, h: Float) =
+        BubbleDetection(BubbleBox(x, y, w, h), 1f, BubbleType.PANEL)
 
     @Test
     fun `balloons stacked in one panel are read down the page`() {
@@ -136,6 +141,104 @@ class BubbleOrderResolverTest {
         for (i in 1 until tops.size) {
             assert(tops[i] >= tops[i - 1] - 0.02f) { "step $i goes back up the page" }
         }
+    }
+
+    // --- with the page's own panels, amendment E8 ------------------------------------------
+
+    @Test
+    fun `two panels side by side are read one at a time, not across both`() {
+        // The measured difference against Play Books, and the case the boxes alone cannot
+        // settle: four balloons in two panels, each one level with its neighbour. Without the
+        // panels this is the same picture as one wide panel and is read across.
+        val page = listOf(
+            at("left-top", 0.06f, 0.10f, w = 0.35f),
+            at("right-top", 0.55f, 0.10f, w = 0.35f),
+            at("left-bottom", 0.06f, 0.30f, w = 0.35f),
+            at("right-bottom", 0.55f, 0.30f, w = 0.35f),
+        )
+        val panels = listOf(panel(0f, 0f, 0.48f, 1f), panel(0.5f, 0f, 0.5f, 1f))
+
+        assertEquals(
+            listOf("left-top", "left-bottom", "right-top", "right-bottom"),
+            BubbleOrderResolver.order(page + panels, rightToLeft = false).names(),
+        )
+        assertEquals(
+            listOf("right-top", "right-bottom", "left-top", "left-bottom"),
+            BubbleOrderResolver.order(page + panels, rightToLeft = true).names(),
+        )
+    }
+
+    @Test
+    fun `without the panels the same page is read across, which is what they are for`() {
+        val page = listOf(
+            at("left-top", 0.06f, 0.10f, w = 0.35f),
+            at("right-top", 0.55f, 0.10f, w = 0.35f),
+            at("left-bottom", 0.06f, 0.30f, w = 0.35f),
+            at("right-bottom", 0.55f, 0.30f, w = 0.35f),
+        )
+
+        assertEquals(
+            listOf("left-top", "right-top", "left-bottom", "right-bottom"),
+            BubbleOrderResolver.order(page, rightToLeft = false).names(),
+        )
+    }
+
+    @Test
+    fun `a panel is never a stop on the walk`() {
+        val page = listOf(at("only", 0.1f, 0.1f))
+        val panels = listOf(panel(0f, 0f, 1f, 0.5f), panel(0f, 0.5f, 1f, 0.5f))
+
+        val order = BubbleOrderResolver.order(page + panels, rightToLeft = false)
+
+        assertEquals(1, order.size)
+        assertTrue(order.none { it.type == BubbleType.PANEL })
+    }
+
+    @Test
+    fun `a balloon belongs to the smallest panel that holds it`() {
+        // A page divided into rows and then into panels leaves both rectangles containing the
+        // balloon; the panel is the one that says where to read it.
+        val page = listOf(
+            at("in-right-panel", 0.60f, 0.12f, w = 0.3f),
+            at("in-left-panel", 0.10f, 0.20f, w = 0.3f),
+        )
+        val panels = listOf(
+            panel(0f, 0f, 1f, 0.5f),
+            panel(0f, 0f, 0.48f, 0.5f),
+            panel(0.5f, 0f, 0.5f, 0.5f),
+        )
+
+        assertEquals(
+            listOf("in-left-panel", "in-right-panel"),
+            BubbleOrderResolver.order(page + panels, rightToLeft = false).names(),
+        )
+    }
+
+    @Test
+    fun `a caption over the gutter belongs to no panel and is read where it lies`() {
+        val page = listOf(
+            at("in-lower-panel", 0.10f, 0.70f, w = 0.3f),
+            at("over-the-gutter", 0.10f, 0.47f, w = 0.3f, h = 0.06f),
+            at("in-upper-panel", 0.10f, 0.10f, w = 0.3f),
+        )
+        val panels = listOf(panel(0f, 0f, 1f, 0.45f), panel(0f, 0.55f, 1f, 0.45f))
+
+        assertEquals(
+            listOf("in-upper-panel", "over-the-gutter", "in-lower-panel"),
+            BubbleOrderResolver.order(page + panels, rightToLeft = false).names(),
+        )
+    }
+
+    @Test
+    fun `panels with nothing in them change nothing`() {
+        val page = listOf(at("top", 0.1f, 0.1f), at("bottom", 0.1f, 0.6f))
+        val empty = listOf(panel(0.8f, 0.8f, 0.15f, 0.15f))
+
+        assertEquals(
+            listOf("top", "bottom"),
+            BubbleOrderResolver.order(page + empty, rightToLeft = false).names(),
+            "no balloon is in that panel, so the balloons decide as they did before",
+        )
     }
 
     @Test

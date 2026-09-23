@@ -5,9 +5,9 @@
 
 ## Fase atual
 
-**E7 concluída** (as detecções sobrevivem a girar a tela). Antes dela: **E6** (a página chega ao
-modelo com os pixels médios, não amostrados), **E5** (página dupla partida em duas) e **P17**
-(painel de depuração). Antes dela: P12 (ordem de leitura), prefetch,
+**E8 concluída** (a ordem de leitura segue os quadrinhos da página). Antes dela: **E7** (as
+detecções sobrevivem a girar a tela), **E6** (a página chega ao modelo com os pixels médios,
+não amostrados), **E5** (página dupla partida em duas) e **P17** (painel de depuração). Antes dela: P12 (ordem de leitura), prefetch,
 E4 (modelo de segmentação), E3, E2, P10 (fechada por medição).
 
 Depois da P17, a sessão fez a **comparação extensiva com o Google Play Books na mesma HQ**
@@ -1461,6 +1461,46 @@ Zero inferências, página pronta em meio segundo, nos dois sentidos de rotaçã
 mesmo store faz voltar uma página já lida sair de graça: andando uma para trás e outra para a
 frente, `started=0 known=1 remembered=2`.
 
+## E8 — a ordem passou a seguir os quadrinhos
+
+Item 4, o último da lista que dava para fazer sem trocar de modelo.
+
+A P12 escreveu por que não tentou painéis na época: a E1 tinha acabado de medir que **traçar o
+contorno de um balão** na arte falha quando o tom em que ele está desenhado é o mesmo do que
+está ao lado. Só que isso é sobre balões, que são desenhados **por cima** da arte. Uma calha não
+está por cima de nada: é uma faixa reta de um tom chapado que atravessa a página inteira, e esse
+tom é a margem da própria página — preto nesta HQ, branco na maioria dos mangás. É outra
+dificuldade, e é por isso que valeu tentar agora.
+
+`PanelFinder` (puro, 10 testes) tira o tom do anel externo da página, acha corridas de linhas
+que são aquele tom quase de ponta a ponta, corta ali, faz o mesmo com colunas e recursa. As
+folhas são os quadrinhos. O `BubbleOrderResolver` agrupa cada balão pelo **menor** quadrinho que
+contém o seu centro e lê grupo a grupo; balão que não cai em nenhum é grupo de si mesmo e é lido
+onde está.
+
+**Os dois jeitos de errar foram medidos, e não são simétricos.** Achar **de menos** acontece em
+página cheia cujos quadrinhos são separados por um traço e não por calha: os balões desses
+quadrinhos caem num grupo só e são ordenados como eram antes — que é de onde viemos. Achar **de
+mais** acontece em página de branco chapado, onde a recursão passa dos quadrinhos e chega ao
+lettering: aí cada balão vira seu próprio grupo, que também é o que acontecia antes. Nenhum dos
+dois põe um balão onde o leitor não olharia.
+
+**Medido no aparelho**, página densa, mesma página que abriu o assunto:
+
+| | ordem |
+|---|---|
+| antes | BARRY! → SLEEPING ON THE JOB → GIVE HIM A BREAK → WE KNOW WHO MURDERED → **YOU BETTER RUB** → … |
+| depois | BARRY! → **YOU BETTER RUB** → SLEEPING ON THE JOB → GIVE HIM A BREAK → WE KNOW WHO MURDERED → —CITIZEN COLD → … |
+| Play Books | BARRY! → (4 que não detectamos) → **YOU BETTER RUB** → (2) → SLEEPING ON THE JOB → GIVE HIM A BREAK → WE KNOW WHO MURDERED + CITIZEN COLD → … |
+
+"YOU BETTER RUB THE SAND" está no quadrinho da **esquerda** da fileira do meio; antes era lido
+em quinto, atravessando para o quadrinho da direita e voltando. Agora é lido em segundo, e daí
+para a frente a ordem é **idêntica à do Play Books**, balão por balão, até o fim da página.
+
+Nas páginas reais o detector achou 3 quadrinhos na página 7 (as três fileiras), 6 na densa e 0
+na página dupla, que é full-bleed — todos certos. O custo não aparece na medição: 2325 ms contra
+2311 ms na mesma página antes, ou seja, dentro do ruído.
+
 ## Onde estamos contra o Play Books — medido em 22/09/2026
 
 Mesma HQ aberta nos dois leitores, mesmas páginas, emulador. O que a comparação achou, em
@@ -1482,9 +1522,9 @@ corrigida. O filtro de "isto é balão" chegou a ser medido sobre 589 detecçõe
 separava**: as de menor contraste do capítulo inteiro são todas balão real, de texto branco
 sobre fundo escuro.
 
-**4. Ordem atravessa quadrinhos.** Na página 9 lemos a fileira do meio como uma faixa
-horizontal; o Play Books lê quadrinho a quadrinho. É o limite documentado da P12 — com a
-diferença de que nesta HQ as calhas são **pretas e retas**, o que a E1 não tinha no mangá.
+**4. Ordem atravessa quadrinhos.** ✅ **Feito — E8.** As calhas são lidas dos próprios pixels e
+os balões passam a ser agrupados pelo quadrinho em que estão. Na página 9 a ordem virou a mesma
+do Play Books, balão por balão.
 
 **5. Rotação joga fora tudo.** ✅ **Feito — E7.** As respostas passaram a morar num `ViewModel`,
 que a recriação da Activity não alcança: depois de girar, zero inferências e a página pronta em

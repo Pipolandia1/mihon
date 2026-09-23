@@ -215,7 +215,13 @@ class BubbleZoomSession(
         val entry = detections[page] ?: return null
         val ready = controller.state.value as? BubbleZoomState.Ready
         val onThisPage = ready?.page == page
-        val bubbles = if (onThisPage) ready!!.bubbles else entry.bubbles.orEmpty()
+        // Ready holds the navigable list, which the order resolver has already stripped of
+        // panels; the raw entry has not been through it yet.
+        val bubbles = if (onThisPage) {
+            ready!!.bubbles
+        } else {
+            entry.bubbles.orEmpty().filter { it.type != BubbleType.PANEL }
+        }
         val focused = if (onThisPage) ready!!.focusedIndex else -1
         return BubbleZoomDebugInfo(
             bubbles = bubbles.size,

@@ -71,6 +71,40 @@ object BubbleDetectionConfig {
     const val INPUT_SIZE = 640
 
     /**
+     * The page is looked at this small when finding its panels. Amendment E8.
+     *
+     * A gutter is never a thin detail — it is a band wide enough to see a page's structure from
+     * across a room — so the scan is done on a reduction, where it costs a few milliseconds
+     * next to seconds of inference. Measured on a real page: at 400 the thinnest gutters of a
+     * dense page were missed and it found five panels of eleven; at 600 it finds the row and
+     * column structure the reading order needs, and 800 finds nothing more.
+     */
+    const val PANEL_SCAN_LONG_SIDE = 600
+
+    /**
+     * How far a pixel may be from the page's margin tone and still count as gutter, out of 255.
+     *
+     * Wide enough for the JPEG noise and the vignetting a scan leaves in a black gutter, narrow
+     * enough that a dark panel is not mistaken for one.
+     */
+    const val PANEL_GUTTER_TOLERANCE = 40
+
+    /** How much of a line has to be that tone before the line counts as gutter. */
+    const val PANEL_LINE_PURITY = 0.97f
+
+    /** The thinnest gutter, as a fraction of the page's long side. */
+    const val PANEL_MIN_GUTTER = 0.005f
+
+    /** The smallest region worth calling a panel, as a fraction of the page's long side. */
+    const val PANEL_MIN_SIZE = 0.06f
+
+    /**
+     * How deep the division may go. Six is well past any page's structure — rows, panels,
+     * insets — and stops a page of flat paper being subdivided down to its lettering.
+     */
+    const val PANEL_MAX_DEPTH = 6
+
+    /**
      * How much wider than tall a page has to be before it is looked at in two halves rather
      * than whole. Amendment E5.
      *

@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.ui.reader.bubblezoom
 
+import java.util.IdentityHashMap
+
 /**
  * Puts a page's balloons into the order they are meant to be read.
  *
@@ -7,14 +9,14 @@ package eu.kanade.tachiyomi.ui.reader.bubblezoom
  * jumps about the page. Measured on a real page: the card went down, back to the top, down
  * again, back up, twice in seven steps.
  *
- * Phase P12 of the spec asks for panel detection first, and this does not do that. Comics are
- * read panel by panel, so panels are what the order really follows, but finding them means
- * reading gutters out of the artwork — and the two amendments before this one measured exactly
- * how that goes on a real comic: tone-based tracing found six balloons of nine and no amount of
- * tuning moved it, because a gutter that is the same tone as the art beside it is not there to
- * be found. A second model is the other way, and one of 109 MB has just been added.
+ * Comics are read panel by panel, so panels are what the order really follows. Where the page
+ * says where its panels are — [PanelFinder] reads them off the gutters, amendment E8 — the
+ * balloons are grouped by the panel they sit in and each group is read out in turn, which is
+ * what Google Play Books does and what this did not.
  *
- * So the layout is inferred from the balloons themselves, by **recursive XY-cut**: the oldest
+ * Everything below is what happens **inside** a group, and what happens to a whole page when
+ * the panels could not be found: the layout is inferred from the balloons themselves, by
+ * **recursive XY-cut**: the oldest
  * document-layout algorithm there is, and one that needs nothing but the boxes. Look for a
  * horizontal band of page that no balloon crosses; that is a row of panels, so split there and
  * take the top first. Failing that, look for a vertical one; that is the gap between panels
@@ -26,8 +28,8 @@ package eu.kanade.tachiyomi.ui.reader.bubblezoom
  * What it therefore gets right is the common case, which is most of a comic: rows of panels,
  * panels side by side, stacks of balloons inside one panel. What it cannot know is a panel
  * whose balloons happen to line up with a neighbour's, because from the boxes alone that is the
- * same picture as one wide panel. That is the honest limit of ordering without panels, and it
- * is a far smaller error than ordering by confidence.
+ * same picture as one wide panel — which is exactly the case the panels above now settle when
+ * the page's gutters can be found, and the honest limit of this when they cannot.
  *
  * Pure Kotlin. Every rule above is a JVM test.
  */
@@ -38,9 +40,70 @@ object BubbleOrderResolver {
      * how two things side by side are ordered — down the page is down the page either way.
      */
     fun order(bubbles: List<BubbleDetection>, rightToLeft: Boolean): List<BubbleDetection> {
-        if (bubbles.size < 2) return bubbles
-        val out = ArrayList<BubbleDetection>(bubbles.size)
-        cut(bubbles, rightToLeft, out, depth = 0)
+        val panels = bubbles.filter { it.type == BubbleType.PANEL }
+        // Panels are structure and never a stop on the walk, so they leave here whatever else
+        // happens. The controller filters them too; this keeps every count on the way truthful.
+        val text = if (panels.isEmpty()) bubbles else bubbles.filter { it.type != BubbleType.PANEL }
+        if (text.size < 2) return text
+        if (panels.isEmpty()) return withinGroup(text, rightToLeft)
+        return byPanels(text, panels, rightToLeft)
+    }
+
+    /**
+     * Each balloon read with the panel it sits in, and the panels read in turn.
+     *
+     * A balloon belongs to the smallest panel that contains its centre — smallest because a
+     * page divided into rows and then into panels leaves both rectangles containing it, and the
+     * panel is the one that says where to read it. A balloon in no panel at all, which is what
+     * a caption laid over a gutter looks like, is a group of its own and is read where it lies.
+     */
+    private fun byPanels(
+        text: List<BubbleDetection>,
+        panels: List<BubbleDetection>,
+        rightToLeft: Boolean,
+    ): List<BubbleDetection> {
+        val grouped = LinkedHashMap<BubbleDetection, MutableList<BubbleDetection>>()
+        val loose = ArrayList<BubbleDetection>()
+        for (bubble in text) {
+            val panel = panels
+                .filter { it.box.contains(bubble.box.centerX, bubble.box.centerY) }
+                .minByOrNull { it.box.area }
+            if (panel == null) loose += bubble else grouped.getOrPut(panel) { ArrayList() } += bubble
+        }
+        if (grouped.isEmpty()) return withinGroup(text, rightToLeft)
+
+        // One box stands for each group: the panel's own, which is exact, or the balloon's when
+        // it has no panel. Identity and not equality, because two panels of the same size and
+        // position would be the same value and must still be two groups.
+        val members = IdentityHashMap<BubbleDetection, List<BubbleDetection>>()
+        val representatives = ArrayList<BubbleDetection>(grouped.size + loose.size)
+        grouped.forEach { (panel, bubbles) ->
+            representatives += panel
+            members[panel] = bubbles
+        }
+        loose.forEach {
+            representatives += it
+            members[it] = listOf(it)
+        }
+
+        val ordered = ArrayList<BubbleDetection>(representatives.size)
+        // No gap is required between panels: they meet at the gutter, and the gutter is what
+        // divided them. The gaps below exist to tell balloons apart, which is a different job.
+        cut(representatives, rightToLeft, ordered, depth = 0, rowGap = 0f, columnGap = 0f)
+
+        val out = ArrayList<BubbleDetection>(text.size)
+        for (representative in ordered) {
+            val group = members[representative] ?: continue
+            if (group.size == 1) out += group[0] else out += withinGroup(group, rightToLeft)
+        }
+        return out
+    }
+
+    /** [group] in reading order, by the balloons alone. */
+    private fun withinGroup(group: List<BubbleDetection>, rightToLeft: Boolean): List<BubbleDetection> {
+        if (group.size < 2) return group
+        val out = ArrayList<BubbleDetection>(group.size)
+        cut(group, rightToLeft, out, depth = 0)
         return out
     }
 
@@ -49,6 +112,8 @@ object BubbleOrderResolver {
         rightToLeft: Boolean,
         out: MutableList<BubbleDetection>,
         depth: Int,
+        rowGap: Float = BubbleZoomConfig.ORDER_ROW_GAP,
+        columnGap: Float = BubbleZoomConfig.ORDER_COLUMN_GAP,
     ) {
         if (group.size == 1) {
             out += group[0]
@@ -62,14 +127,14 @@ object BubbleOrderResolver {
             return
         }
 
-        val rows = split(group, rightToLeft, horizontal = true)
+        val rows = split(group, rightToLeft, horizontal = true, minimum = rowGap)
         if (rows != null) {
-            rows.forEach { cut(it, rightToLeft, out, depth + 1) }
+            rows.forEach { cut(it, rightToLeft, out, depth + 1, rowGap, columnGap) }
             return
         }
-        val columns = split(group, rightToLeft, horizontal = false)
+        val columns = split(group, rightToLeft, horizontal = false, minimum = columnGap)
         if (columns != null) {
-            columns.forEach { cut(it, rightToLeft, out, depth + 1) }
+            columns.forEach { cut(it, rightToLeft, out, depth + 1, rowGap, columnGap) }
             return
         }
         // Neither axis has a gap: one cluster inside one panel. Read down the page, but by
@@ -112,10 +177,10 @@ object BubbleOrderResolver {
         group: List<BubbleDetection>,
         rightToLeft: Boolean,
         horizontal: Boolean,
+        minimum: Float,
     ): List<List<BubbleDetection>>? {
         val start = { b: BubbleDetection -> if (horizontal) b.box.y else b.box.x }
         val end = { b: BubbleDetection -> if (horizontal) b.box.bottom else b.box.right }
-        val minimum = if (horizontal) BubbleZoomConfig.ORDER_ROW_GAP else BubbleZoomConfig.ORDER_COLUMN_GAP
 
         val sorted = group.sortedBy(start)
         val bands = ArrayList<MutableList<BubbleDetection>>()

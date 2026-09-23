@@ -7,8 +7,11 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleBox
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleDetection
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleDetectionConfig
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleType
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.PanelFinder
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -47,7 +50,10 @@ import kotlin.math.roundToInt
  *     inference at a time, so the reusable buffers are never shared.
  *  5. Decode through [YoloSegDecoder]: suppress the duplicates the export does not,
  *     normalize and clamp the boxes, and build each balloon's mask from the prototypes.
- *  6. Recycle the decoded page immediately. Only the boxes survive.
+ *  6. Read the page's panels off its gutters with [PanelFinder], while the decoded page is
+ *     still here to read. They are returned alongside the balloons, as regions of type
+ *     [BubbleType.PANEL], which the reading order groups by and the walk never stops on.
+ *  7. Recycle the decoded page immediately. Only the boxes survive.
  *
  * A missing model, a native library that will not load, or an allocation that fails is not a
  * crash: the first [detect] throws an ordinary exception, the session records the page as
@@ -124,6 +130,7 @@ class OnnxBubbleDetector(
 
         val started = System.nanoTime()
         val found = ArrayList<BubbleDetection>()
+        var panels: List<BubbleBox> = emptyList()
         try {
             for (tile in tiles) {
                 // Between the halves, where there is something to give up: the page is decoded
@@ -149,6 +156,9 @@ class OnnxBubbleDetector(
                     tile.place(detection.box)?.let { found += detection.copy(box = it) }
                 }
             }
+            // While the page is still decoded: the gutters are read from the same pixels,
+            // and re-decoding a page to look at them would cost more than the look does.
+            panels = findPanels(page)
         } finally {
             page.recycle()
         }
@@ -159,9 +169,39 @@ class OnnxBubbleDetector(
             val shaped = merged.count { it.shape != null }
             val halves = if (tiles.size > 1) " in ${tiles.size} tiles" else ""
             "BubbleZoom detect ${image.width}x${image.height}$halves -> ${merged.size} bubbles " +
-                "($shaped shaped) in ${elapsedMs}ms"
+                "($shaped shaped, ${panels.size} panels) in ${elapsedMs}ms"
         }
-        return merged
+        return merged + panels.map { BubbleDetection(it, confidence = 1f, type = BubbleType.PANEL) }
+    }
+
+    /**
+     * The page's panels, from the decoded page.
+     *
+     * Reduced first, and by averaging: a gutter is a flat band, and a naive reduction that
+     * samples every other pixel puts a stripe of artwork through one often enough to matter.
+     */
+    private fun findPanels(page: Bitmap): List<BubbleBox> {
+        val longSide = maxOf(page.width, page.height)
+        val scan = minOf(BubbleDetectionConfig.PANEL_SCAN_LONG_SIDE, longSide)
+        val width = (page.width.toLong() * scan / longSide).toInt().coerceAtLeast(1)
+        val height = (page.height.toLong() * scan / longSide).toInt().coerceAtLeast(1)
+
+        val source = IntArray(page.width * page.height)
+        page.getPixels(source, 0, page.width, 0, 0, page.width, page.height)
+        val reduced = IntArray(width * height)
+        AreaResample.resample(source, page.width, page.height, reduced, width, height)
+
+        val luma = IntArray(width * height)
+        for (i in luma.indices) {
+            val pixel = reduced[i]
+            // The same integer luma every other part of this feature uses.
+            luma[i] = (
+                ((pixel shr 16 and 0xFF) * 77) +
+                    ((pixel shr 8 and 0xFF) * 151) +
+                    ((pixel and 0xFF) * 28)
+                ) shr 8
+        }
+        return PanelFinder.find(luma, width, height)
     }
 
     /** A tile's side in source pixels, never zero however thin the fraction. */
