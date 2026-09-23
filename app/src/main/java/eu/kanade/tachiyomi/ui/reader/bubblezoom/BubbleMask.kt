@@ -15,18 +15,26 @@ import kotlin.math.abs
  * makes screentone read as grey rather than as thousands of tiny holes, and the mask is drawn
  * back up filtered, so the edge arrives antialiased for free.
  *
- * It refuses rather than guesses. A fill that floods the border escaped through a gap in the
- * outline and has taken the page with it; one that misses the text it was found for is not that
- * balloon's. Both hand the bubble back to the rectangular card, which is always correct if less
- * pretty. Captions on a light background and balloons whose paper matches the wall behind them
- * land here, measured and expected.
+ * It refuses rather than guesses. A fill that runs out of the balloon's own box has escaped
+ * through a gap in the outline and taken the page with it; one that does not fill that box is
+ * not that balloon's. Both hand the bubble back to the rectangular card, which is always correct
+ * if less pretty. Captions whose paper is the same tone as the panel behind them land here —
+ * there is no edge to stop at, and no amount of tuning invents one.
  *
- * Amendment E3 changed what it is handed, not how it works. The caller now traces in a region
- * far larger than the card will be, because the detector boxes the TEXT and the balloon does not
- * fit in that box — at the card's own padding the outline is cut off by the capture and the fill
- * runs out through the open end, which on a real comic refused nine balloons of nine. A tail may
- * still run out of the larger region, and clipping a tail costs nothing anyone can see, so the
- * border test is a fraction of the perimeter rather than a flag.
+ * **Amendment E10 retuned it for a box that is the balloon.** Until E9 the detector boxed the
+ * TEXT, so the balloon was not in the box at all: the search region had to be more than twice
+ * the box to contain it, the surface tone was read from a patch at the middle, and escapes were
+ * caught by how much of the region's border the fill touched. With the box being the balloon,
+ * all three were measurably wrong, and the two that mattered are replaced:
+ *
+ *  - **The tone comes from the whole box**, as the commonest tone in it, rather than from the
+ *    median of a small patch at the centre. On a balloon packed with lettering that patch is
+ *    ink, so the fill spread across one letter and stopped: measured on a real page, ten of
+ *    nineteen balloons died that way with a fill covering half a percent of the region.
+ *  - **An escape is measured against the box**, not against the region's border. A silhouette
+ *    that is the balloon barely leaves its box; one that has flooded the panel is mostly
+ *    outside it. Measured over 106 balloons: right ones sat at 0.00 to 0.22 of their area
+ *    outside the box, and the first flooded one at 0.30.
  *
  * Pure Kotlin on purpose — no Android type crosses this file, so every branch above is a JVM
  * unit test in `BubbleMaskTest`.
@@ -52,7 +60,7 @@ object BubbleMask {
         pixels: IntArray,
         width: Int,
         height: Int,
-        text: MaskRect,
+        box: MaskRect,
         growPasses: Int,
     ): BooleanArray? {
         if (width < MIN_SIDE || height < MIN_SIDE) return null
@@ -60,15 +68,14 @@ object BubbleMask {
         if (pixels.size < size) return null
 
         val luma = FloatArray(size) { lumaOf(pixels[it]) }
-        val surface = centreTone(luma, width, height)
+        val surface = surfaceTone(luma, width, box)
 
-        val filled = fillFromCentre(luma, width, height, surface) ?: return null
+        val filled = fillFromCentre(luma, width, height, surface, box) ?: return null
         fillEnclosedHoles(filled, width, height)
 
-        // Asked before the silhouette is grown: growing would drag it over the text from the
-        // outside, and a shape that merely surrounds the words would pass for one that holds
-        // them. [text] is where the detection sits inside the search region.
-        if (!covers(filled, width, height, text)) return null
+        // Asked before the silhouette is grown: growing would drag it over the box from the
+        // outside, and a shape that merely surrounds the balloon would pass for one that is it.
+        if (!covers(filled, width, height, box)) return null
 
         return grow(filled, width, height, growPasses)
     }
@@ -99,12 +106,12 @@ object BubbleMask {
         return MaskRect(left, top, right + 1, bottom + 1)
     }
 
-    /** Whether enough of the text this balloon was found for lies inside the silhouette. */
-    private fun covers(filled: BooleanArray, width: Int, height: Int, text: MaskRect): Boolean {
-        val left = text.left.coerceIn(0, width - 1)
-        val top = text.top.coerceIn(0, height - 1)
-        val right = text.right.coerceIn(left + 1, width)
-        val bottom = text.bottom.coerceIn(top + 1, height)
+    /** Whether enough of the balloon this was found for lies inside the silhouette. */
+    private fun covers(filled: BooleanArray, width: Int, height: Int, box: MaskRect): Boolean {
+        val left = box.left.coerceIn(0, width - 1)
+        val top = box.top.coerceIn(0, height - 1)
+        val right = box.right.coerceIn(left + 1, width)
+        val bottom = box.bottom.coerceIn(top + 1, height)
 
         var inside = 0
         var total = 0
@@ -116,30 +123,54 @@ object BubbleMask {
             }
         }
         if (total == 0) return false
-        return inside.toFloat() / total >= BubbleZoomConfig.MASK_MIN_TEXT_COVERAGE
+        return inside.toFloat() / total >= BubbleZoomConfig.MASK_MIN_BOX_COVERAGE
     }
 
     /**
-     * The tone of whatever the bubble is made of, taken as the median of a patch at the middle.
+     * The tone the balloon is made of: the commonest tone across the whole of its box.
      *
-     * A median rather than the centre pixel alone: the exact middle of a bubble is as likely to
-     * land on a letter as on the surface around it, and a letter would send the fill off to
-     * trace a glyph. Half of a patch cannot be text, so the median is the surface.
+     * Not the median of a patch at the middle, which is what this was until amendment E10. A
+     * balloon is lettering on a surface, and the middle of one is as likely to be lettering as
+     * not — on a balloon whose words fill it, a patch there is ALL lettering and its median is
+     * ink. The fill then spread across one letter and stopped, which measured on a real page
+     * killed ten balloons of nineteen.
+     *
+     * Across the box the surface wins on area, whatever the lettering does, and a histogram's
+     * commonest bin finds it whether the balloon is white paper or black. A median across the
+     * box would do for most, but tips to ink on a balloon more than half full of it.
      */
-    private fun centreTone(luma: FloatArray, width: Int, height: Int): Float {
-        val patch = ArrayList<Float>()
-        forEachSeed(width, height) { index -> patch.add(luma[index]) }
-        patch.sort()
-        return patch[patch.size / 2]
+    private fun surfaceTone(luma: FloatArray, width: Int, box: MaskRect): Float {
+        val bins = IntArray(BubbleZoomConfig.MASK_TONE_BINS)
+        for (y in box.top until box.bottom) {
+            val row = y * width
+            for (x in box.left until box.right) {
+                val bin = (luma[row + x] * BubbleZoomConfig.MASK_TONE_BINS)
+                    .toInt()
+                    .coerceIn(0, BubbleZoomConfig.MASK_TONE_BINS - 1)
+                bins[bin]++
+            }
+        }
+        var commonest = 0
+        for (bin in bins.indices) {
+            if (bins[bin] > bins[commonest]) commonest = bin
+        }
+        return (commonest + 0.5f) / BubbleZoomConfig.MASK_TONE_BINS
     }
 
     /**
      * Spreads across the surface from every seed that shares its tone, four-connected.
      *
-     * Returns null when the fill found no seed at all, when it escaped to the border, or when
-     * what it covered is too small or too nearly everything to be a bubble.
+     * Returns null when the fill found no seed at all, or when what it covered is mostly outside
+     * the balloon's own box — which is a fill that has got out through a gap in the outline and
+     * is tracing the panel behind it.
      */
-    private fun fillFromCentre(luma: FloatArray, width: Int, height: Int, surface: Float): BooleanArray? {
+    private fun fillFromCentre(
+        luma: FloatArray,
+        width: Int,
+        height: Int,
+        surface: Float,
+        box: MaskRect,
+    ): BooleanArray? {
         val size = width * height
         val filled = BooleanArray(size)
         // Each pixel is flagged as it is pushed, so it is pushed at most once and the stack can
@@ -148,21 +179,30 @@ object BubbleMask {
         var top = 0
         var area = 0
 
-        forEachSeed(width, height) { index ->
-            if (!filled[index] && sameSurface(luma[index], surface)) {
-                filled[index] = true
-                stack[top++] = index
-                area++
+        // Outwards from the middle until the surface is found. One patch is enough for almost
+        // every balloon, but on one whose words fill it the patch is all lettering, and the
+        // nearest surface is a few pixels further out — still inside the balloon, which is what
+        // starting at the middle and growing guarantees and scanning the box would not.
+        var half = seedHalf(width, height)
+        val limit = maxOf(box.width, box.height)
+        while (top == 0 && half <= limit) {
+            forEachSeed(width, height, half) { index ->
+                if (!filled[index] && sameSurface(luma[index], surface)) {
+                    filled[index] = true
+                    stack[top++] = index
+                    area++
+                }
             }
+            half *= 2
         }
         if (top == 0) return null
 
-        var border = 0
+        var outside = 0
         while (top > 0) {
             val index = stack[--top]
             val x = index % width
             val y = index / width
-            if (x == 0 || y == 0 || x == width - 1 || y == height - 1) border++
+            if (x < box.left || x >= box.right || y < box.top || y >= box.bottom) outside++
 
             if (x > 0) {
                 val next = index - 1
@@ -198,18 +238,11 @@ object BubbleMask {
             }
         }
 
-        // A thin touch on the border is a tail leaving the region, which costs the silhouette
-        // nothing visible. A wide one is the fill escaping through a gap in the outline and
-        // taking the page with it, and a wrong silhouette is worse than none. Measured on a
-        // real comic: right silhouettes touched 0 to 0.6 percent of the perimeter, leaked ones
-        // more than 20.
-        val perimeter = 2 * (width + height)
-        if (border.toFloat() / perimeter > BubbleZoomConfig.MASK_MAX_LEAK_FRACTION) return null
-
-        // The region is deliberately far larger than the balloon, so covering a third of it is
-        // the fill holding the page even when it never reached a border. Same measurement: 10
-        // to 15 percent for a balloon, 33 to 48 for a fill that had got out.
-        if (area.toFloat() / size > BubbleZoomConfig.MASK_MAX_SEARCH_AREA_FRACTION) return null
+        // A balloon's silhouette is its box, give or take an outline and a tail; a fill that
+        // got out is the panel behind it, which is mostly elsewhere. Measured over 106 balloons
+        // of a real comic: every right one left 0 to 22 percent of itself outside the box, and
+        // the first flooded one 30.
+        if (outside.toFloat() / area > BubbleZoomConfig.MASK_MAX_ESCAPE_FRACTION) return null
         return filled
     }
 
@@ -292,11 +325,17 @@ object BubbleMask {
     private fun sameSurface(tone: Float, surface: Float): Boolean =
         abs(tone - surface) <= BubbleZoomConfig.MASK_TOLERANCE
 
-    /** Visits the patch at the middle of the mask, the only place a bubble is certain to be. */
-    private inline fun forEachSeed(width: Int, height: Int, visit: (Int) -> Unit) {
-        val half = (minOf(width, height) * BubbleZoomConfig.MASK_SEED_PATCH_FRACTION)
-            .toInt()
-            .coerceAtLeast(1)
+    /** The half-width of the first seed patch, a fraction of the mask's smaller side. */
+    private fun seedHalf(width: Int, height: Int): Int =
+        (minOf(width, height) * BubbleZoomConfig.MASK_SEED_PATCH_FRACTION).toInt().coerceAtLeast(1)
+
+    /**
+     * Visits a patch of [half] at the middle of the mask, where the balloon certainly is.
+     *
+     * Only the fill starts here. Where the SURFACE's tone comes from is another question, and
+     * since amendment E10 the answer is the whole box — see [surfaceTone].
+     */
+    private inline fun forEachSeed(width: Int, height: Int, half: Int, visit: (Int) -> Unit) {
         val centreX = width / 2
         val centreY = height / 2
         for (y in (centreY - half).coerceAtLeast(0)..(centreY + half).coerceAtMost(height - 1)) {

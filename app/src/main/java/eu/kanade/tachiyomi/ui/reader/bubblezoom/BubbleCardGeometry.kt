@@ -77,18 +77,18 @@ object BubbleCardGeometry {
      * and the search region are both fractions of the page, so this is arithmetic rather than
      * geometry. Clamped into the grid, and never empty.
      */
-    fun textWithin(
-        text: BubbleBox,
+    fun boxWithin(
+        box: BubbleBox,
         search: BubbleBox,
         maskWidth: Int,
         maskHeight: Int,
     ): BubbleMask.MaskRect {
-        val left = ((text.x - search.x) / search.width * maskWidth).toInt().coerceIn(0, maskWidth - 1)
-        val top = ((text.y - search.y) / search.height * maskHeight).toInt().coerceIn(0, maskHeight - 1)
-        val right = ((text.right - search.x) / search.width * maskWidth)
+        val left = ((box.x - search.x) / search.width * maskWidth).toInt().coerceIn(0, maskWidth - 1)
+        val top = ((box.y - search.y) / search.height * maskHeight).toInt().coerceIn(0, maskHeight - 1)
+        val right = ((box.right - search.x) / search.width * maskWidth)
             .roundToInt()
             .coerceIn(left + 1, maskWidth)
-        val bottom = ((text.bottom - search.y) / search.height * maskHeight)
+        val bottom = ((box.bottom - search.y) / search.height * maskHeight)
             .roundToInt()
             .coerceIn(top + 1, maskHeight)
         return BubbleMask.MaskRect(left, top, right, bottom)

@@ -383,8 +383,8 @@ class BubbleZoomOverlayView(
      * at mask resolution — a couple of hundred pixels on the long side — rather than at card
      * size and reduced afterwards.
      */
-    private fun findSilhouette(text: BubbleBox, sourceWidth: Float, sourceHeight: Float): Silhouette? {
-        val search = text.padded(BubbleZoomConfig.MASK_SEARCH_PADDING)
+    private fun findSilhouette(box: BubbleBox, sourceWidth: Float, sourceHeight: Float): Silhouette? {
+        val search = box.padded(BubbleZoomConfig.MASK_SEARCH_PADDING)
         val topLeft = imageView.sourceToViewCoord(search.x * sourceWidth, search.y * sourceHeight)
             ?: return null
         val bottomRight = imageView
@@ -412,7 +412,7 @@ class BubbleZoomOverlayView(
             pixels = pixels,
             width = width,
             height = height,
-            text = BubbleCardGeometry.textWithin(text, search, width, height),
+            box = BubbleCardGeometry.boxWithin(box, search, width, height),
             growPasses = passes,
         )
         // Whether the balloon's own outline could be followed is the difference between the card

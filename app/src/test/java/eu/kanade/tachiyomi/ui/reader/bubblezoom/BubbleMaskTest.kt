@@ -8,10 +8,10 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * The canvas throughout is 120x120 with a balloon at the middle. Since amendment E3 that canvas
- * is the SEARCH REGION rather than the card: the caller looks for the balloon in a region far
- * larger than it will show, so a legitimate silhouette covers a modest share of it and there is
- * no floor on how little it may cover — a caption whose border hugs its words is small and real.
+ * The canvas throughout is 120x120 with a balloon at the middle, and it is the SEARCH REGION:
+ * the balloon's own box padded, which since amendment E10 is by a quarter of its smallest side.
+ * So [box] below is where the detector said the balloon is — the ellipse's own rectangle — and
+ * the ring of canvas around it is the margin the trace is given to work in.
  *
  * The page is white and the outline is black on purpose. That is the hardest arrangement, and
  * the one the synthetic test pages use: bubble and page are the same tone, and only a three
@@ -25,8 +25,11 @@ class BubbleMaskTest {
     /** Enough to cross the three pixel ring these fixtures draw, which is the real ratio. */
     private val passes = 2
 
-    /** Where the detection sits: a line of text across the middle of the balloon. */
-    private val text = BubbleMask.MaskRect(centre - 20, centre - 6, centre + 20, centre + 6)
+    /**
+     * Where the detection sits: the balloon's own rectangle, which is what the model returns
+     * since amendment E9 — the outer ellipse of [bubblePage], 88 by 72 in a 120 canvas.
+     */
+    private val box = BubbleMask.MaskRect(centre - 44, centre - 36, centre + 44, centre + 36)
 
     @Test
     fun `a bubble on a white page is traced to its own shape and not to its box`() {
@@ -69,16 +72,31 @@ class BubbleMaskTest {
 
     @Test
     fun `a bubble whose exact middle lands on a letter is still traced`() {
-        // The seed is the median of a patch rather than the one pixel at the centre, so a
-        // glyph under the middle cannot send the fill off to trace the glyph instead.
         val pixels = bubblePage()
         fillRect(pixels, centre - 4, centre - 4, centre + 4, centre + 4, INK)
 
         val mask = traced(pixels)
 
         val covered = mask.count { it }.toFloat() / mask.size
-        assertTrue(covered > 0.25f && covered < 0.45f, "covered $covered, so it traced the bubble")
+        assertTrue(covered > 0.25f && covered < 0.55f, "covered $covered, so it traced the bubble")
         assertFalse(mask[at(2, 2)], "and not the page")
+    }
+
+    @Test
+    fun `a bubble whose middle is ALL lettering is still traced`() {
+        // What amendment E10 is for. The seed patch is a tenth of the mask, and on a balloon
+        // whose words fill it that patch is entirely ink — so a tone taken from there is ink,
+        // the fill spreads across one letter and stops, and the card falls back to a rectangle.
+        // Measured on a real page before the fix: ten balloons of nineteen died exactly here,
+        // with a fill holding half a percent of the region. The tone now comes from the whole
+        // box, where the surface wins on area whatever the lettering does.
+        val pixels = bubblePage()
+        fillRect(pixels, centre - 18, centre - 12, centre + 18, centre + 12, INK)
+
+        val mask = traced(pixels)
+
+        assertTrue(mask[at(centre + 30, centre)], "the paper beside the words is inside the shape")
+        assertFalse(mask[at(2, 2)], "and the page is not")
     }
 
     @Test
@@ -99,28 +117,28 @@ class BubbleMaskTest {
     fun `a page with no bubble on it is refused`() {
         // Nothing stops the fill, so it holds the whole page. The card falls back to its
         // rectangle, which is plainer but never wrong.
-        assertNull(BubbleMask.extract(IntArray(side * side) { PAPER }, side, side, text, passes))
+        assertNull(BubbleMask.extract(IntArray(side * side) { PAPER }, side, side, box, passes))
     }
 
     @Test
     fun `an outline with a gap in it is refused`() {
         // An open bubble, a caption with no border, a balloon whose line is broken by its own
-        // tail: the fill leaks out through the gap and comes back holding the page.
+        // tail: the fill leaks out through the gap and comes back holding the page. This is
+        // what the escape guard is for — most of what it holds is outside the balloon's box.
         val pixels = bubblePage()
         fillRect(pixels, centre - 4, centre - 40, centre + 4, centre - 30, PAPER)
 
-        assertNull(BubbleMask.extract(pixels, side, side, text, passes))
+        assertNull(BubbleMask.extract(pixels, side, side, box, passes))
     }
 
     @Test
-    fun `a tail running out of the search region is kept, because a tail is thin`() {
-        // The region is chosen to be bigger than the balloon, but a long tail can still leave
-        // it, and clipping a tail costs the silhouette nothing anyone can see. Ink page, paper
-        // balloon, and an eleven pixel paper tail to the left edge: eleven border pixels of a
-        // 480 pixel perimeter, about 2%.
+    fun `a tail leaving the balloon's box is kept, because a tail is thin`() {
+        // A tail is drawn outside the balloon's rectangle by definition, and clipping one costs
+        // the silhouette nothing anyone can see. Ink page, paper balloon, and a ten pixel tail
+        // running out to the left: a few percent of the fill, far under the escape threshold.
         val pixels = IntArray(side * side) { INK }
         ellipse(pixels, 41, 33, PAPER)
-        fillRect(pixels, 0, centre - 5, centre, centre + 5, PAPER)
+        fillRect(pixels, 0, centre - 5, centre - 30, centre + 5, PAPER)
 
         val mask = traced(pixels)
 
@@ -128,51 +146,40 @@ class BubbleMaskTest {
     }
 
     @Test
-    fun `a fill that floods a border is refused even when what it covered looks like a bubble`() {
-        // The same fixture with the corridor opened to fifty pixels: more than a tenth of the
-        // perimeter, which is not a tail but the fill escaping into the page. What it holds is
-        // still about a third of the canvas, so only the leak test can refuse it - delete that
-        // test and this one alone goes red.
-        val pixels = IntArray(side * side) { INK }
-        ellipse(pixels, 41, 33, PAPER)
-        fillRect(pixels, 0, centre - 25, centre, centre + 25, PAPER)
-
-        assertNull(BubbleMask.extract(pixels, side, side, text, passes))
-    }
-
-    @Test
-    fun `a fill that covers almost the whole card is refused even when it never escaped`() {
-        // A one pixel frame of ink: the fill never touches the border, so the escape test has
-        // nothing to say, and it still comes back holding 97% of the card. That is not a
-        // bubble the card can lift, it is most of a page.
+    fun `a fill that covers almost the whole region is refused`() {
+        // A one pixel frame of ink: the fill never escapes through anything, it simply holds
+        // the whole canvas - and a canvas is the box plus its margin, so most of what it holds
+        // is outside the box.
         val pixels = IntArray(side * side) { INK }
         fillRect(pixels, 1, 1, side - 2, side - 2, PAPER)
 
-        assertNull(BubbleMask.extract(pixels, side, side, text, passes))
+        assertNull(BubbleMask.extract(pixels, side, side, box, passes))
     }
 
     @Test
-    fun `a silhouette that does not hold the text it was found for is refused`() {
-        // The guard that says "this shape belongs to that detection" rather than merely "this
-        // shape is bubble-shaped": a balloon at the middle, and a detection off in a corner.
-        // The trace succeeds, and the shape it found is not the one the reader asked for.
+    fun `a silhouette that does not fill the balloon it was found for is refused`() {
+        // The guard that says "this shape is the thing we found" rather than merely "this shape
+        // is bubble-shaped": a balloon at the middle, and a detection off in a corner. The
+        // trace succeeds, and the shape it found is not the one the reader asked for.
         val corner = BubbleMask.MaskRect(4, 4, 30, 18)
 
         assertNull(BubbleMask.extract(bubblePage(), side, side, corner, passes))
     }
 
     @Test
-    fun `a silhouette barely larger than its text is kept, because a tight caption is one`() {
-        // There is no floor on coverage any more. In a region chosen to be several times the
-        // detection, a caption whose border hugs its words is small and perfectly real, and
-        // the floor that used to live here would have refused it.
+    fun `a caption whose border hugs its words is a balloon too`() {
+        // Small, rectangular and perfectly real. Its box is its own rectangle, so it fills it
+        // and stays inside it, and both guards are happy about something the eye would call
+        // obvious.
         val pixels = IntArray(side * side) { INK }
         fillRect(pixels, centre - 24, centre - 10, centre + 24, centre + 10, PAPER)
+        val caption = BubbleMask.MaskRect(centre - 24, centre - 10, centre + 25, centre + 11)
 
-        val mask = traced(pixels)
+        val mask = BubbleMask.extract(pixels, side, side, caption, passes)
 
-        val covered = mask.count { it }.toFloat() / mask.size
-        assertTrue(covered < 0.12f, "covered $covered, which a floor would have refused")
+        assertNotNull(mask, "expected the caption to be traced")
+        assertTrue(mask!![at(centre, centre)])
+        assertFalse(mask[at(2, 2)], "and the page around it is not part of it")
     }
 
     @Test
@@ -204,15 +211,15 @@ class BubbleMaskTest {
 
     @Test
     fun `input too small or too short to be a card is refused`() {
-        assertNull(BubbleMask.extract(IntArray(4) { PAPER }, 2, 2, text, passes))
-        assertNull(BubbleMask.extract(IntArray(side * side - 1) { PAPER }, side, side, text, passes))
+        assertNull(BubbleMask.extract(IntArray(4) { PAPER }, 2, 2, box, passes))
+        assertNull(BubbleMask.extract(IntArray(side * side - 1) { PAPER }, side, side, box, passes))
     }
 
     // --- fixtures ------------------------------------------------------------------------
 
     /** Extracts and insists it worked, so each test reads as what it is actually checking. */
     private fun traced(pixels: IntArray): BooleanArray {
-        val mask = BubbleMask.extract(pixels, side, side, text, passes)
+        val mask = BubbleMask.extract(pixels, side, side, box, passes)
         assertNotNull(mask, "expected the bubble to be traced")
         return mask!!
     }

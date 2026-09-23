@@ -12,7 +12,17 @@ import org.junit.jupiter.api.Test
 class BubbleCardGeometryTest {
 
     private val box0 = BubbleBox(0.62f, 0.08f, 0.23f, 0.14f)
-    private val padded = box0.padded(BubbleZoomConfig.FOCUS_PADDING)
+
+    /**
+     * The padding the figures below were worked out at, written down rather than read from
+     * [BubbleZoomConfig].
+     *
+     * These tests pin the arithmetic — which axis wins, how magnification is capped, how many
+     * passes an outline needs — and not the padding of the day. Reading the constant made every
+     * one of them fail when amendment E10 changed it, which said nothing about the arithmetic.
+     */
+    private val cardPadding = 0.20f
+    private val padded = box0.padded(cardPadding)
 
     @Test
     fun `a balloon too wide for the magnification is held to the viewport fraction`() {
@@ -33,7 +43,7 @@ class BubbleCardGeometryTest {
     fun `a small balloon is shown at exactly CARD_MAGNIFICATION, not framed to fill the screen`() {
         // A text box 5 % wide: framing it to 60 % of the viewport would be 6.5x, which is what
         // the P9 verification saw asked of every real balloon. Play Books shows about 2.8x.
-        val small = BubbleBox(0.4f, 0.4f, 0.05f, 0.03f).padded(BubbleZoomConfig.FOCUS_PADDING)
+        val small = BubbleBox(0.4f, 0.4f, 0.05f, 0.03f).padded(cardPadding)
         val scale = BubbleCardGeometry.cardScale(
             paddedWidthSourcePx = small.width * 1600f,
             paddedHeightSourcePx = small.height * 2400f,
@@ -47,7 +57,7 @@ class BubbleCardGeometryTest {
 
     @Test
     fun `an unknown view scale leaves only the viewport ceiling`() {
-        val small = BubbleBox(0.4f, 0.4f, 0.05f, 0.03f).padded(BubbleZoomConfig.FOCUS_PADDING)
+        val small = BubbleBox(0.4f, 0.4f, 0.05f, 0.03f).padded(cardPadding)
         val scale = BubbleCardGeometry.cardScale(
             paddedWidthSourcePx = small.width * 1600f,
             paddedHeightSourcePx = small.height * 2400f,
@@ -145,22 +155,22 @@ class BubbleCardGeometryTest {
     }
 
     @Test
-    fun `the text's place in the search region is where the balloon is asked to hold it`() {
+    fun `the balloon's place in the search region is where the silhouette is asked to hold it`() {
         // A detection a quarter of the way in, in a search region twice its size: the mask is
-        // 200x100, so the text must land at a quarter of that and be half of it.
+        // 200x100, so the box must land at a quarter of that and be half of it.
         val text = BubbleBox(0.25f, 0.25f, 0.5f, 0.5f)
         val search = BubbleBox(0f, 0f, 1f, 1f)
 
-        val rect = BubbleCardGeometry.textWithin(text, search, 200, 100)
+        val rect = BubbleCardGeometry.boxWithin(text, search, 200, 100)
 
         assertEquals(BubbleMask.MaskRect(50, 25, 150, 75), rect)
     }
 
     @Test
-    fun `the text's place is clamped into the grid and never empty`() {
+    fun `the balloon's place is clamped into the grid and never empty`() {
         // A detection flush against the page edge: padded() truncates there, so the search
         // region starts at the same place and the text's left edge lands on column zero.
-        val flush = BubbleCardGeometry.textWithin(
+        val flush = BubbleCardGeometry.boxWithin(
             BubbleBox(0f, 0f, 0.2f, 0.2f),
             BubbleBox(0f, 0f, 0.4f, 0.4f),
             100,
@@ -169,7 +179,7 @@ class BubbleCardGeometryTest {
         assertEquals(BubbleMask.MaskRect(0, 0, 50, 50), flush)
 
         // Thinner than one mask pixel: a rectangle a guard would divide by must still have room.
-        val hairline = BubbleCardGeometry.textWithin(
+        val hairline = BubbleCardGeometry.boxWithin(
             BubbleBox(0.5f, 0.5f, 1e-4f, 1e-4f),
             BubbleBox(0f, 0f, 1f, 1f),
             20,
@@ -248,7 +258,7 @@ class BubbleCardGeometryTest {
     @Test
     fun `every debug box produces a card that fits the portrait viewport`() {
         for (box in DEBUG_BOXES) {
-            val p = box.padded(BubbleZoomConfig.FOCUS_PADDING)
+            val p = box.padded(cardPadding)
             val scale = BubbleCardGeometry.cardScale(
                 paddedWidthSourcePx = p.width * 1600f,
                 paddedHeightSourcePx = p.height * 2400f,

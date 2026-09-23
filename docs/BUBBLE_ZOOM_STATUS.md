@@ -5,7 +5,8 @@
 
 ## Fase atual
 
-**E9 concluída** (o detector trocado por um treinado em HQ ocidental). Antes dela: **E8** (a
+**E10 concluída** (o recorte do balão reajustado para a caixa nova). Antes dela: **E9** (o
+detector trocado por um treinado em HQ ocidental). Antes dela: **E8** (a
 ordem segue os quadrinhos), **E7** (as detecções sobrevivem a girar a tela), **E6** (a página
 chega ao modelo com os pixels médios) e **P17** (painel de depuração).
 
@@ -1553,6 +1554,44 @@ com isso à ordem que sempre tiveram — e as reais mantêm os seus.
 Fica aberto: `text_free` ainda para em crédito, logotipo e anúncio em página de rosto. São 107
 em 92 páginas. Os quadrinhos que a E8 acha dão um filtro possível — texto fora de quadrinho em
 página sem quadrinho nenhum é front matter — e isso é medição de outra vez.
+
+## E10 — o recorte reajustado para a caixa que a E9 trouxe
+
+A E9 tirou a máscara do modelo e o card voltou a traçar a silhueta nos pixels (E3). Medido com
+o log que cada card emite: **29 de 37** cards recortados no capítulo — mas **5 de 19** na página
+densa, que é onde os balões ficam colados. Os close-ups mostraram dois defeitos: o recorte
+vazando para o balão vizinho, e o card-retângulo exibindo o vizinho.
+
+Todos os três números do traçado tinham sido medidos na E3, quando a caixa era a do **texto** e
+o balão ficava **fora** dela. Com a caixa sendo o balão, os três estavam errados:
+
+| | antes | agora | porquê |
+|---|---|---|---|
+| região de busca | 1,2× o menor lado | **0,25×** | só precisa caber o contorno e o rabicho; 1,2 engole o vizinho |
+| tom da superfície | mediana de um retalho no meio | **modo do histograma da caixa** | no meio de um balão cheio de letra o retalho é **tinta** |
+| teste de fuga | fração da borda da região tocada | **fração do preenchimento fora da caixa** | com região justa, um preenchimento certo toca a borda |
+
+**O tom era o defeito principal.** Nas recusas da página densa o preenchimento cobria **0,5% da
+região** — não vazou, morreu na semente: a mediana do retalho central dava tinta, o preenchimento
+atravessava uma letra e parava. Dez de dezenove balões morriam assim.
+
+**O novo teste de fuga** foi calibrado olhando: 106 balões de 13 páginas, silhuetas ordenadas
+pelo quanto saíram da caixa. Até **0,22** todas são o balão certo, inclusive as de formato
+irregular; a partir de **0,30** o preenchimento inundou o fundo do quadrinho. O limiar ficou em
+0,25, no meio do vão. Os dois testes que sobraram — cobertura da caixa e fuga da caixa — são um
+par completo: o primeiro pega o preenchimento que morreu, o segundo o que escapou.
+
+A semente também passou a **crescer do meio para fora** até achar a superfície, porque num balão
+cujas palavras o preenchem o retalho inicial é todo letra. Varrer a caixa inteira em vez disso
+começaria pela quina, que é página e não balão — medido, isso inundava.
+
+**No aparelho, antes → depois:** página densa **5 → 17 de 19**; capítulo inteiro 29 → **30 de
+37** (a caminhada passa sobretudo por páginas de legenda, onde o ajuste antigo já acertava). Nos
+close-ups, as três que saíam retângulo com o vizinho dentro agora saem recortadas no próprio
+balão.
+
+O que continua caindo para retângulo é o caso que a E1 já tinha medido e nenhum ajuste resolve:
+legenda cujo papel tem o mesmo tom do quadrinho atrás dela. Não há borda onde parar.
 
 ## Onde estamos contra o Play Books — medido em 22/09/2026
 
