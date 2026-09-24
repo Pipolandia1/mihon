@@ -12,4 +12,6 @@ data class Backup(
     @ProtoNumber(104) var backupPreferences: List<BackupPreference> = emptyList(),
     @ProtoNumber(105) var backupSourcePreferences: List<BackupSourcePreferences> = emptyList(),
     @ProtoNumber(106) var backupExtensionStores: List<BackupExtensionStore> = emptyList(),
+    // Far from Mihon's own numbers, so a future Mihon field cannot collide with it.
+    @ProtoNumber(9001) var backupReadingStats: BackupReadingStats? = null,
 )

@@ -345,6 +345,7 @@ class ReaderActivity : BaseActivity() {
     }
 
     override fun onPause() {
+        viewModel.readingStats.onForeground(false)
         lifecycleScope.launchNonCancellable {
             viewModel.updateHistory()
         }
@@ -358,6 +359,7 @@ class ReaderActivity : BaseActivity() {
     override fun onResume() {
         super.onResume()
         viewModel.restartReadTimer()
+        viewModel.readingStats.onForeground(true)
         setMenuVisibility(viewModel.state.value.menuVisible)
     }
 
@@ -367,6 +369,7 @@ class ReaderActivity : BaseActivity() {
      */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        viewModel.readingStats.onFocus(hasFocus)
         if (hasFocus) {
             setMenuVisibility(viewModel.state.value.menuVisible)
         }
@@ -411,8 +414,14 @@ class ReaderActivity : BaseActivity() {
      * Dispatches a key event. If the viewer doesn't handle it, call the default implementation.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        viewModel.readingStats.onInteraction()
         val handled = viewModel.state.value.viewer?.handleKeyEvent(event) ?: false
         return handled || super.dispatchKeyEvent(event)
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) viewModel.readingStats.onInteraction()
+        return super.dispatchTouchEvent(event)
     }
 
     /**
@@ -420,6 +429,7 @@ class ReaderActivity : BaseActivity() {
      * implementation.
      */
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        viewModel.readingStats.onInteraction()
         val handled = viewModel.state.value.viewer?.handleGenericMotionEvent(event) ?: false
         return handled || super.dispatchGenericMotionEvent(event)
     }

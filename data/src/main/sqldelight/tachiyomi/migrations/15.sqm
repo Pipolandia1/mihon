@@ -1,0 +1,84 @@
+-- Reading statistics: sessions, their days, and per-chapter progress.
+
+CREATE TABLE reading_stats_meta(
+    key TEXT NOT NULL PRIMARY KEY,
+    value INTEGER NOT NULL
+);
+
+INSERT OR IGNORE INTO reading_stats_meta(key, value)
+VALUES ('recording_started_at', CAST(strftime('%s', 'now') AS INTEGER) * 1000);
+
+CREATE TABLE reading_sessions(
+    _id INTEGER NOT NULL PRIMARY KEY,
+    session_uuid TEXT NOT NULL UNIQUE,
+    manga_id INTEGER REFERENCES mangas(_id) ON DELETE SET NULL,
+    chapter_id INTEGER REFERENCES chapters(_id) ON DELETE SET NULL,
+    source_id INTEGER NOT NULL,
+    manga_url TEXT NOT NULL,
+    chapter_url TEXT NOT NULL,
+    manga_title TEXT NOT NULL,
+    chapter_name TEXT NOT NULL,
+    chapter_number REAL NOT NULL,
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER NOT NULL,
+    active_ms INTEGER NOT NULL,
+    first_page INTEGER NOT NULL,
+    last_page INTEGER NOT NULL,
+    pages_visited INTEGER NOT NULL,
+    pages_new INTEGER NOT NULL,
+    pages_reread INTEGER NOT NULL,
+    page_advances INTEGER NOT NULL,
+    total_pages INTEGER,
+    pages_bits BLOB NOT NULL,
+    completed_at INTEGER,
+    completed_on TEXT,
+    first_completion INTEGER NOT NULL,
+    origin INTEGER NOT NULL,
+    state INTEGER NOT NULL,
+    zone_id TEXT NOT NULL
+);
+
+CREATE INDEX reading_sessions_ended_at_index ON reading_sessions(ended_at);
+CREATE INDEX reading_sessions_chapter_id_index ON reading_sessions(chapter_id);
+CREATE INDEX reading_sessions_manga_id_index ON reading_sessions(manga_id);
+CREATE INDEX reading_sessions_completed_on_index ON reading_sessions(completed_on) WHERE first_completion = 1;
+
+CREATE TABLE reading_day_segments(
+    session_id INTEGER NOT NULL REFERENCES reading_sessions(_id) ON DELETE CASCADE,
+    local_date TEXT NOT NULL,
+    active_ms INTEGER NOT NULL,
+    pages_new INTEGER NOT NULL,
+    pages_visited INTEGER NOT NULL,
+    PRIMARY KEY(session_id, local_date)
+);
+
+CREATE INDEX reading_day_segments_local_date_index ON reading_day_segments(local_date);
+
+CREATE TABLE chapter_reading_progress(
+    chapter_id INTEGER NOT NULL PRIMARY KEY REFERENCES chapters(_id) ON DELETE CASCADE,
+    pages_seen BLOB,
+    max_page_reached INTEGER NOT NULL,
+    total_pages INTEGER,
+    completed_at INTEGER,
+    completed_on TEXT,
+    completion_origin INTEGER
+);
+
+CREATE INDEX chapter_reading_progress_completed_on_index ON chapter_reading_progress(completed_on);
+
+-- What Mihon already knew, carried over as imported: where each chapter was left, and, for
+-- chapters marked read, a completion dated by the last time they were opened, if any.
+INSERT INTO chapter_reading_progress(
+    chapter_id, pages_seen, max_page_reached, total_pages, completed_at, completed_on, completion_origin
+)
+SELECT
+    C._id,
+    NULL,
+    C.last_page_read,
+    NULL,
+    CASE WHEN C.read = 1 AND H.last_read > 0 THEN H.last_read END,
+    CASE WHEN C.read = 1 AND H.last_read > 0 THEN date(H.last_read / 1000, 'unixepoch', 'localtime') END,
+    CASE WHEN C.read = 1 THEN 2 END
+FROM chapters C
+LEFT JOIN history H ON H.chapter_id = C._id
+WHERE C.read = 1 OR C.last_page_read > 0;

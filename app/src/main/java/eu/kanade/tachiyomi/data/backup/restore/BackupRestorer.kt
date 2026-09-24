@@ -11,11 +11,13 @@ import eu.kanade.tachiyomi.data.backup.models.BackupCategory
 import eu.kanade.tachiyomi.data.backup.models.BackupExtensionStore
 import eu.kanade.tachiyomi.data.backup.models.BackupManga
 import eu.kanade.tachiyomi.data.backup.models.BackupPreference
+import eu.kanade.tachiyomi.data.backup.models.BackupReadingStats
 import eu.kanade.tachiyomi.data.backup.models.BackupSourcePreferences
 import eu.kanade.tachiyomi.data.backup.restore.restorers.CategoriesRestorer
 import eu.kanade.tachiyomi.data.backup.restore.restorers.ExtensionStoreRestorer
 import eu.kanade.tachiyomi.data.backup.restore.restorers.MangaRestorer
 import eu.kanade.tachiyomi.data.backup.restore.restorers.PreferenceRestorer
+import eu.kanade.tachiyomi.data.backup.restore.restorers.ReadingStatsRestorer
 import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.util.system.createFileInCacheDir
 import kotlinx.coroutines.CoroutineScope
@@ -49,6 +51,7 @@ class BackupRestorer(
     private val preferenceRestorer: PreferenceRestorer,
     private val extensionStoreRestorer: ExtensionStoreRestorer,
     private val mangaRestorer: MangaRestorer,
+    private val readingStatsRestorer: ReadingStatsRestorer,
     private val backupDecoder: BackupDecoder,
 ) {
 
@@ -115,6 +118,10 @@ class BackupRestorer(
         if (options.sourceSettings) {
             restoreAmount += 1
         }
+        val readingStats = backup.backupReadingStats.takeIf { options.readingStats }
+        if (readingStats != null) {
+            restoreAmount += 1
+        }
 
         coroutineScope {
             val restoreCategoriesJob = if (options.categories) {
@@ -132,12 +139,17 @@ class BackupRestorer(
             if (options.sourceSettings) {
                 restoreSourcePreferences(backup.backupSourcePreferences)
             }
-            if (options.libraryEntries) {
+            val restoreMangaJob = if (options.libraryEntries) {
                 restoreManga(
                     backup.backupManga,
                     if (options.categories) backup.backupCategories else emptyList(),
                     restoreCategoriesJob,
                 )
+            } else {
+                null
+            }
+            if (readingStats != null) {
+                restoreReadingStats(readingStats, restoreMangaJob)
             }
             if (options.extensionStores) {
                 restoreExtensionStores(backup.backupExtensionStores)
@@ -203,6 +215,14 @@ class BackupRestorer(
 
                 notifier.showRestoreProgress(chunk.last().title, restoreProgress.load(), restoreAmount, isSync)
             }
+    }
+
+    /** After the entries, so sessions and progress find the chapters they belong to. */
+    private fun CoroutineScope.restoreReadingStats(stats: BackupReadingStats, restoreMangaJob: Job?) = launch {
+        restoreMangaJob?.join()
+        val label = context.stringResource(MR.strings.reading_stats_backup)
+        readingStatsRestorer(stats)?.let { errors.add(Date() to "$label: $it") }
+        notifier.showRestoreProgress(label, restoreProgress.incrementAndFetch(), restoreAmount, isSync)
     }
 
     private fun CoroutineScope.restoreAppPreferences(

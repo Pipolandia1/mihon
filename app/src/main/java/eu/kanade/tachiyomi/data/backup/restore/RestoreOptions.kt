@@ -9,6 +9,7 @@ data class RestoreOptions(
     val appSettings: Boolean = true,
     val extensionStores: Boolean = true,
     val sourceSettings: Boolean = true,
+    val readingStats: Boolean = true,
 ) {
 
     fun asBooleanArray() = booleanArrayOf(
@@ -17,9 +18,11 @@ data class RestoreOptions(
         appSettings,
         extensionStores,
         sourceSettings,
+        readingStats,
     )
 
-    fun canRestore() = libraryEntries || categories || appSettings || extensionStores || sourceSettings
+    fun canRestore() =
+        libraryEntries || categories || appSettings || extensionStores || sourceSettings || readingStats
 
     companion object {
         val options = listOf(
@@ -48,6 +51,11 @@ data class RestoreOptions(
                 getter = RestoreOptions::sourceSettings,
                 setter = { options, enabled -> options.copy(sourceSettings = enabled) },
             ),
+            Entry(
+                label = MR.strings.reading_stats_backup,
+                getter = RestoreOptions::readingStats,
+                setter = { options, enabled -> options.copy(readingStats = enabled) },
+            ),
         )
 
         fun fromBooleanArray(array: BooleanArray) = RestoreOptions(
@@ -56,6 +64,7 @@ data class RestoreOptions(
             appSettings = array[2],
             extensionStores = array[3],
             sourceSettings = array[4],
+            readingStats = array.getOrElse(5) { true },
         )
     }
 

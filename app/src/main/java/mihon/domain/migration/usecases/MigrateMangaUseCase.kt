@@ -18,6 +18,7 @@ import tachiyomi.domain.chapter.interactor.UpdateChapter
 import tachiyomi.domain.chapter.model.toChapterUpdate
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaUpdate
+import tachiyomi.domain.readingstats.interactor.MoveReadingStats
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.track.interactor.GetTracks
 import tachiyomi.domain.track.interactor.InsertTrack
@@ -38,6 +39,7 @@ class MigrateMangaUseCase(
     private val insertTrack: InsertTrack,
     private val coverCache: CoverCache,
     private val updateMangaFromRemote: UpdateMangaFromRemote,
+    private val moveReadingStats: MoveReadingStats,
 ) {
     private val enhancedServices by lazy { trackerManager.trackers.filterIsInstance<EnhancedTracker>() }
 
@@ -81,6 +83,7 @@ class MigrateMangaUseCase(
 
                 val chapterUpdates = updatedMangaChapters.map { it.toChapterUpdate() }
                 updateChapter.awaitAll(chapterUpdates)
+                if (replace) moveReadingStats.await(target.id, prevMangaChapters, mangaChapters)
             }
 
             // Update categories

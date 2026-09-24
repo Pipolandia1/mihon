@@ -14,6 +14,7 @@ data class BackupOptions(
     val extensionStores: Boolean = true,
     val sourceSettings: Boolean = true,
     val privateSettings: Boolean = false,
+    val readingStats: Boolean = true,
 ) {
 
     fun asBooleanArray() = booleanArrayOf(
@@ -27,9 +28,11 @@ data class BackupOptions(
         extensionStores,
         sourceSettings,
         privateSettings,
+        readingStats,
     )
 
-    fun canCreate() = libraryEntries || categories || appSettings || extensionStores || sourceSettings
+    fun canCreate() =
+        libraryEntries || categories || appSettings || extensionStores || sourceSettings || readingStats
 
     companion object {
         val libraryOptions = listOf(
@@ -66,6 +69,11 @@ data class BackupOptions(
                 getter = BackupOptions::readEntries,
                 setter = { options, enabled -> options.copy(readEntries = enabled) },
                 enabled = { it.libraryEntries },
+            ),
+            Entry(
+                label = MR.strings.reading_stats_backup,
+                getter = BackupOptions::readingStats,
+                setter = { options, enabled -> options.copy(readingStats = enabled) },
             ),
         )
 
@@ -104,6 +112,8 @@ data class BackupOptions(
             extensionStores = array[7],
             sourceSettings = array[8],
             privateSettings = array[9],
+            // Options saved before reading stats existed have no slot for them.
+            readingStats = array.getOrElse(10) { true },
         )
     }
 

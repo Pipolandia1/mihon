@@ -11,6 +11,7 @@ import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.download.service.DownloadPreferences
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.repository.MangaRepository
+import tachiyomi.domain.readingstats.interactor.RecordManualReadStatus
 
 @Inject
 class SetReadStatus(
@@ -18,6 +19,7 @@ class SetReadStatus(
     private val deleteDownload: DeleteDownload,
     private val mangaRepository: MangaRepository,
     private val chapterRepository: ChapterRepository,
+    private val recordManualReadStatus: RecordManualReadStatus,
 ) {
 
     private val mapper = { chapter: Chapter, read: Boolean ->
@@ -47,6 +49,7 @@ class SetReadStatus(
             logcat(LogPriority.ERROR, e)
             return@withNonCancellableContext Result.InternalError(e)
         }
+        recordManualReadStatus.await(read, chaptersToUpdate.map { it.id })
 
         if (read && downloadPreferences.removeAfterMarkedAsRead.get()) {
             chaptersToUpdate

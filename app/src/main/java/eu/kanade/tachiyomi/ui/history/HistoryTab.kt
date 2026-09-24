@@ -17,7 +17,7 @@ import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
-import eu.kanade.presentation.history.HistoryScreen
+import eu.kanade.presentation.history.HistoryContent
 import eu.kanade.presentation.history.components.HistoryDeleteAllDialog
 import eu.kanade.presentation.history.components.HistoryDeleteDialog
 import eu.kanade.presentation.manga.DuplicateMangaDialog
@@ -27,6 +27,7 @@ import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
+import eu.kanade.tachiyomi.ui.readingstats.ReadingHomeScreen
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -65,15 +66,21 @@ data object HistoryTab : Tab {
         val viewModel = metroViewModel<HistoryViewModel>()
         val state by viewModel.state.collectAsStateWithLifecycle()
 
-        HistoryScreen(
-            state = state,
-            snackbarHostState = snackbarHostState,
+        ReadingHomeScreen(
+            searchQuery = state.searchQuery,
             onSearchQueryChange = viewModel::updateSearchQuery,
-            onClickCover = { navigator.push(MangaScreen(it)) },
-            onClickResume = viewModel::getNextChapterForManga,
-            onDialogChange = viewModel::setDialog,
-            onClickFavorite = viewModel::addFavorite,
-        )
+            onClearHistory = { viewModel.setDialog(HistoryViewModel.Dialog.DeleteAll) },
+            historySnackbarHostState = snackbarHostState,
+        ) { contentPadding ->
+            HistoryContent(
+                state = state,
+                contentPadding = contentPadding,
+                onClickCover = { navigator.push(MangaScreen(it)) },
+                onClickResume = viewModel::getNextChapterForManga,
+                onClickFavorite = viewModel::addFavorite,
+                onDialogChange = viewModel::setDialog,
+            )
+        }
 
         val onDismissRequest = { viewModel.setDialog(null) }
         when (val dialog = state.dialog) {

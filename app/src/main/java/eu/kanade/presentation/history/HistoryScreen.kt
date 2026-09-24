@@ -63,29 +63,42 @@ fun HistoryScreen(
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
     ) { contentPadding ->
-        state.list.let {
-            if (it == null) {
-                LoadingScreen(Modifier.padding(contentPadding))
-            } else if (it.isEmpty()) {
-                val msg = if (!state.searchQuery.isNullOrEmpty()) {
-                    MR.strings.no_results_found
-                } else {
-                    MR.strings.information_no_recent_manga
-                }
-                EmptyScreen(
-                    stringRes = msg,
-                    modifier = Modifier.padding(contentPadding),
-                )
+        HistoryContent(state, contentPadding, onClickCover, onClickResume, onClickFavorite, onDialogChange)
+    }
+}
+
+/** The history list without its app bar, for hosts that draw their own. */
+@Composable
+fun HistoryContent(
+    state: HistoryViewModel.State,
+    contentPadding: PaddingValues,
+    onClickCover: (mangaId: Long) -> Unit,
+    onClickResume: (mangaId: Long, chapterId: Long) -> Unit,
+    onClickFavorite: (mangaId: Long) -> Unit,
+    onDialogChange: (HistoryViewModel.Dialog?) -> Unit,
+) {
+    state.list.let {
+        if (it == null) {
+            LoadingScreen(Modifier.padding(contentPadding))
+        } else if (it.isEmpty()) {
+            val msg = if (!state.searchQuery.isNullOrEmpty()) {
+                MR.strings.no_results_found
             } else {
-                HistoryScreenContent(
-                    history = it,
-                    contentPadding = contentPadding,
-                    onClickCover = { history -> onClickCover(history.mangaId) },
-                    onClickResume = { history -> onClickResume(history.mangaId, history.chapterId) },
-                    onClickDelete = { item -> onDialogChange(HistoryViewModel.Dialog.Delete(item)) },
-                    onClickFavorite = { history -> onClickFavorite(history.mangaId) },
-                )
+                MR.strings.information_no_recent_manga
             }
+            EmptyScreen(
+                stringRes = msg,
+                modifier = Modifier.padding(contentPadding),
+            )
+        } else {
+            HistoryScreenContent(
+                history = it,
+                contentPadding = contentPadding,
+                onClickCover = { history -> onClickCover(history.mangaId) },
+                onClickResume = { history -> onClickResume(history.mangaId, history.chapterId) },
+                onClickDelete = { item -> onDialogChange(HistoryViewModel.Dialog.Delete(item)) },
+                onClickFavorite = { history -> onClickFavorite(history.mangaId) },
+            )
         }
     }
 }

@@ -35,6 +35,7 @@ import eu.kanade.tachiyomi.data.download.model.Download
 import eu.kanade.tachiyomi.data.saver.Image
 import eu.kanade.tachiyomi.data.saver.ImageSaver
 import eu.kanade.tachiyomi.data.saver.Location
+import eu.kanade.tachiyomi.readingstats.ReaderStatsRecorder
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.online.HttpSource
@@ -121,6 +122,7 @@ class ReaderViewModel(
     private val coverCache: CoverCache,
     private val chapterCache: ChapterCache,
     private val downloadCache: DownloadCache,
+    val readingStats: ReaderStatsRecorder,
 ) : ViewModel() {
 
     @AssistedFactory
@@ -295,6 +297,7 @@ class ReaderViewModel(
     }
 
     override fun onCleared() {
+        readingStats.close()
         val currentChapters = state.value.viewerChapters
         if (currentChapters != null) {
             currentChapters.unref()
@@ -479,6 +482,7 @@ class ReaderViewModel(
 
         val selectedChapter = page.chapter
         val pages = selectedChapter.pages ?: return
+        manga?.let { readingStats.onPageSelected(it, page, incognitoMode) }
 
         // Save last page read and mark as read if needed
         viewModelScope.launchNonCancellable {

@@ -12,6 +12,7 @@ import eu.kanade.tachiyomi.data.backup.create.creators.CategoriesBackupCreator
 import eu.kanade.tachiyomi.data.backup.create.creators.ExtensionStoresBackupCreator
 import eu.kanade.tachiyomi.data.backup.create.creators.MangaBackupCreator
 import eu.kanade.tachiyomi.data.backup.create.creators.PreferenceBackupCreator
+import eu.kanade.tachiyomi.data.backup.create.creators.ReadingStatsBackupCreator
 import eu.kanade.tachiyomi.data.backup.create.creators.SourcesBackupCreator
 import eu.kanade.tachiyomi.data.backup.models.Backup
 import eu.kanade.tachiyomi.data.backup.models.BackupCategory
@@ -51,6 +52,7 @@ class BackupCreator(
     private val preferenceBackupCreator: PreferenceBackupCreator,
     private val extensionStoresBackupCreator: ExtensionStoresBackupCreator,
     private val sourcesBackupCreator: SourcesBackupCreator,
+    private val readingStatsBackupCreator: ReadingStatsBackupCreator,
     private val backupFileValidator: BackupFileValidator,
 ) {
     @AssistedFactory
@@ -92,6 +94,7 @@ class BackupCreator(
                 backupPreferences = backupAppPreferences(options),
                 backupExtensionStores = backupExtensionStores(options),
                 backupSourcePreferences = backupSourcePreferences(options),
+                backupReadingStats = readingStatsBackupCreator.takeIf { options.readingStats }?.invoke(),
             )
 
             val byteArray = parser.encodeToByteArray(Backup.serializer(), backup)
