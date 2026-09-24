@@ -28,6 +28,10 @@ class BubbleOrderResolverTest {
     private fun panel(x: Float, y: Float, w: Float, h: Float) =
         BubbleDetection(BubbleBox(x, y, w, h), 1f, BubbleType.PANEL)
 
+    /** An inset drawn as a frame over a splash: structure too, read differently. */
+    private fun frame(x: Float, y: Float, w: Float, h: Float) =
+        BubbleDetection(BubbleBox(x, y, w, h), 1f, BubbleType.FRAME)
+
     @Test
     fun `balloons stacked in one panel are read down the page`() {
         val page = listOf(at("bottom", 0.2f, 0.60f), at("top", 0.2f, 0.20f), at("middle", 0.2f, 0.40f))
@@ -165,6 +169,71 @@ class BubbleOrderResolverTest {
         assertEquals(
             listOf("right-top", "right-bottom", "left-top", "left-bottom"),
             BubbleOrderResolver.order(page + panels, rightToLeft = true).names(),
+        )
+    }
+
+    @Test
+    fun `a row of framed insets under a splash is read one inset at a time`() {
+        // Amendment E15, the page a reader reported, as the model and the frame finder saw it:
+        // six balloons over a splash, then three insets along its foot whose balloons sit at
+        // every height. By the balloons alone the row is read across all three insets.
+        val page = listOf(
+            at("1", 0.165f, 0.066f, w = 0.179f, h = 0.074f),
+            at("2", 0.403f, 0.113f, w = 0.168f, h = 0.059f),
+            at("3", 0.552f, 0.395f, w = 0.151f, h = 0.062f),
+            at("4", 0.340f, 0.488f, w = 0.142f, h = 0.058f),
+            at("5", 0.148f, 0.533f, w = 0.162f, h = 0.058f),
+            at("6", 0.119f, 0.590f, w = 0.161f, h = 0.057f),
+            at("middle-1", 0.433f, 0.644f, w = 0.099f, h = 0.036f),
+            at("right-1", 0.649f, 0.626f, w = 0.129f, h = 0.040f),
+            at("middle-2", 0.498f, 0.670f, w = 0.124f, h = 0.068f),
+            at("right-2", 0.725f, 0.755f, w = 0.144f, h = 0.060f),
+            at("left-1", 0.108f, 0.781f, w = 0.165f, h = 0.052f),
+            at("left-2", 0.167f, 0.833f, w = 0.183f, h = 0.045f),
+            at("middle-3", 0.375f, 0.817f, w = 0.208f, h = 0.062f),
+            at("right-3", 0.657f, 0.838f, w = 0.218f, h = 0.039f),
+        )
+        val insets = listOf(
+            frame(0.374f, 0.623f, 0.247f, 0.255f),
+            frame(0.100f, 0.623f, 0.238f, 0.254f),
+            frame(0.641f, 0.623f, 0.249f, 0.254f),
+        )
+
+        assertEquals(
+            listOf("1", "2", "3", "4", "5", "6", "left-1", "left-2", "middle-1", "middle-2", "middle-3") +
+                listOf("right-1", "right-2", "right-3"),
+            BubbleOrderResolver.order(page + insets, rightToLeft = false).names(),
+        )
+        assertEquals(
+            listOf("1", "2", "3", "4", "5", "6", "middle-1", "right-1", "middle-2", "right-2", "left-1") +
+                listOf("left-2", "middle-3", "right-3"),
+            BubbleOrderResolver.order(page, rightToLeft = false).names(),
+            "without them, across the row: what the reader saw",
+        )
+    }
+
+    @Test
+    fun `framed insets do not pull a splash balloon level with them out of place`() {
+        // Why a frame is not read as a gutter's panel: the splash balloons "5" and "6" reach down
+        // level with the insets, and read as panels the insets and they fall into one row, split
+        // by columns - so "4", above and to the right, is read after the whole left inset.
+        val page = listOf(
+            at("4", 0.340f, 0.488f, w = 0.142f, h = 0.058f),
+            at("5", 0.148f, 0.533f, w = 0.162f, h = 0.058f),
+            at("6", 0.119f, 0.590f, w = 0.161f, h = 0.057f),
+            at("left-1", 0.108f, 0.781f, w = 0.165f, h = 0.052f),
+            at("middle-1", 0.433f, 0.644f, w = 0.099f, h = 0.036f),
+        )
+        val boxes = listOf(BubbleBox(0.100f, 0.623f, 0.238f, 0.254f), BubbleBox(0.374f, 0.623f, 0.247f, 0.255f))
+
+        assertEquals(
+            listOf("4", "5", "6", "left-1", "middle-1"),
+            BubbleOrderResolver.order(page + boxes.map { frame(it.x, it.y, it.width, it.height) }, false).names(),
+        )
+        assertEquals(
+            "4",
+            BubbleOrderResolver.order(page + boxes.map { panel(it.x, it.y, it.width, it.height) }, false).names()[3],
+            "the same rectangles as gutter panels",
         )
     }
 

@@ -13,6 +13,7 @@ import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleDetection
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleDetectionConfig
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleType
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleZoomConfig
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.FramedPanels
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.JoinedBalloons
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.PanelFinder
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.SourceRegion
@@ -56,7 +57,8 @@ import java.nio.LongBuffer
  *     fraction of the page every other part of this feature speaks in.
  *  4. Keep the balloons and the free-floating captions through [RtDetrDecoder].
  *  5. Read the page's panels off its gutters with [PanelFinder], while the decoded page is
- *     still here to read, so the reading order can follow them.
+ *     still here to read, so the reading order can follow them — or, on a page no gutter
+ *     divides, the insets drawn as frames over its art, with [FramedPanels] (amendment E15).
  *  6. Recycle the decoded page immediately. Only the boxes survive.
  *
  * A missing model, a native library that will not load, or an allocation that fails is not a
@@ -134,6 +136,8 @@ class RtDetrBubbleDetector(
         val started = System.nanoTime()
         val found: List<BubbleDetection>
         val panels: List<BubbleBox>
+        val frames: List<BubbleBox>
+        val framesMs: Long
         try {
             fillInput(page)
             val answer = run(session)
@@ -164,6 +168,15 @@ class RtDetrBubbleDetector(
             // re-decoding a page to look at them would cost more than the look does.
             val grey = greyPlane(page)
             panels = PanelFinder.find(grey.luma, grey.width, grey.height)
+            // Where no gutter divides the page, insets drawn as frames over the art are looked
+            // for instead, with the lettering, since a balloon laid across a frame hides its line.
+            val framesStarted = System.nanoTime()
+            frames = if (panels.isEmpty()) {
+                FramedPanels.find(grey.luma, grey.width, grey.height, text = found.map { it.box })
+            } else {
+                emptyList()
+            }
+            framesMs = (System.nanoTime() - framesStarted) / 1_000_000
         } finally {
             page.recycle()
         }
@@ -171,9 +184,20 @@ class RtDetrBubbleDetector(
 
         logcat(LogPriority.INFO) {
             "BubbleZoom detect ${image.width}x${image.height} -> ${found.size} bubbles " +
-                "(${panels.size} panels) in ${elapsedMs}ms"
+                "(${panels.size} panels, ${frames.size} frames in ${framesMs}ms) in ${elapsedMs}ms"
         }
-        return found + panels.map { BubbleDetection(it, confidence = 1f, type = BubbleType.PANEL) }
+        if (frames.isNotEmpty()) {
+            // Where the insets were found, so a wrong order can be traced to a missed or a false
+            // frame rather than guessed at.
+            logcat(LogPriority.INFO) {
+                "BubbleZoom frames " + frames.joinToString("; ") {
+                    "%.3f,%.3f %.3fx%.3f".format(it.x, it.y, it.width, it.height)
+                }
+            }
+        }
+        return found +
+            panels.map { BubbleDetection(it, confidence = 1f, type = BubbleType.PANEL) } +
+            frames.map { BubbleDetection(it, confidence = 1f, type = BubbleType.FRAME) }
     }
 
     private fun openSession(): OrtSession {

@@ -220,7 +220,7 @@ class BubbleZoomSession(
         val bubbles = if (onThisPage) {
             ready!!.bubbles
         } else {
-            entry.bubbles.orEmpty().filter { it.type != BubbleType.PANEL }
+            entry.bubbles.orEmpty().filter { !it.type.isStructure }
         }
         val focused = if (onThisPage) ready!!.focusedIndex else -1
         return BubbleZoomDebugInfo(

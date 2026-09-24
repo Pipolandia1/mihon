@@ -1784,6 +1784,66 @@ Parada 3: região do card na tela **712×402 px** (era 1011×720 a 0,92 e ~473 a
 antes em `e14-b3-before.png`). Parada 1, um balão comum: 251×220 px nos dois builds. O log do
 card não muda (`card 871x490/1`) porque o que mudou é a escala em que ele é desenhado.
 
+## E15 — quadrinhos emoldurados sobre um splash
+
+O usuário mostrou uma página (DC × AEW) lida na ordem errada: um splash com três quadrinhos
+menores emoldurados em preto ao pé. O walk ia "THAT'S NO EXCUSE" (meio) → "IF EACH SHARD" (direita)
+→ volta ao meio: lia a fileira de través.
+
+**Por quê.** O `PanelFinder` (E8) acha quadrinhos pelas calhas que cruzam a página inteira, e
+essa página não tem nenhuma — os quadrinhos são retângulos desenhados sobre a arte. O log dizia
+"0 panels", e a ordem caía na dos balões sozinhos.
+
+**O que entrou.** `FramedPanels` procura as molduras direto: retângulos cujos quatro lados são
+linha escura. Só roda quando as calhas não dividem a página, e só responde com duas molduras ou
+mais segurando texto. O que torna isso seguro, cada regra medida:
+
+- o lado é medido entre os cantos (a linha do quadrinho continua pela arte afora) e é **uma**
+  linha sem buraco — só cobertura deixava um lado pular a calha até a linha do vizinho;
+- texto não é nem linha nem buraco: um balão sobre a moldura esconde a linha. Na página
+  reportada o balão "SO, YEAH" deixa 0,23 do lado de cima visível no aparelho (0,34 no desktop);
+  o mínimo de tinta própria é 0,15;
+- o lado tem claro de pelo menos um lado — linha, não borda de área escura. Sem isso, numa
+  página escura, 611 mil retângulos passavam como moldura;
+- do lado de fora há calha lisa em pelo menos três lados (janela, tela e porta têm arte em
+  volta) — ou é **vizinho de fileira** de uma moldura que tem: o quadrinho encostado no splash tem
+  o splash em dois lados, mas divide as linhas de cima e de baixo com os vizinhos;
+- molduras aninham ou ficam separadas, nunca se cruzam; duas que dividem dois lados são o mesmo
+  quadrinho achado duas vezes, e vence a que tem **vizinhos** — pela lisura, um retângulo dentro
+  do quadrinho do meio (topo numa linha da arte) ganhava do próprio quadrinho;
+- a borda da legenda não é quadrinho (um box de texto cobre a maior parte), e **quadrinho tem
+  coisa desenhada dentro**: os três da página reportada têm 0,10–0,26 de tinta dentro; os
+  retângulos recortados de uma faixa preta noutra página, 0,73–0,92. Limite 0,6.
+
+**Ordem.** As molduras viram um tipo novo, `FRAME`, porque não ladrilham a página: a maior
+parte dos balões fica no splash, fora de qualquer moldura. Tratadas como os quadrinhos de calha,
+um balão do splash que desce até a altura da fileira caía na fileira e era lido depois dela
+("LAST I CHECKED" ia de 4.º para 8.º com um pixel de diferença na borda achada). Então o splash
+mantém a ordem dos balões, e a fileira de molduras (as que dividem topo e base) é lida como um
+bloco, quadrinho a quadrinho, no ponto em que o walk chega ao primeiro balão dela.
+
+**Custo — o problema que quase passou.** O primeiro build testava cada par de linhas de linha
+contra cada coluna, e cada teste percorria o lado pixel a pixel. Numa página escura com 231×325
+linhas candidatas a busca passou de **dez minutos** no emulador, e como a detecção é uma página
+por vez, o Bubble Zoom parava no resto do capítulo. Agora: o teste de buraco é uma subtração
+(contagens prefixadas de "começa aqui um buraco longo demais"), só se testam colunas que de fato
+cruzam as duas linhas, e um orçamento de trabalho desiste da página em vez de travar (a página
+volta à ordem de antes). Pior página: **~300 ms no emulador** (159 ms no desktop); a página
+reportada, 46 ms. O log de detecção agora diz `(N panels, M frames in Xms)` e, havendo
+molduras, `BubbleZoom frames x,y wxh; …`.
+
+**Medido com o código Kotlin real** sobre as 137 páginas (harness JVM, removido): 51 sem
+calhas, molduras usadas em 3, **ordem mudou em 1 — a reportada, certa.** Antes da regra do
+"desenhado dentro", uma segunda página mudava e errava (1, 3, 2 no alto).
+
+**Verificado no aparelho**, capítulo local, página 13 (a reportada): `0 panels, 3 frames`, HUD
+1–5 no splash, **6–7 o quadrinho da esquerda, 8–10 o do meio, 11–13 o da direita**, e o walk
+segue essa ordem. As páginas sintéticas continuam lendo certo; a grade 2×2 (página 2) passou a ser
+lida quadrinho a quadrinho.
+
+`FramedPanelsTest` (8), dois testes novos de ordem com as caixas reais da página. Constantes
+`FRAME_*` em `BubbleDetectionConfig`, `ORDER_FRAME_MATE` em `BubbleZoomConfig`.
+
 ## Onde estamos contra o Play Books — medido em 22/09/2026
 
 Mesma HQ aberta nos dois leitores, mesmas páginas, emulador. O que a comparação achou, em

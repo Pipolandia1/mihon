@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.reader.bubblezoom
 
 import java.util.IdentityHashMap
+import kotlin.math.abs
 
 /**
  * Puts a page's balloons into the order they are meant to be read.
@@ -41,12 +42,92 @@ object BubbleOrderResolver {
      */
     fun order(bubbles: List<BubbleDetection>, rightToLeft: Boolean): List<BubbleDetection> {
         val panels = bubbles.filter { it.type == BubbleType.PANEL }
+        val frames = bubbles.filter { it.type == BubbleType.FRAME }
         // Panels are structure and never a stop on the walk, so they leave here whatever else
         // happens. The controller filters them too; this keeps every count on the way truthful.
-        val text = if (panels.isEmpty()) bubbles else bubbles.filter { it.type != BubbleType.PANEL }
+        val text = if (panels.isEmpty() && frames.isEmpty()) bubbles else bubbles.filter { !it.type.isStructure }
         if (text.size < 2) return text
-        if (panels.isEmpty()) return withinGroup(text, rightToLeft)
-        return byPanels(text, panels, rightToLeft)
+        if (panels.isNotEmpty()) return byPanels(text, panels, rightToLeft)
+        if (frames.isNotEmpty()) return byFrames(text, frames, rightToLeft)
+        return withinGroup(text, rightToLeft)
+    }
+
+    /**
+     * The balloons' own order, with each row of framed insets read one inset at a time.
+     * Amendment E15.
+     *
+     * Frames are insets drawn over a splash, and unlike the gutters' panels they do not tile the
+     * page: most of its balloons sit on the splash around them, in no frame at all. Put through
+     * [byPanels] with the rest, a splash balloon that reaches down level with the insets lands
+     * in their row and is read after them — measured on the reported page, "LAST I CHECKED" went
+     * from fourth to eighth on a one-pixel change in where a frame's side was found.
+     *
+     * So the splash keeps the order the balloons alone give it, which is the order it had before
+     * frames were found, and the insets are read where the walk first reaches any of them. Insets
+     * that share their top and bottom lines are a row and are read as one block, one inset at a
+     * time in the reading direction; so are insets that share their left and right, a column.
+     */
+    private fun byFrames(
+        text: List<BubbleDetection>,
+        frames: List<BubbleDetection>,
+        rightToLeft: Boolean,
+    ): List<BubbleDetection> {
+        val home = IdentityHashMap<BubbleDetection, BubbleDetection>()
+        val members = IdentityHashMap<BubbleDetection, MutableList<BubbleDetection>>()
+        for (bubble in text) {
+            val frame = frames
+                .filter { it.box.contains(bubble.box.centerX, bubble.box.centerY) }
+                .minByOrNull { it.box.area } ?: continue
+            home[bubble] = frame
+            members.getOrPut(frame) { ArrayList() } += bubble
+        }
+        val base = withinGroup(text, rightToLeft)
+        if (members.isEmpty()) return base
+
+        // Blocks: frames that are row mates or column mates, joined through each other.
+        val used = frames.filter { members.containsKey(it) }
+        val block = IntArray(used.size) { it }
+        fun root(i: Int): Int {
+            var at = i
+            while (block[at] != at) at = block[at]
+            return at
+        }
+        for (i in used.indices) {
+            for (j in i + 1 until used.size) {
+                if (mates(used[i].box, used[j].box)) block[root(i)] = root(j)
+            }
+        }
+        val blockOf = IdentityHashMap<BubbleDetection, Int>()
+        used.forEachIndexed { i, frame -> blockOf[frame] = root(i) }
+
+        val out = ArrayList<BubbleDetection>(text.size)
+        val read = HashSet<Int>()
+        for (bubble in base) {
+            val frame = home[bubble]
+            if (frame == null) {
+                out += bubble
+                continue
+            }
+            val id = blockOf.getValue(frame)
+            if (!read.add(id)) continue
+            val row = used.filter { blockOf[it] == id }
+            val inOrder = ArrayList<BubbleDetection>(row.size)
+            // Insets meet at a gutter as panels do, so no gap is required between them.
+            cut(row, rightToLeft, inOrder, depth = 0, rowGap = 0f, columnGap = 0f)
+            for (inset in inOrder) {
+                val group = members.getValue(inset)
+                out += if (group.size == 1) group else withinGroup(group, rightToLeft)
+            }
+        }
+        return out
+    }
+
+    /** Two frames drawn on the same lines: a row (top and bottom) or a column (left and right). */
+    private fun mates(a: BubbleBox, b: BubbleBox): Boolean {
+        val tolerance = BubbleZoomConfig.ORDER_FRAME_MATE
+        val row = abs(a.y - b.y) <= tolerance && abs(a.bottom - b.bottom) <= tolerance
+        val column = abs(a.x - b.x) <= tolerance && abs(a.right - b.right) <= tolerance
+        return row || column
     }
 
     /**

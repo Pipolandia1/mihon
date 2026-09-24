@@ -99,6 +99,91 @@ object BubbleDetectionConfig {
      */
     const val PANEL_MIN_INK = 0.35f
 
+    /*
+     * Framed panels, on a page no gutter divides. Amendment E15. Fractions are of the scan's
+     * long side ([PANEL_SCAN_LONG_SIDE]); the figures were measured at 600 over 137 pages. See
+     * [FramedPanels] for what each rule is for.
+     */
+
+    /** A pixel this dark, out of 255, is ink a frame could be drawn in. */
+    const val FRAME_LINE_LUMA = 56
+
+    /** The shortest run of ink that makes a row or column a candidate frame line. */
+    const val FRAME_MIN_LINE = 0.08f
+
+    /** How far two runs' ends, or two frames' sides, may differ and still be the same. */
+    const val FRAME_CORNER_TOLERANCE = 0.012f
+
+    /** Thicker than this, a dark band is an area of the art, not a line. */
+    const val FRAME_MAX_THICKNESS = 0.02f
+
+    /** How much of a side, between its corners, must be ink or under a text box. */
+    const val FRAME_COVER = 0.90f
+
+    /**
+     * The longest break a line may have, text aside: JPEG noise and a hair of art, not a gap.
+     * A side is one drawn line; coverage alone let a side step across a 5-pixel gutter to the
+     * next inset's line.
+     */
+    const val FRAME_MAX_HOLE = 0.005f
+
+    /**
+     * The most side tests one page may cost before the search gives up and the page is read as
+     * it was before frames. A page of dark, busy art has hundreds of candidate lines on each
+     * axis; with the reach test the reported page needs a few thousand.
+     */
+    const val FRAME_WORK_BUDGET = 400_000L
+
+    /**
+     * The most candidate frames one page may produce before the search gives up, for the same
+     * reason: a page that has this many rectangles of line is art, not insets.
+     */
+    const val FRAME_MAX_CANDIDATES = 2_000
+
+    /** How much of the row or column beside a side may be ink for the side to be a line. */
+    const val FRAME_BESIDE_INK = 0.5f
+
+    /**
+     * How much of a side must be ink of its own; the rest may lie under text. A balloon laid
+     * across the top of an inset left 0.23 of that side visible on the device's scan of the
+     * reported page (0.34 on a desktop reduction of the same page), all of it line. A side that
+     * is all text is none.
+     */
+    const val FRAME_MIN_INK_SIDE = 0.15f
+
+    /** How far outside a side the band read for flatness starts, and how thick it is. */
+    const val FRAME_FLAT_OFFSET = 0.004f
+    const val FRAME_FLAT_BAND = 0.006f
+
+    /** How far in from each corner that band stops, so the corner's own ink is not read. */
+    const val FRAME_FLAT_INSET = 0.01f
+
+    /** A side this close to the page's edge is on the margin, and flat by definition. */
+    const val FRAME_PAGE_EDGE = 0.03f
+
+    /** How far from the band's median tone a pixel may be and still be the same flat tone. */
+    const val FRAME_FLAT_TOLERANCE = 40
+
+    /**
+     * How much of the band outside a side must be flat for the side to border a gutter. Measured
+     * on the page this was built for: the insets' gutter sides 0.85 to 1.00, the splash beside
+     * them 0.62 to 0.68.
+     */
+    const val FRAME_MIN_FLAT = 0.85f
+
+    /** Frames this close still stand apart: the two lines of one gutter. */
+    const val FRAME_APART_SLACK = 0.005f
+
+    /**
+     * The most of a frame's inside, lettering aside, that may be ink. The reported page's insets
+     * are 0.10 to 0.26; rectangles cut out of a black band over another page's panels 0.73 to
+     * 0.92. A panel of dark night art above this is missed, and read as before frames.
+     */
+    const val FRAME_MAX_INSIDE_INK = 0.6f
+
+    /** A frame this much covered by one text box is that box's own border. */
+    const val FRAME_TEXT_COVER = 0.5f
+
     /**
      * A page whose long side is at least this many input sizes is never decoded at full
      * resolution, even when the next power-of-two sample size lands a little under the input:

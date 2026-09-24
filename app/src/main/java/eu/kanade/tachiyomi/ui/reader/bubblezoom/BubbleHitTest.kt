@@ -33,7 +33,7 @@ object BubbleHitTest {
         var best = -1
         var bestArea = Float.MAX_VALUE
         bubbles.forEachIndexed { index, bubble ->
-            if (bubble.type == BubbleType.PANEL) return@forEachIndexed
+            if (bubble.type.isStructure) return@forEachIndexed
             if (!region(bubble.box).contains(nx, ny)) return@forEachIndexed
             val area = bubble.box.area
             if (area < bestArea) {

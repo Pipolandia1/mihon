@@ -101,7 +101,7 @@ class BubbleZoomController {
         // Ready, or each delivery would silently rewind a walk already in progress.
         val current = mutableState.value as? BubbleZoomState.Detecting ?: return
         if (current.page != page) return
-        val navigable = bubbles.filter { it.type != BubbleType.PANEL }
+        val navigable = bubbles.filter { !it.type.isStructure }
         val index = if (current.entry == PageEntry.BACKWARD) navigable.lastIndex else -1
         mutableState.value = BubbleZoomState.Ready(page, navigable, index)
     }

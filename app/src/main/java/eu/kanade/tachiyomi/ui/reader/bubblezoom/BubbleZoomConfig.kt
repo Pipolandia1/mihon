@@ -143,6 +143,14 @@ object BubbleZoomConfig {
      */
     const val ORDER_BAND_TOLERANCE = 0.025f
 
+    /**
+     * How far apart, as a fraction of the page, two framed insets' tops and bottoms (or lefts and
+     * rights) may be and still be one row (or column) read as a block. Amendment E15. The frames
+     * of one row are drawn on the same lines, found within a pixel or two of the scan: measured
+     * on the reported page, 0.001 apart.
+     */
+    const val ORDER_FRAME_MATE = 0.01f
+
     /** Gap kept between the card and the edge of the viewport, in dp. */
     const val CARD_SCREEN_MARGIN_DP = 12f
 
