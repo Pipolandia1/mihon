@@ -60,6 +60,10 @@ fun ReadingStatsContent(
     contentPadding: PaddingValues,
     onClickDay: (LocalDate) -> Unit,
     onClickContinue: (mangaId: Long, chapterId: Long) -> Unit,
+    onOpenPlan: (planId: Long) -> Unit,
+    onEditGoals: () -> Unit,
+    onEditPlans: () -> Unit,
+    onShowMonth: (LocalDate) -> Unit,
 ) {
     val week = state.week
     if (week == null) {
@@ -90,6 +94,20 @@ fun ReadingStatsContent(
             item {
                 SectionCard(MR.strings.reading_stats_continue_reading) {
                     state.continueReading.forEach { ContinueRow(it, onClickContinue) }
+                }
+            }
+        }
+        state.objectives?.let { objectives ->
+            item {
+                SectionCard(MR.strings.reading_stats_objectives) {
+                    ReadingObjectives(objectives, onClickContinue, onOpenPlan, onEditGoals, onEditPlans)
+                }
+            }
+        }
+        state.activity?.let { activity ->
+            item {
+                SectionCard(MR.strings.reading_stats_activity) {
+                    ReadingActivity(activity, onClickDay, onShowMonth)
                 }
             }
         }

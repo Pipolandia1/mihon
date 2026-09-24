@@ -3,22 +3,102 @@ package eu.kanade.tachiyomi.data.backup.models
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.protobuf.ProtoNumber
+import tachiyomi.domain.readingstats.goals.GoalMetric
+import tachiyomi.domain.readingstats.goals.GoalPeriod
+import tachiyomi.domain.readingstats.goals.ReadingGoal
 import tachiyomi.domain.readingstats.model.ChapterKey
 import tachiyomi.domain.readingstats.model.ChapterProgress
 import tachiyomi.domain.readingstats.model.DayTotals
 import tachiyomi.domain.readingstats.model.ReadingOrigin
 import tachiyomi.domain.readingstats.model.SessionSnapshot
 import tachiyomi.domain.readingstats.model.SessionState
+import tachiyomi.domain.readingstats.plans.CollectionItem
+import tachiyomi.domain.readingstats.plans.CollectionKind
+import tachiyomi.domain.readingstats.plans.ReadingPlan
 
 /**
- * Reading sessions and per-chapter progress. Entries and chapters are named by source and URL, not
- * by id, so a backup restores onto any device; a session whose chapter is not there is kept.
+ * Reading sessions, per-chapter progress, goals and plans. Entries and chapters are named by source
+ * and URL, not by id, so a backup restores onto any device; a session whose chapter is not there is
+ * kept.
  */
 @Serializable
 class BackupReadingStats(
     @ProtoNumber(1) val recordingStartedAt: Long = 0,
     @ProtoNumber(2) val sessions: List<BackupReadingSession> = emptyList(),
     @ProtoNumber(3) val chapterProgress: List<BackupChapterProgress> = emptyList(),
+    @ProtoNumber(4) val goals: List<BackupReadingGoal> = emptyList(),
+    @ProtoNumber(5) val plans: List<BackupReadingPlan> = emptyList(),
+)
+
+@Serializable
+class BackupReadingGoal(
+    @ProtoNumber(1) val metric: Long,
+    @ProtoNumber(2) val period: Long,
+    @ProtoNumber(3) val target: Int,
+    @ProtoNumber(4) val primary: Boolean = false,
+) {
+    fun toGoal(): ReadingGoal? = ReadingGoal(
+        metric = GoalMetric.of(metric) ?: return null,
+        period = GoalPeriod.of(period) ?: return null,
+        target = target,
+        isPrimary = primary,
+    )
+
+    companion object {
+        fun of(goal: ReadingGoal) = BackupReadingGoal(goal.metric.id, goal.period.id, goal.target, goal.isPrimary)
+    }
+}
+
+@Serializable
+class BackupReadingPlan(
+    @ProtoNumber(1) val uuid: String,
+    @ProtoNumber(2) val collectionUuid: String,
+    @ProtoNumber(3) val kind: Long = CollectionKind.LIST.id,
+    @ProtoNumber(4) val name: String,
+    @ProtoNumber(5) val pacePerWeek: Int,
+    @ProtoNumber(6) val startedAt: Long,
+    @ProtoNumber(7) val startedOn: String,
+    @ProtoNumber(8) val paused: Boolean = false,
+    @ProtoNumber(9) val items: List<BackupCollectionItem> = emptyList(),
+) {
+    fun toPlan(): Pair<ReadingPlan, List<CollectionItem>> {
+        val plan = ReadingPlan(
+            id = -1,
+            uuid = uuid,
+            collectionId = -1,
+            collectionUuid = collectionUuid,
+            kind = CollectionKind.of(kind),
+            name = name,
+            pacePerWeek = pacePerWeek,
+            startedAt = startedAt,
+            startedOn = LocalDate.parse(startedOn),
+            paused = paused,
+        )
+        return plan to items.map { CollectionItem(null, null, it.source, it.mangaUrl, it.chapterUrl, it.label) }
+    }
+
+    companion object {
+        fun of(plan: ReadingPlan, items: List<CollectionItem>) = BackupReadingPlan(
+            uuid = plan.uuid,
+            collectionUuid = plan.collectionUuid,
+            kind = plan.kind.id,
+            name = plan.name,
+            pacePerWeek = plan.pacePerWeek,
+            startedAt = plan.startedAt,
+            startedOn = plan.startedOn.toString(),
+            paused = plan.paused,
+            items = items.map { BackupCollectionItem(it.sourceId, it.mangaUrl, it.chapterUrl, it.label) },
+        )
+    }
+}
+
+@Serializable
+class BackupCollectionItem(
+    @ProtoNumber(1) val source: Long,
+    @ProtoNumber(2) val mangaUrl: String,
+    /** Absent for a whole entry. */
+    @ProtoNumber(3) val chapterUrl: String? = null,
+    @ProtoNumber(4) val label: String = "",
 )
 
 @Serializable

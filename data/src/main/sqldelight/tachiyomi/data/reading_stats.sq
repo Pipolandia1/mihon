@@ -256,6 +256,19 @@ FROM reading_day_segments
 WHERE local_date BETWEEN :from AND :to
 GROUP BY local_date;
 
+allDaySums:
+SELECT local_date, sum(active_ms) AS active_ms, sum(pages_new) AS pages_new,
+       sum(pages_visited) AS pages_visited, count(*) AS sessions
+FROM reading_day_segments
+GROUP BY local_date;
+
+longestSession:
+SELECT _id, manga_title, chapter_name, chapter_number, active_ms, started_at
+FROM reading_sessions
+WHERE origin = 0
+ORDER BY active_ms DESC
+LIMIT 1;
+
 readerCompletionsByDay:
 SELECT completed_on, count(*) AS completed
 FROM reading_sessions

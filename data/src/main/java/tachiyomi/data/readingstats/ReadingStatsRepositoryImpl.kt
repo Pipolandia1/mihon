@@ -13,9 +13,11 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.datetime.LocalDate
 import tachiyomi.data.Database
 import tachiyomi.data.subscribeToList
+import tachiyomi.domain.readingstats.habits.SessionRecord
 import tachiyomi.domain.readingstats.model.ChapterKey
 import tachiyomi.domain.readingstats.model.ChapterPages
 import tachiyomi.domain.readingstats.model.ChapterProgress
@@ -175,6 +177,26 @@ class ReadingStatsRepositoryImpl(
             queries.otherCompletionsByDay(fromText, toText).subscribeToList(),
             ReadingStatsMapper::mapDays,
         )
+    }
+
+    override fun subscribeAllDays(): Flow<List<ReadingDayStats>> {
+        return queries.allDaySums().subscribeToList().map { rows ->
+            rows.map {
+                ReadingDayStats(
+                    date = LocalDate.parse(it.local_date),
+                    activeMs = it.active_ms ?: 0,
+                    pagesNew = (it.pages_new ?: 0).toInt(),
+                    pagesVisited = (it.pages_visited ?: 0).toInt(),
+                    sessions = it.sessions.toInt(),
+                )
+            }
+        }
+    }
+
+    override suspend fun getLongestSession(): SessionRecord? {
+        return queries.longestSession().awaitAsOneOrNull()?.let {
+            SessionRecord(it.manga_title, it.chapter_name, it.chapter_number, it.active_ms, it.started_at)
+        }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)

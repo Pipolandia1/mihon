@@ -1,6 +1,7 @@
 package eu.kanade.presentation.readingstats
 
 import android.content.Context
+import android.text.format.DateFormat
 import eu.kanade.presentation.util.toDurationString
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.toJavaLocalDate
@@ -24,6 +25,13 @@ fun readingTimeText(context: Context, activeMs: Long): String {
 
 fun readingDateText(date: LocalDate): String =
     date.toJavaLocalDate().format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
+
+/** Day and month, and the year only when it is not this one. */
+fun readingShortDateText(date: LocalDate, today: LocalDate): String {
+    val skeleton = if (date.year == today.year) "dMMM" else "dMMMy"
+    val pattern = DateFormat.getBestDateTimePattern(Locale.getDefault(), skeleton)
+    return date.toJavaLocalDate().format(DateTimeFormatter.ofPattern(pattern, Locale.getDefault()))
+}
 
 fun readingDateLongText(date: LocalDate): String =
     date.toJavaLocalDate().format(DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL))

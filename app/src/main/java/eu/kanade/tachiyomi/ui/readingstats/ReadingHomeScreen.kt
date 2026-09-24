@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -47,6 +49,7 @@ import mihon.icons.materialsymbols.rounded.CalendarMonth
 import mihon.icons.materialsymbols.rounded.DeleteSweep
 import mihon.icons.materialsymbols.rounded.QueryStats
 import tachiyomi.domain.readingstats.metrics.ReadingMetrics
+import tachiyomi.domain.readingstats.plans.PlanRules
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 import kotlin.time.Clock
@@ -105,6 +108,10 @@ fun ReadingHomeScreen(
                     scope.launch { pagerState.animateScrollToPage(HISTORY_PAGE) }
                 },
                 onClickContinue = viewModel::openChapter,
+                onOpenPlan = { navigator.push(ReadingPlanEditorScreen(it)) },
+                onEditGoals = { navigator.push(ReadingGoalsScreen()) },
+                onEditPlans = { navigator.push(ReadingPlansScreen()) },
+                onShowMonth = viewModel::showMonth,
             )
         },
     )
@@ -180,12 +187,18 @@ fun ReadingHomeScreen(
             text = {
                 val tracker = ReadingStatsConfig.TRACKER
                 Text(
-                    stringResource(
+                    text = stringResource(
                         MR.strings.reading_stats_definitions,
                         readingTimeText(context, tracker.idleTimeout.inWholeMilliseconds),
                         readingTimeText(context, tracker.idleGrace.inWholeMilliseconds),
                         readingTimeText(context, ReadingMetrics.READING_DAY_MIN_ACTIVE.inWholeMilliseconds),
+                    ) + "\n\n" + stringResource(
+                        MR.strings.reading_stats_definitions_habits,
+                        PlanRules.FORECAST_WINDOW_DAYS,
+                        PlanRules.FORECAST_MIN_DAYS,
+                        PlanRules.FORECAST_MIN_FINISHED,
                     ),
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
                 )
             },
         )

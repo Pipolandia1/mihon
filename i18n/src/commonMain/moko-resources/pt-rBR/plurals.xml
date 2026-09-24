@@ -115,4 +115,30 @@
         <item quantity="many">%1$d atualizações falharam</item>
         <item quantity="other">%1$d atualizações falharam</item>
     </plurals>
+
+    <!-- Reading stats -->
+    <plurals name="reading_stats_weeks">
+        <item quantity="one">%d semana</item>
+        <item quantity="other">%d semanas</item>
+    </plurals>
+    <plurals name="reading_stats_new_pages">
+        <item quantity="one">%d página nova</item>
+        <item quantity="other">%d páginas novas</item>
+    </plurals>
+    <plurals name="reading_stats_chapters">
+        <item quantity="one">%d capítulo</item>
+        <item quantity="other">%d capítulos</item>
+    </plurals>
+    <plurals name="reading_stats_minutes">
+        <item quantity="one">%d minuto</item>
+        <item quantity="other">%d minutos</item>
+    </plurals>
+    <plurals name="reading_stats_days">
+        <item quantity="one">%d dia</item>
+        <item quantity="other">%d dias</item>
+    </plurals>
+    <plurals name="reading_stats_frequency">
+        <item quantity="one">Média de %1$s dias de leitura por semana na última semana</item>
+        <item quantity="other">Média de %1$s dias de leitura por semana nas últimas %2$d semanas</item>
+    </plurals>
 </resources>

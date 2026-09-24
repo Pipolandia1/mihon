@@ -8,12 +8,18 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.protobuf.ProtoBuf
 import kotlinx.serialization.protobuf.ProtoNumber
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.readingstats.goals.GoalMetric
+import tachiyomi.domain.readingstats.goals.GoalPeriod
+import tachiyomi.domain.readingstats.goals.ReadingGoal
 import tachiyomi.domain.readingstats.model.ChapterKey
 import tachiyomi.domain.readingstats.model.ChapterProgress
 import tachiyomi.domain.readingstats.model.DayTotals
 import tachiyomi.domain.readingstats.model.ReadingOrigin
 import tachiyomi.domain.readingstats.model.SessionSnapshot
 import tachiyomi.domain.readingstats.model.SessionState
+import tachiyomi.domain.readingstats.plans.CollectionItem
+import tachiyomi.domain.readingstats.plans.CollectionKind
+import tachiyomi.domain.readingstats.plans.ReadingPlan
 
 class BackupReadingStatsTest {
 
@@ -48,6 +54,41 @@ class BackupReadingStatsTest {
         val (progressKey, progress) = readingStats.chapterProgress.single().toProgress()
         progressKey.chapterUrl shouldBe "/c"
         progress.copy(chapterId = 1) shouldBe progress()
+    }
+
+    @Test
+    fun `goals and plans survive a round trip`() {
+        val goal = ReadingGoal(GoalMetric.MINUTES, GoalPeriod.WEEK, target = 120, isPrimary = true)
+        val plan = ReadingPlan(
+            id = 3,
+            uuid = "plan",
+            collectionId = 4,
+            collectionUuid = "list",
+            kind = CollectionKind.LIST,
+            name = "Run",
+            pacePerWeek = 5,
+            startedAt = 99,
+            startedOn = LocalDate(2026, 9, 20),
+            paused = true,
+        )
+        val items = listOf(
+            CollectionItem(7, null, 1, "/m", null, "Series"),
+            CollectionItem(8, 9, 2, "/n", "/c", "Issue"),
+        )
+        val stats = BackupReadingStats(
+            goals = listOf(BackupReadingGoal.of(goal)),
+            plans = listOf(BackupReadingPlan.of(plan, items)),
+        )
+
+        val decoded = ProtoBuf.decodeFromByteArray(
+            BackupReadingStats.serializer(),
+            ProtoBuf.encodeToByteArray(BackupReadingStats.serializer(), stats),
+        )
+
+        decoded.goals.single().toGoal() shouldBe goal
+        val (restored, restoredItems) = decoded.plans.single().toPlan()
+        restored shouldBe plan.copy(id = -1, collectionId = -1)
+        restoredItems shouldBe items.map { it.copy(mangaId = null, chapterId = null) }
     }
 
     @Test

@@ -8,11 +8,12 @@ import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
+import eu.kanade.tachiyomi.readingstats.PlanProgressSource
+import eu.kanade.tachiyomi.readingstats.ReadingDays
 import eu.kanade.tachiyomi.readingstats.ReadingStatsConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -22,7 +23,6 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -41,6 +41,12 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.history.interactor.GetHistory
 import tachiyomi.domain.history.interactor.GetNextChapters
 import tachiyomi.domain.manga.model.MangaCover
+import tachiyomi.domain.readingstats.goals.GoalProgress
+import tachiyomi.domain.readingstats.goals.GoalRules
+import tachiyomi.domain.readingstats.habits.Frequency
+import tachiyomi.domain.readingstats.habits.ReadingHabits
+import tachiyomi.domain.readingstats.habits.ReadingRecords
+import tachiyomi.domain.readingstats.habits.Streaks
 import tachiyomi.domain.readingstats.metrics.Coverage
 import tachiyomi.domain.readingstats.metrics.PeriodSummary
 import tachiyomi.domain.readingstats.metrics.ReadingCalendar
@@ -49,12 +55,13 @@ import tachiyomi.domain.readingstats.metrics.ReadingPeriod
 import tachiyomi.domain.readingstats.metrics.Trend
 import tachiyomi.domain.readingstats.model.ReadingDayEntry
 import tachiyomi.domain.readingstats.model.ReadingDayStats
+import tachiyomi.domain.readingstats.plans.NextStep
+import tachiyomi.domain.readingstats.plans.NextSteps
+import tachiyomi.domain.readingstats.plans.PlanProgress
+import tachiyomi.domain.readingstats.repository.ReadingPlanRepository
 import tachiyomi.domain.readingstats.repository.ReadingStatsRepository
 import tachiyomi.domain.readingstats.service.ReadingStatsPreferences
-import java.time.temporal.WeekFields
-import java.util.Locale
 import kotlin.time.Clock
-import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -63,6 +70,9 @@ import kotlin.time.Duration.Companion.seconds
 @ContributesIntoMap(AppScope::class, binding = binding<ViewModel>())
 class ReadingStatsViewModel(
     private val repository: ReadingStatsRepository,
+    private val planRepository: ReadingPlanRepository,
+    readingDays: ReadingDays,
+    planProgress: PlanProgressSource,
     private val preferences: ReadingStatsPreferences,
     private val getHistory: GetHistory,
     private val getNextChapters: GetNextChapters,
@@ -74,30 +84,61 @@ class ReadingStatsViewModel(
     private val selectedDay = MutableStateFlow<LocalDate?>(null)
     private val dialog = MutableStateFlow<Dialog?>(null)
 
+    /** The first day of the month the calendar shows; null for the current month. */
+    private val shownMonth = MutableStateFlow<LocalDate?>(null)
+
     /** Bumped when recording restarts, so the recording start is read again. */
     private val resets = MutableStateFlow(0)
 
-    private val firstDayOfWeek: DayOfWeek = DayOfWeek(WeekFields.of(Locale.getDefault()).firstDayOfWeek.value)
+    private val firstDayOfWeek: DayOfWeek = readingDays.firstDayOfWeek
+    private val today: Flow<LocalDate> = readingDays.today
+    private val recordingStartedOn: Flow<LocalDate> = readingDays.recordingStartedOn(resets)
 
-    /** Today, re-emitted when the date changes while the screen is open. */
-    private val today: Flow<LocalDate> = flow {
-        while (true) {
-            emit(ReadingCalendar.dateOf(Clock.System.now().toEpochMilliseconds(), TimeZone.currentSystemDefault()))
-            delay(1.minutes)
-        }
+    private val calendar: Flow<Calendar> = combine(today, recordingStartedOn) { today, startedOn ->
+        Calendar(today, startedOn, ReadingCalendar.weekOf(today, firstDayOfWeek))
     }.distinctUntilChanged()
 
-    private val recordingStartedOn: Flow<LocalDate> = resets.mapLatest {
-        ReadingCalendar.dateOf(repository.getRecordingStartedAt(), TimeZone.currentSystemDefault())
-    }
-
-    private val week: Flow<WeekState> = combine(today, recordingStartedOn, ::Pair)
-        .flatMapLatest { (today, startedOn) ->
-            val week = ReadingCalendar.weekOf(today, firstDayOfWeek)
-            val lastWeek = ReadingMetrics.sameStretchLastWeek(week, today)
-            repository.subscribeDays(lastWeek.from, week.to).map { days ->
-                weekState(today, week, lastWeek, startedOn, days)
+    private val week: Flow<WeekState> = calendar
+        .flatMapLatest { calendar ->
+            val lastWeek = ReadingMetrics.sameStretchLastWeek(calendar.week, calendar.today)
+            repository.subscribeDays(lastWeek.from, calendar.week.to).map { days ->
+                weekState(calendar, lastWeek, days)
             }
+        }
+        .catch { logcat(LogPriority.ERROR, it) }
+        .flowOn(Dispatchers.IO)
+
+    private val plans: Flow<List<PlanProgress>> = planProgress
+        .subscribe(today, recordingStartedOn, firstDayOfWeek)
+        .catch { logcat(LogPriority.ERROR, it) }
+        .flowOn(Dispatchers.IO)
+
+    private val objectives: Flow<ObjectivesState> = combine(week, planRepository.subscribeGoals(), plans) {
+            week,
+            goals,
+            plans,
+        ->
+        val progress = GoalRules.ordered(goals).map {
+            GoalRules.progress(it, week.today, week.summary.period, week.days, week.recordingStartedOn)
+        }
+        ObjectivesState(goals = progress, plans = plans, nextSteps = NextSteps.of(progress, plans))
+    }
+        .catch { logcat(LogPriority.ERROR, it) }
+        .flowOn(Dispatchers.IO)
+
+    private val activity: Flow<ActivityState> = combine(calendar, repository.subscribeAllDays(), shownMonth, ::Triple)
+        .mapLatest { (calendar, days, month) ->
+            val firstOfMonth = month ?: LocalDate(calendar.today.year, calendar.today.month, 1)
+            ActivityState(
+                today = calendar.today,
+                recordingStartedOn = calendar.recordingStartedOn,
+                firstDayOfWeek = firstDayOfWeek,
+                month = firstOfMonth,
+                days = days.associateBy { it.date },
+                streaks = ReadingHabits.streaks(days, calendar.today),
+                frequency = ReadingHabits.frequency(days, calendar.today, firstDayOfWeek, calendar.recordingStartedOn),
+                records = ReadingHabits.records(days, firstDayOfWeek, repository.getLongestSession()),
+            )
         }
         .catch { logcat(LogPriority.ERROR, it) }
         .flowOn(Dispatchers.IO)
@@ -132,16 +173,22 @@ class ReadingStatsViewModel(
         .catch { logcat(LogPriority.ERROR, it) }
         .flowOn(Dispatchers.IO)
 
+    private val summaries =
+        combine(week, objectives, activity, continueReading) { week, objectives, activity, continueReading ->
+            Summaries(week, objectives, activity, continueReading)
+        }
+
     val state: StateFlow<State> = combine(
-        week,
-        continueReading,
+        summaries,
         combine(selectedDay, dayEntries, ::Pair),
         preferences.recordingEnabled.changes(),
         dialog,
-    ) { week, continueReading, (day, entries), recording, dialog ->
+    ) { summaries, (day, entries), recording, dialog ->
         State(
-            week = week,
-            continueReading = continueReading,
+            week = summaries.week,
+            objectives = summaries.objectives,
+            activity = summaries.activity,
+            continueReading = summaries.continueReading,
             selectedDay = day,
             dayEntries = entries?.takeIf { day != null },
             recordingEnabled = recording,
@@ -152,6 +199,10 @@ class ReadingStatsViewModel(
 
     fun selectDay(date: LocalDate?) {
         selectedDay.value = date
+    }
+
+    fun showMonth(firstOfMonth: LocalDate) {
+        shownMonth.value = firstOfMonth
     }
 
     fun setRecordingEnabled(enabled: Boolean) {
@@ -177,21 +228,15 @@ class ReadingStatsViewModel(
         events.trySend(Event.OpenChapter(mangaId, chapterId))
     }
 
-    private fun weekState(
-        today: LocalDate,
-        week: ReadingPeriod,
-        lastWeek: ReadingPeriod,
-        startedOn: LocalDate,
-        days: List<ReadingDayStats>,
-    ): WeekState {
+    private fun weekState(calendar: Calendar, lastWeek: ReadingPeriod, days: List<ReadingDayStats>): WeekState {
         val byDate = days.associateBy { it.date }
-        val summary = ReadingMetrics.summarize(week, days, startedOn)
-        val previous = ReadingMetrics.summarize(lastWeek, days, startedOn)
+        val summary = ReadingMetrics.summarize(calendar.week, days, calendar.recordingStartedOn)
+        val previous = ReadingMetrics.summarize(lastWeek, days, calendar.recordingStartedOn)
         return WeekState(
-            today = today,
-            recordingStartedOn = startedOn,
+            today = calendar.today,
+            recordingStartedOn = calendar.recordingStartedOn,
             summary = summary,
-            days = week.dates().map { byDate[it] ?: ReadingDayStats(it) },
+            days = calendar.week.dates().map { byDate[it] ?: ReadingDayStats(it) },
             pagesTrend = ReadingMetrics.trend(
                 current = summary.pagesNew.toLong(),
                 previous = previous.pagesNew.toLong(),
@@ -218,9 +263,20 @@ class ReadingStatsViewModel(
         )
     }
 
+    private data class Calendar(val today: LocalDate, val recordingStartedOn: LocalDate, val week: ReadingPeriod)
+
+    private data class Summaries(
+        val week: WeekState,
+        val objectives: ObjectivesState,
+        val activity: ActivityState,
+        val continueReading: List<ContinueItem>,
+    )
+
     @Immutable
     data class State(
         val week: WeekState? = null,
+        val objectives: ObjectivesState? = null,
+        val activity: ActivityState? = null,
         val continueReading: List<ContinueItem> = emptyList(),
         val selectedDay: LocalDate? = null,
         /** Null while the day is loading, or when no day is selected. */
@@ -241,6 +297,27 @@ class ReadingStatsViewModel(
         val comparable: Boolean,
         /** Whether anything was measured this week or the same stretch of last week. */
         val hasAnyReading: Boolean,
+    )
+
+    @Immutable
+    data class ObjectivesState(
+        /** The primary goal first. */
+        val goals: List<GoalProgress>,
+        val plans: List<PlanProgress>,
+        val nextSteps: List<NextStep>,
+    )
+
+    @Immutable
+    data class ActivityState(
+        val today: LocalDate,
+        val recordingStartedOn: LocalDate,
+        val firstDayOfWeek: DayOfWeek,
+        /** The first day of the month the calendar shows. */
+        val month: LocalDate,
+        val days: Map<LocalDate, ReadingDayStats>,
+        val streaks: Streaks,
+        val frequency: Frequency?,
+        val records: ReadingRecords,
     )
 
     @Immutable

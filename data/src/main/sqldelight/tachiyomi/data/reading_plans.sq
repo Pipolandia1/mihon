@@ -1,0 +1,150 @@
+import kotlin.Boolean;
+
+-- Reading goals: at most one per metric and period. Goals never touch sessions; progress towards
+-- them is always computed from what was read.
+CREATE TABLE reading_goals(
+    metric INTEGER NOT NULL,
+    period INTEGER NOT NULL,
+    target INTEGER NOT NULL,
+    is_primary INTEGER AS Boolean NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY(metric, period)
+);
+
+-- An ordered set of entries and chapters that may span several series. Items name what they hold by
+-- source and URL as well as by id, so a collection survives backup and restore.
+CREATE TABLE reading_collections(
+    _id INTEGER NOT NULL PRIMARY KEY,
+    uuid TEXT NOT NULL UNIQUE,
+    kind INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE reading_collection_items(
+    _id INTEGER NOT NULL PRIMARY KEY,
+    collection_id INTEGER NOT NULL REFERENCES reading_collections(_id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    manga_id INTEGER REFERENCES mangas(_id) ON DELETE SET NULL,
+    chapter_id INTEGER REFERENCES chapters(_id) ON DELETE SET NULL,
+    source_id INTEGER NOT NULL,
+    manga_url TEXT NOT NULL,
+    -- NULL: every chapter of the entry, including those the source adds later.
+    chapter_url TEXT,
+    label TEXT NOT NULL
+);
+
+CREATE INDEX reading_collection_items_collection_index ON reading_collection_items(collection_id);
+
+-- A plan to read a collection at a pace, in chapters per week.
+CREATE TABLE reading_plans(
+    _id INTEGER NOT NULL PRIMARY KEY,
+    uuid TEXT NOT NULL UNIQUE,
+    collection_id INTEGER NOT NULL REFERENCES reading_collections(_id) ON DELETE CASCADE,
+    pace_per_week INTEGER NOT NULL,
+    started_at INTEGER NOT NULL,
+    started_on TEXT NOT NULL,
+    paused INTEGER AS Boolean NOT NULL
+);
+
+getGoals:
+SELECT *
+FROM reading_goals;
+
+upsertGoal:
+INSERT INTO reading_goals(metric, period, target, is_primary, updated_at)
+VALUES (:metric, :period, :target, :isPrimary, :updatedAt)
+ON CONFLICT(metric, period) DO UPDATE SET
+    target = :target,
+    is_primary = :isPrimary,
+    updated_at = :updatedAt;
+
+deleteGoal:
+DELETE FROM reading_goals
+WHERE metric = :metric AND period = :period;
+
+clearPrimaryGoal:
+UPDATE reading_goals
+SET is_primary = 0;
+
+insertCollection:
+INSERT INTO reading_collections(uuid, kind, name, created_at)
+VALUES (:uuid, :kind, :name, :createdAt);
+
+getCollectionId:
+SELECT _id
+FROM reading_collections
+WHERE uuid = :uuid;
+
+renameCollection:
+UPDATE reading_collections
+SET name = :name
+WHERE _id = :collectionId;
+
+insertItem:
+INSERT INTO reading_collection_items(collection_id, position, manga_id, chapter_id, source_id, manga_url, chapter_url, label)
+VALUES (:collectionId, :position, :mangaId, :chapterId, :sourceId, :mangaUrl, :chapterUrl, :label);
+
+deleteItemsOf:
+DELETE FROM reading_collection_items
+WHERE collection_id = :collectionId;
+
+getItemsOf:
+SELECT *
+FROM reading_collection_items
+WHERE collection_id = :collectionId
+ORDER BY position;
+
+deleteCollection:
+DELETE FROM reading_collections
+WHERE _id = :collectionId;
+
+insertPlan:
+INSERT INTO reading_plans(uuid, collection_id, pace_per_week, started_at, started_on, paused)
+VALUES (:uuid, :collectionId, :pacePerWeek, :startedAt, :startedOn, :paused);
+
+updatePlan:
+UPDATE reading_plans
+SET pace_per_week = :pacePerWeek, paused = :paused
+WHERE _id = :planId;
+
+getPlans:
+SELECT P._id, P.uuid, P.collection_id, P.pace_per_week, P.started_at, P.started_on, P.paused,
+       C.uuid AS collection_uuid, C.kind, C.name, C.created_at
+FROM reading_plans P
+JOIN reading_collections C ON C._id = P.collection_id
+ORDER BY P.started_at;
+
+getPlanId:
+SELECT _id
+FROM reading_plans
+WHERE uuid = :uuid;
+
+-- Every chapter a collection holds, once per item that holds it; the caller keeps the first. A
+-- whole entry follows the scanlators the user has hidden, as the entry's chapter list does.
+collectionChapters:
+SELECT
+    I.position, C._id, C.manga_id, C.read, C.chapter_number, C.source_order,
+    (
+        SELECT S.completed_on FROM reading_sessions S
+        WHERE S.chapter_id = C._id AND S.first_completion = 1
+        LIMIT 1
+    ) AS read_on,
+    (
+        SELECT P.completed_on FROM chapter_reading_progress P
+        WHERE P.chapter_id = C._id AND P.completion_origin = 1
+    ) AS marked_on
+FROM reading_collection_items I
+JOIN chapters C ON (I.chapter_url IS NOT NULL AND C._id = I.chapter_id)
+    OR (I.chapter_url IS NULL AND C.manga_id = I.manga_id)
+LEFT JOIN excluded_scanlators ES ON I.chapter_url IS NULL
+    AND ES.manga_id = C.manga_id
+    AND ES.scanlator = C.scanlator
+WHERE I.collection_id = :collectionId AND ES.scanlator IS NULL
+ORDER BY I.position, C.chapter_number, C.source_order DESC;
+
+libraryEntries:
+SELECT _id, source, url, title, thumbnail_url, favorite, cover_last_modified
+FROM mangas
+WHERE favorite = 1 AND title LIKE ('%' || :query || '%')
+ORDER BY title COLLATE NOCASE;

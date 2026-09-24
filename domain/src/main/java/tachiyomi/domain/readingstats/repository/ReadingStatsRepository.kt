@@ -2,6 +2,7 @@ package tachiyomi.domain.readingstats.repository
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.datetime.LocalDate
+import tachiyomi.domain.readingstats.habits.SessionRecord
 import tachiyomi.domain.readingstats.model.ChapterKey
 import tachiyomi.domain.readingstats.model.ChapterProgress
 import tachiyomi.domain.readingstats.model.ReadingDayEntry
@@ -45,6 +46,12 @@ interface ReadingStatsRepository {
 
     /** One row per day from [from] to [to] that has any reading or completion. */
     fun subscribeDays(from: LocalDate, to: LocalDate): Flow<List<ReadingDayStats>>
+
+    /** Every recorded day's time and pages, for streaks, records and the calendar. */
+    fun subscribeAllDays(): Flow<List<ReadingDayStats>>
+
+    /** The session with the most active time. */
+    suspend fun getLongestSession(): SessionRecord?
 
     /** Everything read on [date]: sessions, hand-marked and carried-over completions. */
     fun subscribeDayEntries(date: LocalDate, dayStart: Long, dayEnd: Long): Flow<List<ReadingDayEntry>>

@@ -1,0 +1,48 @@
+-- Reading goals, collections and reading plans.
+
+-- Reading goals: at most one per metric and period. Goals never touch sessions; progress towards
+-- them is always computed from what was read.
+CREATE TABLE reading_goals(
+    metric INTEGER NOT NULL,
+    period INTEGER NOT NULL,
+    target INTEGER NOT NULL,
+    is_primary INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY(metric, period)
+);
+
+-- An ordered set of entries and chapters that may span several series. Items name what they hold by
+-- source and URL as well as by id, so a collection survives backup and restore.
+CREATE TABLE reading_collections(
+    _id INTEGER NOT NULL PRIMARY KEY,
+    uuid TEXT NOT NULL UNIQUE,
+    kind INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE reading_collection_items(
+    _id INTEGER NOT NULL PRIMARY KEY,
+    collection_id INTEGER NOT NULL REFERENCES reading_collections(_id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    manga_id INTEGER REFERENCES mangas(_id) ON DELETE SET NULL,
+    chapter_id INTEGER REFERENCES chapters(_id) ON DELETE SET NULL,
+    source_id INTEGER NOT NULL,
+    manga_url TEXT NOT NULL,
+    -- NULL: every chapter of the entry, including those the source adds later.
+    chapter_url TEXT,
+    label TEXT NOT NULL
+);
+
+CREATE INDEX reading_collection_items_collection_index ON reading_collection_items(collection_id);
+
+-- A plan to read a collection at a pace, in chapters per week.
+CREATE TABLE reading_plans(
+    _id INTEGER NOT NULL PRIMARY KEY,
+    uuid TEXT NOT NULL UNIQUE,
+    collection_id INTEGER NOT NULL REFERENCES reading_collections(_id) ON DELETE CASCADE,
+    pace_per_week INTEGER NOT NULL,
+    started_at INTEGER NOT NULL,
+    started_on TEXT NOT NULL,
+    paused INTEGER NOT NULL
+);

@@ -469,6 +469,22 @@ dados (teste: previsão desconhecida aparece como tal).
 voltar ao ritmo do plano" — cada uma com regra e teste; sem culpa.
 Aceite B do documento coberto por B1–B4 (plano com itens de duas obras soma cada item uma vez).
 
+> **Como ficou na Fase B** (`reading_plans.sq`, `migrations/16.sqm`):
+> - `reading_goals` tem chave (métrica, período): no máximo 6 metas (páginas novas, capítulos
+>   concluídos no leitor, minutos × dia, semana), uma principal. Tela própria de metas.
+> - `reading_collections` + `reading_collection_items` + `reading_plans`: todo plano lê uma coleção
+>   (`ENTRY` = uma obra inteira; `LIST` = obras e capítulos escolhidos, de várias séries). Um item é
+>   uma obra inteira (inclusive capítulos que a fonte acrescentar) ou um capítulo; o total é a união,
+>   sem repetição, na ordem dos itens. Em C, runs/arcos/eventos serão novos `kind` da mesma coleção.
+> - Concluído num plano = capítulo lido (`chapters.read`); o ritmo conta só o que foi concluído desde
+>   o início do plano, com data (primeira conclusão no leitor ou marcação à mão). A meta de uma semana
+>   parcial é proporcional aos dias.
+> - Previsão só com 14 dias de registro e 2 capítulos do plano concluídos nos últimos 28 dias; senão,
+>   "ainda falta leitura para estimar". "No ritmo do plano, termina em N semanas" é conta sobre o
+>   ritmo escolhido, não previsão.
+> - Próximos passos: meta perto (≤ 25 % restante), plano perto do fim (≤ 3), manter o ritmo, voltar
+>   ao ritmo (até 2 semanas de atraso), sugerir outro ritmo (mais que isso), à frente.
+
 ### Fase C — organização de HQs
 
 **C1 — Metadados.** Migration 17; editor na tela da obra (`MangaScreen` ⬆, um item de menu que abre
@@ -569,7 +585,12 @@ antes de instalar no emulador.
 - [x] A6 backup e restauração — `BackupReadingStats` (campo 9001)
 - [x] A7 aba Stats + Histórico — `ReadingHomeScreen`, `ReadingStatsContent`, `ReadingDayContent`
 - [x] A8 correção de sessões — apagar sessão (e tudo) com recálculo; **editar início/fim não foi feito**
-- [ ] B1–B5 · C1–C5 · D1–D4
+- [x] B1 metas — `ReadingGoalsScreen`, `GoalRules`; até 6 metas, uma principal
+- [x] B2 sequência, frequência e recordes — `ReadingHabits`
+- [x] B3 calendário de intensidade — cartão "Atividade"; tocar num dia abre o Histórico do dia
+- [x] B4 planos de leitura — `ReadingPlansScreen`, `ReadingPlanEditorScreen`, `PlanRules`
+- [x] B5 próximos passos — `NextSteps`
+- [ ] C1–C5 · D1–D4
 
 ### Verificação da Fase A (24/09/2026)
 
@@ -610,3 +631,38 @@ histórico):
 os dados do emulador; coberto pelos testes de repositório e de protobuf); migrar uma obra entre
 fontes (coberto pelo teste de repositório); TalkBack. Modo anônimo usa o mesmo caminho do registro
 pausado.
+
+### Verificação da Fase B (24/09/2026)
+
+**Testes na JVM (34 novos, 421 no total, todos passando):** `GoalRulesTest` (6: meta diária e dias
+cumpridos, dias antes do registro nem cumpridos nem perdidos, semanal, minutos inteiros, marcados à mão
+não contam, ordem), `ReadingHabitsTest` (9: hoje ainda sem leitura não quebra a sequência, dia sem
+leitura quebra, recorde, dia abaixo de 1 min não conta, virada de mês, frequência só com semanas
+inteiras, recordes, níveis do calendário), `PlanRulesTest` (10: run em duas séries conta cada
+capítulo uma vez, ritmo desde o início, capítulo lido sem data, previsão desconhecida sem 14 dias ou
+sem 2 concluídos, previsão pelo ritmo recente, plano concluído, passos de manter/voltar/ajustar
+ritmo, perto do fim, pausado sem passos, meta perto primeiro), `ReadingPlanRepositoryImplTest` (8,
+SQLite real: meta principal, **mudar meta não reescreve sessões**, plano em duas séries + scanlator
+oculto, obra inteira pega capítulos novos, data de conclusão do leitor ou da marcação, editar e apagar
+sem tocar em leitura, restaurar duas vezes em outro aparelho, **migração 16**), backup de metas e planos
+(ida e volta).
+
+**Emulador** (pt-BR, tema escuro — como o app estava configurado):
+- migração 16→17 no banco do aparelho, sem erro;
+- metas: páginas/dia 4 e minutos/semana 30; a primeira virou principal; trocar a principal desmarca a
+  outra; o cartão mostrou "3 de 4 páginas novas", "2 de 30 minutos lendo" e o passo "1 página nova
+  para a meta de hoje"; depois de ler uma página, "4 de 4" e o passo sumiu;
+- plano Absolute Batman (inteiro, 26) + Batman (2025-) #1–#3: "3 de 29 capítulos", "no ritmo do
+  plano, termina em 6 semanas", previsão "ainda falta leitura deste plano para estimar"; o passo "Com
+  mais 3 capítulos esta semana… fica no ritmo" abriu o Absolute Batman #1 (primeiro não lido do
+  plano); pausar mostrou "Pausado" e tirou os passos do plano; editar recarregou os itens;
+- calendário de setembro: dia 24 marcado, dias antes do registro em branco, setas travadas no mês do
+  início; **tocar no 24 abriu o Histórico de quinta-feira, 24 de setembro**;
+- sequência "1 dia · recorde 1 dia"; recordes com datas curtas;
+- backup criado pela tela de backup (opção "Estatísticas de leitura" marcada): o arquivo tem o campo
+  9001 com 3 sessões, 11 progressos, 2 metas e o plano com 4 itens (lido com um decodificador
+  protobuf à parte);
+- fonte 200 % e tela de 360 dp sem cortes.
+
+**Não verificado:** restaurar esse backup no aparelho; tema claro dos cartões novos (o app está no
+escuro por escolha do usuário); TalkBack.

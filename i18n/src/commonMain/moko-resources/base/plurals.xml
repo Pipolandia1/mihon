@@ -114,4 +114,30 @@
         <item quantity="one">%1$d update failed</item>
         <item quantity="other">%1$d updates failed</item>
     </plurals>
+
+    <!-- Reading stats -->
+    <plurals name="reading_stats_weeks">
+        <item quantity="one">%d week</item>
+        <item quantity="other">%d weeks</item>
+    </plurals>
+    <plurals name="reading_stats_new_pages">
+        <item quantity="one">%d new page</item>
+        <item quantity="other">%d new pages</item>
+    </plurals>
+    <plurals name="reading_stats_chapters">
+        <item quantity="one">%d chapter</item>
+        <item quantity="other">%d chapters</item>
+    </plurals>
+    <plurals name="reading_stats_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+    <plurals name="reading_stats_days">
+        <item quantity="one">%d day</item>
+        <item quantity="other">%d days</item>
+    </plurals>
+    <plurals name="reading_stats_frequency">
+        <item quantity="one">%1$s reading days a week on average over the last week</item>
+        <item quantity="other">%1$s reading days a week on average over the last %2$d weeks</item>
+    </plurals>
 </resources>

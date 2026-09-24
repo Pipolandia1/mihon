@@ -3,8 +3,6 @@ package tachiyomi.data.readingstats
 import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOne
 import app.cash.sqldelight.async.coroutines.synchronous
-import app.cash.sqldelight.db.SqlDriver
-import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.longs.shouldBeGreaterThan
@@ -15,14 +13,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.LocalDate
 import org.junit.jupiter.api.Test
-import tachiyomi.data.Chapters
 import tachiyomi.data.Database
-import tachiyomi.data.DateColumnAdapter
-import tachiyomi.data.History
-import tachiyomi.data.Mangas
-import tachiyomi.data.MemoColumnAdapter
-import tachiyomi.data.StringListColumnAdapter
-import tachiyomi.data.UpdateStrategyColumnAdapter
 import tachiyomi.domain.readingstats.model.ChapterKey
 import tachiyomi.domain.readingstats.model.ChapterProgress
 import tachiyomi.domain.readingstats.model.DayTotals
@@ -33,29 +24,13 @@ import tachiyomi.domain.readingstats.model.SessionSnapshot
 import tachiyomi.domain.readingstats.model.SessionState
 import tachiyomi.domain.readingstats.model.SessionWrite
 import java.util.BitSet
-import java.util.Properties
 
 class ReadingStatsRepositoryImplTest {
 
-    private val driver: SqlDriver = JdbcSqliteDriver(
-        JdbcSqliteDriver.IN_MEMORY,
-        Properties().apply { put("foreign_keys", "true") },
-    )
-    private val database = Database(
-        driver = driver,
-        historyAdapter = History.Adapter(last_readAdapter = DateColumnAdapter),
-        mangasAdapter = Mangas.Adapter(
-            genreAdapter = StringListColumnAdapter,
-            update_strategyAdapter = UpdateStrategyColumnAdapter,
-            memoAdapter = MemoColumnAdapter,
-        ),
-        chaptersAdapter = Chapters.Adapter(memoAdapter = MemoColumnAdapter),
-    )
+    private val db = TestDatabase()
+    private val driver = db.driver
+    private val database = db.database
     private val repository = ReadingStatsRepositoryImpl(database)
-
-    init {
-        Database.Schema.synchronous().create(driver)
-    }
 
     @Test
     fun `writing the same session twice stores it once, with absolute figures`() = runTest {
@@ -321,15 +296,7 @@ class ReadingStatsRepositoryImplTest {
         return SessionWrite(session, progress)
     }
 
-    private fun insertManga(id: Long, url: String = "/manga/$id") {
-        exec(
-            """
-            INSERT INTO mangas(_id, source, url, title, status, favorite, initialized, viewer, chapter_flags,
-                cover_last_modified, date_added)
-            VALUES ($id, 1, '$url', 'Title $id', 0, 1, 1, 0, 0, 0, 0)
-            """.trimIndent(),
-        )
-    }
+    private fun insertManga(id: Long, url: String = "/manga/$id") = db.insertManga(id, url)
 
     private fun insertChapter(
         id: Long,
@@ -337,19 +304,9 @@ class ReadingStatsRepositoryImplTest {
         url: String = "/chapter/$id",
         read: Boolean = false,
         lastPageRead: Int = 0,
-    ) {
-        exec(
-            """
-            INSERT INTO chapters(_id, manga_id, url, name, read, bookmark, last_page_read, chapter_number,
-                source_order, date_fetch, date_upload)
-            VALUES ($id, $mangaId, '$url', 'Chapter $id', ${if (read) 1 else 0}, 0, $lastPageRead, $id, 0, 0, 0)
-            """.trimIndent(),
-        )
-    }
+    ) = db.insertChapter(id, mangaId, url, read, lastPageRead)
 
-    private fun exec(sql: String) {
-        driver.execute(null, sql, 0)
-    }
+    private fun exec(sql: String) = db.exec(sql)
 
     private suspend fun sessionId(uuid: String): Long =
         database.reading_statsQueries.getSessionId(uuid).awaitAsOne()
