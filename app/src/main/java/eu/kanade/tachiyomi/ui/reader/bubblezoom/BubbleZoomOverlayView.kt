@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PointF
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
@@ -143,6 +144,7 @@ class BubbleZoomOverlayView(
 
     private val drawRect = RectF()
     private val haloRect = RectF()
+    private val clipShape = Path()
 
     init {
         // No touch handling at all, so every tap still reaches the pager and navigates.
@@ -608,10 +610,10 @@ class BubbleZoomOverlayView(
     }
 
     private fun Canvas.clipRoundRect(rect: RectF) {
-        val path = android.graphics.Path().apply {
-            addRoundRect(rect, cornerRadius, cornerRadius, android.graphics.Path.Direction.CW)
-        }
-        clipPath(path)
+        // One path, rewound each frame: this runs on every frame of every fade and lift.
+        clipShape.rewind()
+        clipShape.addRoundRect(rect, cornerRadius, cornerRadius, Path.Direction.CW)
+        clipPath(clipShape)
     }
 
     private fun dp(value: Float): Float = TypedValue.applyDimension(

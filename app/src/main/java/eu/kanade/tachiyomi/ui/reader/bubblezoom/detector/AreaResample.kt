@@ -57,16 +57,36 @@ object AreaResample {
         val xRatio = sourceWidth.toDouble() / targetWidth
         val yRatio = sourceHeight.toDouble() / targetHeight
 
+        // Which source columns each output column covers, and by how much, is the same on every
+        // row: worked out once here rather than for every pixel, which was most of this
+        // function's time. The same expressions in the same order, so the weights - and the
+        // output - are bit for bit what they were.
+        val columnStart = IntArray(targetWidth)
+        val columnCount = IntArray(targetWidth)
+        val columnWeights = ArrayList<DoubleArray>(targetWidth)
+        for (tx in 0 until targetWidth) {
+            val left = tx * xRatio
+            val right = min(left + xRatio, sourceWidth.toDouble())
+            val firstColumn = floor(left).toInt()
+            val lastColumn = min(ceil(right).toInt(), sourceWidth)
+            val weights = DoubleArray(maxOf(0, lastColumn - firstColumn))
+            for (sx in firstColumn until lastColumn) {
+                weights[sx - firstColumn] = min(right, (sx + 1).toDouble()) - maxOf(left, sx.toDouble())
+            }
+            columnStart[tx] = firstColumn
+            columnCount[tx] = weights.size
+            columnWeights += weights
+        }
+
         for (ty in 0 until targetHeight) {
             val top = ty * yRatio
             val bottom = min(top + yRatio, sourceHeight.toDouble())
             val firstRow = floor(top).toInt()
             val lastRow = min(ceil(bottom).toInt(), sourceHeight)
             for (tx in 0 until targetWidth) {
-                val left = tx * xRatio
-                val right = min(left + xRatio, sourceWidth.toDouble())
-                val firstColumn = floor(left).toInt()
-                val lastColumn = min(ceil(right).toInt(), sourceWidth)
+                val firstColumn = columnStart[tx]
+                val count = columnCount[tx]
+                val weights = columnWeights[tx]
 
                 var red = 0.0
                 var green = 0.0
@@ -77,12 +97,12 @@ object AreaResample {
                     // a fraction at each end, which is what makes a non-integer ratio smooth.
                     val weightY = min(bottom, (sy + 1).toDouble()) - maxOf(top, sy.toDouble())
                     if (weightY <= 0.0) continue
-                    val row = sy * sourceWidth
-                    for (sx in firstColumn until lastColumn) {
-                        val weightX = min(right, (sx + 1).toDouble()) - maxOf(left, sx.toDouble())
+                    val row = sy * sourceWidth + firstColumn
+                    for (c in 0 until count) {
+                        val weightX = weights[c]
                         if (weightX <= 0.0) continue
                         val weight = weightX * weightY
-                        val pixel = source[row + sx]
+                        val pixel = source[row + c]
                         red += ((pixel shr 16) and 0xFF) * weight
                         green += ((pixel shr 8) and 0xFF) * weight
                         blue += (pixel and 0xFF) * weight

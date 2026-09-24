@@ -29,19 +29,40 @@ internal object BubbleCardDecoder {
 
     /** Blocking. Returns [region] of [image] at [sampleSize] as an ARGB bitmap, or null. */
     fun decode(image: BubbleDetectionImage, region: SourceRegion, sampleSize: Int): Bitmap? {
-        val decoder = runCatching { image.open().use { newRegionDecoder(it) } }.getOrNull() ?: return null
+        val decoder = open(image) ?: return null
         try {
-            if (decoder.width != image.width || decoder.height != image.height) return null
-            val options = BitmapFactory.Options().apply {
-                inSampleSize = sampleSize.coerceAtLeast(1)
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-                inMutable = true
-            }
-            val rect = Rect(region.left, region.top, region.right, region.bottom)
-            return runCatching { decoder.decodeRegion(rect, options) }.getOrNull()
+            return decode(decoder, region, sampleSize)
         } finally {
             decoder.recycle()
         }
+    }
+
+    /**
+     * Blocking. A region decoder over [image]'s bytes, or null when there is none or it reads a
+     * different frame from the one [image] declares. The caller recycles it.
+     *
+     * Opened apart from [decode] for a caller with several regions of one page to read: the
+     * detector's join test reads one per candidate pair, and opening the page again for each
+     * cost it tens of milliseconds a pair on a JPEG the decoder cannot address by region.
+     */
+    fun open(image: BubbleDetectionImage): BitmapRegionDecoder? {
+        val decoder = runCatching { image.open().use { newRegionDecoder(it) } }.getOrNull() ?: return null
+        if (decoder.width != image.width || decoder.height != image.height) {
+            decoder.recycle()
+            return null
+        }
+        return decoder
+    }
+
+    /** Blocking. Returns [region] from [decoder] at [sampleSize] as an ARGB bitmap, or null. */
+    fun decode(decoder: BitmapRegionDecoder, region: SourceRegion, sampleSize: Int): Bitmap? {
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize.coerceAtLeast(1)
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+            inMutable = true
+        }
+        val rect = Rect(region.left, region.top, region.right, region.bottom)
+        return runCatching { decoder.decodeRegion(rect, options) }.getOrNull()
     }
 
     private fun newRegionDecoder(stream: InputStream): BitmapRegionDecoder? {

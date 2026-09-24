@@ -1844,6 +1844,45 @@ lida quadrinho a quadrinho.
 `FramedPanelsTest` (8), dois testes novos de ordem com as caixas reais da página. Constantes
 `FRAME_*` em `BubbleDetectionConfig`, `ORDER_FRAME_MATE` em `BubbleZoomConfig`.
 
+## E16 — revisão de desempenho, sem mudar o que o app faz
+
+Pedido do usuário: revisar o código todo e otimizar sem mudar funcionalidade. A régua foi essa
+literalmente: **cada otimização tem de dar saída idêntica**, e isso foi provado, não suposto.
+
+**Como foi medido.** No desktop, um harness temporário rodou o código Kotlin real sobre as 137
+páginas do corpus (calhas, molduras, ordem) e sobre entradas sintéticas do redimensionamento e
+do traçado, gravando as saídas exatas e os tempos (melhor de 5); rodado sobre o código antigo
+(`git stash`) e sobre o novo, **as saídas batem byte a byte**. No emulador, o capítulo de teste
+inteiro percorrido com o build antigo e o novo: **as 14 detecções dão as mesmas contagens, os
+mesmos 46 valores de junção e as mesmas molduras**.
+
+**O que mudou, e quanto rendeu:**
+
+| onde | o quê | ganho medido |
+|---|---|---|
+| `AreaResample` | os pesos de cada coluna de saída são os mesmos em toda linha: calculados uma vez, com as mesmas expressões na mesma ordem (bit a bit iguais) | **−44%** no desktop |
+| `RtDetrBubbleDetector` | os pixels da página são copiados **uma vez** (antes, uma cópia para a entrada do modelo e outra para o plano cinza, ~6 MB cada) e o bitmap é liberado logo em seguida, antes da inferência | menos ~6 MB alocados e ~6 MB a menos de pico por página |
+| `RtDetrBubbleDetector` | tensor montado numa passada; luminância calculada no próprio array | pequeno |
+| junção (`PageRegions` / `BubbleCardDecoder.open`) | um decodificador de região por página em vez de um por par | pequeno: no WebP da página 12 o custo é o `decodeRegion` em si (~55 ms por par), não a abertura |
+| `FramedPanels` | lista de colunas candidatas por índice num buffer reaproveitado, em vez de três listas com inteiros empacotados por par de linhas; comparação de molduras sem alocar | **−28%** no desktop (pior página 34 → 28 ms) |
+| `BubbleZoomOverlayView` | o `Path` do card retangular é reaproveitado em vez de criado a cada quadro de animação | sem alocação por quadro |
+
+**No emulador, detecção total do capítulo: 12,1 s → 9,5 s (−21%)**, cerca de 180 ms a menos por
+página. Cards: iguais (48–65 ms).
+
+**O que foi revisto e deixado como está, e por quê:** o traçado do card (0,7 ms por card, sobre
+uma imagem de ~190 px) e a ordem (8 ms no corpus inteiro) são baratos demais para valer o risco;
+a sessão, o controller e os gestos fazem trabalho constante por evento; o overlay de depuração
+aloca por quadro, mas só existe com a depuração ligada. A decodificação por par da junção poderia
+ser feita de outro jeito (recortando uma página decodificada uma vez), mas os pixels sairiam
+ligeiramente diferentes dos calibrados — mudaria a função, então não. O decodificador do card
+**não** é guardado entre cards: num JPEG progressivo ele seguraria a página inteira decodificada,
+a segunda cópia que as regras proíbem.
+
+**Código morto encontrado, não removido:** `BubblePageResult` (do spec, para o cache em disco da
+P13, abandonada) não é usado pelo app, só por um teste; `DEBUG_DETECTIONS` não é usado por nada.
+Ambos são inofensivos e o R8 os tira do release; remover item do spec é decisão de escopo.
+
 ## Onde estamos contra o Play Books — medido em 22/09/2026
 
 Mesma HQ aberta nos dois leitores, mesmas páginas, emulador. O que a comparação achou, em

@@ -95,13 +95,6 @@ object FramedPanels {
         val area: Int get() = (x1 - x0) * (y1 - y0)
 
         fun containsPoint(x: Float, y: Float): Boolean = x >= x0 && x <= x1 && y >= y0 && y <= y1
-
-        fun edge(side: Int): Int = when (side) {
-            0 -> x0
-            1 -> y0
-            2 -> x1
-            else -> y1
-        }
     }
 
     /** A drawn line: the rows (or columns) [first] to [last] it came out as. */
@@ -237,6 +230,10 @@ object FramedPanels {
             val meets = Array(rows.size) { i ->
                 columns.indices.filter { j -> crosses(rows[i], columns[j]) }.toIntArray()
             }
+            // The columns that are sides between the current pair of rows, by index. Reused for
+            // every pair: a dark page has tens of thousands of pairs, and a list per pair was
+            // most of what the search allocated.
+            val sides = IntArray(columns.size)
             var work = 0L
             for ((index, top) in rows.withIndex()) {
                 for (next in index + 1 until rows.size) {
@@ -244,14 +241,35 @@ object FramedPanels {
                     if (bottom.first - top.last < minPanel) continue
                     val y0 = top.last
                     val y1 = bottom.first
-                    val sides = both(meets[index], meets[next]).map { columns[it] }.filter {
-                        it.reaches(y0, y1, cornerTolerance) &&
-                            ++work <= BubbleDetectionConfig.FRAME_WORK_BUDGET &&
-                            verticalSide(it, y0, y1)
+                    // The columns crossing both rows, in order, that reach from one to the other
+                    // and are drawn all the way.
+                    val a = meets[index]
+                    val b = meets[next]
+                    var count = 0
+                    var i = 0
+                    var j = 0
+                    while (i < a.size && j < b.size) {
+                        when {
+                            a[i] < b[j] -> i++
+                            a[i] > b[j] -> j++
+                            else -> {
+                                val column = columns[a[i]]
+                                if (column.reaches(y0, y1, cornerTolerance) &&
+                                    ++work <= BubbleDetectionConfig.FRAME_WORK_BUDGET &&
+                                    verticalSide(column, y0, y1)
+                                ) {
+                                    sides[count++] = a[i]
+                                }
+                                i++
+                                j++
+                            }
+                        }
                     }
                     if (work > BubbleDetectionConfig.FRAME_WORK_BUDGET) return emptyList()
-                    for ((at, left) in sides.withIndex()) {
-                        for (right in sides.subList(at + 1, sides.size)) {
+                    for (at in 0 until count) {
+                        val left = columns[sides[at]]
+                        for (other in at + 1 until count) {
+                            val right = columns[sides[other]]
                             if (right.first - left.last < minPanel) continue
                             val x0 = left.last
                             val x1 = right.first
@@ -275,25 +293,6 @@ object FramedPanels {
         private fun crosses(row: Line, column: Line): Boolean =
             column.reaches(row.first, row.last, cornerTolerance) &&
                 row.reaches(column.first, column.last, cornerTolerance)
-
-        /** The indices in both sorted arrays. */
-        private fun both(a: IntArray, b: IntArray): List<Int> {
-            val out = ArrayList<Int>(minOf(a.size, b.size))
-            var i = 0
-            var j = 0
-            while (i < a.size && j < b.size) {
-                when {
-                    a[i] < b[j] -> i++
-                    a[i] > b[j] -> j++
-                    else -> {
-                        out += a[i]
-                        i++
-                        j++
-                    }
-                }
-            }
-            return out
-        }
 
         /**
          * The lines along one axis: runs of adjacent rows (or columns) holding a long run of
@@ -543,7 +542,11 @@ object FramedPanels {
             val overlap = minOf(a.x1, b.x1) > maxOf(a.x0, b.x0) && minOf(a.y1, b.y1) > maxOf(a.y0, b.y0)
             // Two rectangles sharing two sides are one panel found twice, one of them with a line
             // of the art for its other sides.
-            val shared = (0..3).count { near(a.edge(it), b.edge(it)) }
+            var shared = 0
+            if (near(a.x0, b.x0)) shared++
+            if (near(a.y0, b.y0)) shared++
+            if (near(a.x1, b.x1)) shared++
+            if (near(a.y1, b.y1)) shared++
             if (overlap && shared >= 2) return Relation.SAME
             val t = cornerTolerance
             if (a.x0 >= b.x0 - t && a.y0 >= b.y0 - t && a.x1 <= b.x1 + t && a.y1 <= b.y1 + t) return Relation.NESTED

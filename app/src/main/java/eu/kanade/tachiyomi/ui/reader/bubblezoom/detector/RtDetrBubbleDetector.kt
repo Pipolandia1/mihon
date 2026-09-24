@@ -6,6 +6,7 @@ import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BitmapRegionDecoder
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleBox
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleCardDecoder
 import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleCardGeometry
@@ -131,17 +132,25 @@ class RtDetrBubbleDetector(
 
     private fun infer(image: BubbleDetectionImage): List<BubbleDetection> {
         val session = openSession()
-        val page = decodeReduced(image)
+        val decoded = decodeReduced(image)
 
         val started = System.nanoTime()
-        val found: List<BubbleDetection>
-        val panels: List<BubbleBox>
-        val frames: List<BubbleBox>
-        val framesMs: Long
-        try {
-            fillInput(page)
-            val answer = run(session)
-            found = RtDetrDecoder.decode(
+        // Read once, and the bitmap let go at once: the model's input and the panels' grey plane
+        // are both averaged down from these same pixels, and nothing after this needs the
+        // bitmap itself. Each used to copy the page out for itself, while the bitmap stayed
+        // alive through the whole inference beside them.
+        val page = try {
+            PagePixels.of(decoded)
+        } finally {
+            decoded.recycle()
+        }
+        fillInput(page)
+        val answer = run(session)
+        // The join test reads one crop per candidate pair from the page's bytes, through one
+        // region decoder opened for the page rather than one per pair.
+        val regions = PageRegions(image)
+        val found = try {
+            RtDetrDecoder.decode(
                 labels = answer.labels,
                 boxes = answer.boxes,
                 scores = answer.scores,
@@ -149,7 +158,7 @@ class RtDetrBubbleDetector(
                 // own bytes, at the resolution the join was calibrated on. Not the reduced plane
                 // the panels are read from: on the device that plane joined two speeches the
                 // calibration put far apart, and no re-measurement of the crops reproduced it.
-                crop = { around -> cropOf(image, around) },
+                crop = { around -> cropOf(image, regions, around) },
                 reportJoin = { larger, smaller, spread, joined ->
                     // Said per pair because a wrong join is a speech cut in half or two speeches
                     // read as one, and from the screen those look like the model's fault.
@@ -164,22 +173,22 @@ class RtDetrBubbleDetector(
                     }
                 },
             )
-            // While the page is still decoded: the gutters are read from the same pixels, and
-            // re-decoding a page to look at them would cost more than the look does.
-            val grey = greyPlane(page)
-            panels = PanelFinder.find(grey.luma, grey.width, grey.height)
-            // Where no gutter divides the page, insets drawn as frames over the art are looked
-            // for instead, with the lettering, since a balloon laid across a frame hides its line.
-            val framesStarted = System.nanoTime()
-            frames = if (panels.isEmpty()) {
-                FramedPanels.find(grey.luma, grey.width, grey.height, text = found.map { it.box })
-            } else {
-                emptyList()
-            }
-            framesMs = (System.nanoTime() - framesStarted) / 1_000_000
         } finally {
-            page.recycle()
+            regions.close()
         }
+        // From the same pixels as the model's input: re-decoding a page to look at its gutters
+        // would cost more than the look does.
+        val grey = greyPlane(page)
+        val panels = PanelFinder.find(grey.luma, grey.width, grey.height)
+        // Where no gutter divides the page, insets drawn as frames over the art are looked for
+        // instead, with the lettering, since a balloon laid across a frame hides its line.
+        val framesStarted = System.nanoTime()
+        val frames = if (panels.isEmpty()) {
+            FramedPanels.find(grey.luma, grey.width, grey.height, text = found.map { it.box })
+        } else {
+            emptyList()
+        }
+        val framesMs = (System.nanoTime() - framesStarted) / 1_000_000
         val elapsedMs = (System.nanoTime() - started) / 1_000_000
 
         logcat(LogPriority.INFO) {
@@ -264,11 +273,9 @@ class RtDetrBubbleDetector(
      * did the same, so padding it would show it a page it has never seen. Averaged rather than
      * sampled, which amendment E6 measured to be worth three balloons a page.
      */
-    private fun fillInput(page: Bitmap) {
+    private fun fillInput(page: PagePixels) {
         val input = inputPixels ?: IntArray(inputSize * inputSize).also { inputPixels = it }
-        val source = IntArray(page.width * page.height)
-        page.getPixels(source, 0, page.width, 0, 0, page.width, page.height)
-        AreaResample.resample(source, page.width, page.height, input, inputSize, inputSize)
+        AreaResample.resample(page.argb, page.width, page.height, input, inputSize, inputSize)
     }
 
     /** ARGB pixels to three float planes, R then G then B, each 0..1. */
@@ -281,9 +288,13 @@ class RtDetrBubbleDetector(
             .also { inputTensor = it }
 
         tensor.rewind()
-        for (i in 0 until count) tensor.put(i, ((pixels[i] shr 16) and 0xFF) / 255f)
-        for (i in 0 until count) tensor.put(count + i, ((pixels[i] shr 8) and 0xFF) / 255f)
-        for (i in 0 until count) tensor.put(2 * count + i, (pixels[i] and 0xFF) / 255f)
+        // One pass over the pixels, each written to its place in all three planes.
+        for (i in 0 until count) {
+            val pixel = pixels[i]
+            tensor.put(i, ((pixel shr 16) and 0xFF) / 255f)
+            tensor.put(count + i, ((pixel shr 8) and 0xFF) / 255f)
+            tensor.put(2 * count + i, (pixel and 0xFF) / 255f)
+        }
         tensor.rewind()
         return tensor
     }
@@ -324,6 +335,41 @@ class RtDetrBubbleDetector(
     /** The page reduced to one byte of brightness per pixel, and the size that came out. */
     private class GreyPlane(val luma: IntArray, val width: Int, val height: Int)
 
+    /** The decoded page's pixels, copied out once so the bitmap can go. */
+    private class PagePixels(val argb: IntArray, val width: Int, val height: Int) {
+        companion object {
+            fun of(page: Bitmap): PagePixels {
+                val argb = IntArray(page.width * page.height)
+                page.getPixels(argb, 0, page.width, 0, 0, page.width, page.height)
+                return PagePixels(argb, page.width, page.height)
+            }
+        }
+    }
+
+    /**
+     * The page's bytes, opened for region decoding the first time a pair needs a crop and
+     * closed by the caller once the join test is over. Null forever if the page cannot be
+     * opened, which is what each pair used to find out for itself.
+     */
+    private class PageRegions(private val image: BubbleDetectionImage) : AutoCloseable {
+        private var decoder: BitmapRegionDecoder? = null
+        private var opened = false
+
+        fun decode(region: SourceRegion, sampleSize: Int): Bitmap? {
+            if (!opened) {
+                opened = true
+                decoder = BubbleCardDecoder.open(image)
+            }
+            val open = decoder ?: return null
+            return BubbleCardDecoder.decode(open, region, sampleSize)
+        }
+
+        override fun close() {
+            decoder?.recycle()
+            decoder = null
+        }
+    }
+
     /**
      * [around] of the page, plus [BubbleZoomConfig.JOIN_CROP_PADDING] of its smallest side on
      * every edge, as a grey crop: decoded from the page's bytes by the card's own region decoder,
@@ -336,7 +382,7 @@ class RtDetrBubbleDetector(
      * Blocking, like every decode here: this runs on the detection dispatcher, never the main
      * thread. Null when the region cannot be decoded, and the pair is then left as two.
      */
-    private fun cropOf(image: BubbleDetectionImage, around: BubbleBox): JoinedBalloons.Crop? {
+    private fun cropOf(image: BubbleDetectionImage, regions: PageRegions, around: BubbleBox): JoinedBalloons.Crop? {
         val pair = BubbleCardGeometry.regionOf(around, image.width, image.height) ?: return null
         val margin = (BubbleZoomConfig.JOIN_CROP_PADDING * minOf(pair.width, pair.height)).toInt()
         val region = SourceRegion(
@@ -351,16 +397,18 @@ class RtDetrBubbleDetector(
         while (maxOf(region.width, region.height) / (sample * 2f) >= BubbleZoomConfig.JOIN_CROP_LONG_SIDE) {
             sample *= 2
         }
-        val bitmap = BubbleCardDecoder.decode(image, region, sample) ?: return null
+        val bitmap = regions.decode(region, sample) ?: return null
         try {
             val width = bitmap.width
             val height = bitmap.height
             if (width <= 0 || height <= 0) return null
-            val pixels = IntArray(width * height)
-            bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-            val luma = IntArray(width * height) { i ->
-                val pixel = pixels[i]
-                (((pixel shr 16 and 0xFF) * 77) + ((pixel shr 8 and 0xFF) * 151) + ((pixel and 0xFF) * 28)) shr 8
+            val luma = IntArray(width * height)
+            bitmap.getPixels(luma, 0, width, 0, 0, width, height)
+            // In place: each pixel becomes its own brightness.
+            for (i in luma.indices) {
+                val pixel = luma[i]
+                luma[i] =
+                    (((pixel shr 16 and 0xFF) * 77) + ((pixel shr 8 and 0xFF) * 151) + ((pixel and 0xFF) * 28)) shr 8
             }
             val covered = BubbleBox.clampedOrNull(
                 x = region.left.toFloat() / image.width,
@@ -381,21 +429,18 @@ class RtDetrBubbleDetector(
      * and a naive reduction that samples every other pixel puts a stripe of artwork through one
      * often enough to matter.
      */
-    private fun greyPlane(page: Bitmap): GreyPlane {
+    private fun greyPlane(page: PagePixels): GreyPlane {
         val longSide = maxOf(page.width, page.height)
         val scan = minOf(BubbleDetectionConfig.PANEL_SCAN_LONG_SIDE, longSide)
         val width = (page.width.toLong() * scan / longSide).toInt().coerceAtLeast(1)
         val height = (page.height.toLong() * scan / longSide).toInt().coerceAtLeast(1)
 
-        val source = IntArray(page.width * page.height)
-        page.getPixels(source, 0, page.width, 0, 0, page.width, page.height)
-        val reduced = IntArray(width * height)
-        AreaResample.resample(source, page.width, page.height, reduced, width, height)
-
-        val luma = IntArray(width * height) { i ->
-            val pixel = reduced[i]
-            // The same integer luma every other part of this feature uses.
-            (
+        val luma = IntArray(width * height)
+        AreaResample.resample(page.argb, page.width, page.height, luma, width, height)
+        // In place, each pixel becomes the same integer luma every other part of this feature uses.
+        for (i in luma.indices) {
+            val pixel = luma[i]
+            luma[i] = (
                 ((pixel shr 16 and 0xFF) * 77) +
                     ((pixel shr 8 and 0xFF) * 151) +
                     ((pixel and 0xFF) * 28)
