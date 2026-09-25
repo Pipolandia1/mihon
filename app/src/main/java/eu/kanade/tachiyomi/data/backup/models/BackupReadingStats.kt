@@ -3,6 +3,9 @@ package eu.kanade.tachiyomi.data.backup.models
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.protobuf.ProtoNumber
+import tachiyomi.domain.readingstats.comics.ComicField
+import tachiyomi.domain.readingstats.comics.MetadataOrigin
+import tachiyomi.domain.readingstats.comics.MetadataValue
 import tachiyomi.domain.readingstats.goals.GoalMetric
 import tachiyomi.domain.readingstats.goals.GoalPeriod
 import tachiyomi.domain.readingstats.goals.ReadingGoal
@@ -14,12 +17,14 @@ import tachiyomi.domain.readingstats.model.SessionSnapshot
 import tachiyomi.domain.readingstats.model.SessionState
 import tachiyomi.domain.readingstats.plans.CollectionItem
 import tachiyomi.domain.readingstats.plans.CollectionKind
+import tachiyomi.domain.readingstats.plans.ReadingCollection
 import tachiyomi.domain.readingstats.plans.ReadingPlan
+import tachiyomi.domain.readingstats.repository.ExportedMetadata
 
 /**
- * Reading sessions, per-chapter progress, goals and plans. Entries and chapters are named by source
- * and URL, not by id, so a backup restores onto any device; a session whose chapter is not there is
- * kept.
+ * Reading sessions, per-chapter progress, goals, plans, collections and confirmed comic metadata.
+ * Entries and chapters are named by source and URL, not by id, so a backup restores onto any device;
+ * a session whose chapter is not there is kept.
  */
 @Serializable
 class BackupReadingStats(
@@ -28,7 +33,68 @@ class BackupReadingStats(
     @ProtoNumber(3) val chapterProgress: List<BackupChapterProgress> = emptyList(),
     @ProtoNumber(4) val goals: List<BackupReadingGoal> = emptyList(),
     @ProtoNumber(5) val plans: List<BackupReadingPlan> = emptyList(),
+    @ProtoNumber(6) val comicMetadata: List<BackupComicMetadata> = emptyList(),
+    @ProtoNumber(7) val collections: List<BackupReadingCollection> = emptyList(),
 )
+
+/** A confirmed value of an entry, or of one of its chapters. Suggestions are not backed up. */
+@Serializable
+class BackupComicMetadata(
+    @ProtoNumber(1) val source: Long,
+    @ProtoNumber(2) val mangaUrl: String,
+    /** Absent for the series. */
+    @ProtoNumber(3) val chapterUrl: String? = null,
+    @ProtoNumber(4) val field: Long,
+    @ProtoNumber(5) val values: List<String> = emptyList(),
+    @ProtoNumber(6) val origin: Long = MetadataOrigin.USER.id,
+) {
+    fun toExported(): ExportedMetadata? = ExportedMetadata(
+        sourceId = source,
+        mangaUrl = mangaUrl,
+        chapterUrl = chapterUrl,
+        value = MetadataValue(
+            field = ComicField.of(field) ?: return null,
+            chapterId = null,
+            values = values,
+            origin = MetadataOrigin.of(origin),
+        ),
+    )
+
+    companion object {
+        fun of(exported: ExportedMetadata) = BackupComicMetadata(
+            source = exported.sourceId,
+            mangaUrl = exported.mangaUrl,
+            chapterUrl = exported.chapterUrl,
+            field = exported.value.field.id,
+            values = exported.value.values,
+            origin = exported.value.origin.id,
+        )
+    }
+}
+
+/** A collection that stands on its own: plans may read it, and deleting them leaves it. */
+@Serializable
+class BackupReadingCollection(
+    @ProtoNumber(1) val uuid: String,
+    @ProtoNumber(2) val kind: Long = CollectionKind.READING_ORDER.id,
+    @ProtoNumber(3) val name: String,
+    @ProtoNumber(4) val createdAt: Long,
+    @ProtoNumber(5) val items: List<BackupCollectionItem> = emptyList(),
+) {
+    fun toCollection(): Pair<ReadingCollection, List<CollectionItem>> =
+        ReadingCollection(-1, uuid, CollectionKind.of(kind), name, createdAt) to
+            items.map { CollectionItem(null, null, it.source, it.mangaUrl, it.chapterUrl, it.label) }
+
+    companion object {
+        fun of(collection: ReadingCollection, items: List<CollectionItem>) = BackupReadingCollection(
+            uuid = collection.uuid,
+            kind = collection.kind.id,
+            name = collection.name,
+            createdAt = collection.createdAt,
+            items = items.map { BackupCollectionItem(it.sourceId, it.mangaUrl, it.chapterUrl, it.label) },
+        )
+    }
+}
 
 @Serializable
 class BackupReadingGoal(

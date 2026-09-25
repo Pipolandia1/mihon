@@ -10,16 +10,20 @@ import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.datetime.LocalDate
+import tachiyomi.data.CollectionChapters
 import tachiyomi.data.Database
 import tachiyomi.data.GetPlans
+import tachiyomi.data.Reading_collections
 import tachiyomi.data.subscribeToList
 import tachiyomi.domain.manga.model.MangaCover
+import tachiyomi.domain.readingstats.comics.IssueNumbers
 import tachiyomi.domain.readingstats.goals.GoalMetric
 import tachiyomi.domain.readingstats.goals.GoalPeriod
 import tachiyomi.domain.readingstats.goals.ReadingGoal
 import tachiyomi.domain.readingstats.plans.CollectionItem
 import tachiyomi.domain.readingstats.plans.CollectionKind
 import tachiyomi.domain.readingstats.plans.PlanChapter
+import tachiyomi.domain.readingstats.plans.ReadingCollection
 import tachiyomi.domain.readingstats.plans.ReadingPlan
 import tachiyomi.domain.readingstats.repository.PlannableEntry
 import tachiyomi.domain.readingstats.repository.ReadingPlanRepository
@@ -79,7 +83,11 @@ class ReadingPlanRepositoryImpl(
 
     override fun subscribeCollectionChapters(collectionId: Long): Flow<List<PlanChapter>> {
         return queries.collectionChapters(collectionId).subscribeToList().map { rows ->
-            rows.map {
+            // Within an item, the series' own numbering: annuals after issues, "#1/2" before "#1".
+            rows.sortedWith(
+                compareBy<CollectionChapters> { it.position }
+                    .thenBy(IssueNumbers.order) { IssueNumbers.parse(it.issue_label ?: it.name, it.chapter_number) },
+            ).map {
                 PlanChapter(
                     chapterId = it._id,
                     mangaId = it.manga_id,
@@ -112,25 +120,72 @@ class ReadingPlanRepositoryImpl(
         today: LocalDate,
     ): Long {
         return database.transactionWithResult {
-            val collectionId = insertCollection(UUID.randomUUID().toString(), kind, name, now)
+            val collectionId = insertCollection(UUID.randomUUID().toString(), kind, name, now, standalone = false)
             insertItems(collectionId, items)
-            val uuid = UUID.randomUUID().toString()
-            queries.insertPlan(uuid, collectionId, pacePerWeek.toLong(), now, today.toString(), false)
-            queries.getPlanId(uuid).awaitAsOne()
+            insertPlan(collectionId, pacePerWeek, now, today)
         }
+    }
+
+    override suspend fun createPlanFor(
+        collection: ReadingCollection,
+        pacePerWeek: Int,
+        now: Long,
+        today: LocalDate,
+    ): Long {
+        return database.transactionWithResult { insertPlan(collection.id, pacePerWeek, now, today) }
     }
 
     override suspend fun updatePlan(plan: ReadingPlan, items: List<CollectionItem>) {
         database.transaction {
-            queries.renameCollection(plan.name, plan.collectionId)
             queries.updatePlan(plan.pacePerWeek.toLong(), plan.paused, plan.id)
-            queries.deleteItemsOf(plan.collectionId)
-            insertItems(plan.collectionId, items)
+            // A standalone collection is edited on its own, not through the plans that read it.
+            if (!plan.standaloneCollection) {
+                queries.renameCollection(plan.name, plan.collectionId)
+                queries.deleteItemsOf(plan.collectionId)
+                insertItems(plan.collectionId, items)
+            }
         }
     }
 
     override suspend fun deletePlan(plan: ReadingPlan) {
-        queries.deleteCollection(plan.collectionId)
+        if (plan.standaloneCollection) {
+            queries.deletePlan(plan.id)
+        } else {
+            queries.deleteCollection(plan.collectionId)
+        }
+    }
+
+    override fun subscribeCollections(): Flow<List<ReadingCollection>> {
+        return queries.getStandaloneCollections().subscribeToList().map { rows -> rows.map(::mapCollection) }
+    }
+
+    override suspend fun getCollection(collectionId: Long): ReadingCollection? {
+        return queries.getCollection(collectionId).awaitAsOneOrNull()?.let(::mapCollection)
+    }
+
+    override suspend fun createCollection(
+        name: String,
+        kind: CollectionKind,
+        items: List<CollectionItem>,
+        now: Long,
+    ): Long {
+        return database.transactionWithResult {
+            insertCollection(UUID.randomUUID().toString(), kind, name, now, standalone = true).also {
+                insertItems(it, items)
+            }
+        }
+    }
+
+    override suspend fun updateCollection(collection: ReadingCollection, items: List<CollectionItem>) {
+        database.transaction {
+            queries.updateCollection(collection.name, collection.kind.id, collection.id)
+            queries.deleteItemsOf(collection.id)
+            insertItems(collection.id, items)
+        }
+    }
+
+    override suspend fun deleteCollection(collection: ReadingCollection) {
+        queries.deleteCollection(collection.id)
     }
 
     override suspend fun searchLibrary(query: String): List<PlannableEntry> {
@@ -149,6 +204,20 @@ class ReadingPlanRepositoryImpl(
         return queries.getPlans().awaitAsList().map(::mapPlan).map { it to getItems(it.collectionId) }
     }
 
+    override suspend fun exportCollections(): List<Pair<ReadingCollection, List<CollectionItem>>> {
+        return queries.getStandaloneCollections().awaitAsList().map(::mapCollection).map { it to getItems(it.id) }
+    }
+
+    override suspend fun importCollections(collections: List<Pair<ReadingCollection, List<CollectionItem>>>) {
+        database.transaction {
+            collections.forEach { (collection, items) ->
+                if (queries.getCollectionId(collection.uuid).awaitAsOneOrNull() != null) return@forEach
+                val id = insertCollection(collection.uuid, collection.kind, collection.name, collection.createdAt, true)
+                insertItems(id, items.map { resolve(it) })
+            }
+        }
+    }
+
     override suspend fun importGoals(goals: List<ReadingGoal>) {
         if (goals.isEmpty()) return
         database.transaction {
@@ -162,7 +231,7 @@ class ReadingPlanRepositoryImpl(
             plans.forEach { (plan, items) ->
                 if (queries.getPlanId(plan.uuid).awaitAsOneOrNull() != null) return@forEach
                 val collectionId = queries.getCollectionId(plan.collectionUuid).awaitAsOneOrNull()
-                    ?: insertCollection(plan.collectionUuid, plan.kind, plan.name, plan.startedAt).also {
+                    ?: insertCollection(plan.collectionUuid, plan.kind, plan.name, plan.startedAt, false).also {
                         insertItems(it, items.map { item -> resolve(item) })
                     }
                 queries.insertPlan(
@@ -177,9 +246,21 @@ class ReadingPlanRepositoryImpl(
         }
     }
 
-    private suspend fun insertCollection(uuid: String, kind: CollectionKind, name: String, createdAt: Long): Long {
-        queries.insertCollection(uuid, kind.id, name, createdAt)
+    private suspend fun insertCollection(
+        uuid: String,
+        kind: CollectionKind,
+        name: String,
+        createdAt: Long,
+        standalone: Boolean,
+    ): Long {
+        queries.insertCollection(uuid, kind.id, name, createdAt, standalone)
         return queries.getCollectionId(uuid).awaitAsOne()
+    }
+
+    private suspend fun insertPlan(collectionId: Long, pacePerWeek: Int, now: Long, today: LocalDate): Long {
+        val uuid = UUID.randomUUID().toString()
+        queries.insertPlan(uuid, collectionId, pacePerWeek.toLong(), now, today.toString(), false)
+        return queries.getPlanId(uuid).awaitAsOne()
     }
 
     private suspend fun insertItems(collectionId: Long, items: List<CollectionItem>) {
@@ -221,5 +302,14 @@ class ReadingPlanRepositoryImpl(
         startedAt = row.started_at,
         startedOn = LocalDate.parse(row.started_on),
         paused = row.paused,
+        standaloneCollection = row.standalone,
+    )
+
+    private fun mapCollection(row: Reading_collections) = ReadingCollection(
+        id = row._id,
+        uuid = row.uuid,
+        kind = CollectionKind.of(row.kind),
+        name = row.name,
+        createdAt = row.created_at,
     )
 }

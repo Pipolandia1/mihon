@@ -28,7 +28,9 @@
 - **Backup:** um campo protobuf novo e opcional (`Backup` 9001) com sessões e progresso.
   Backups antigos continuam restaurando igual; restaurar duas vezes não duplica sessões.
 - **Metadados de HQ (Fase C)** ficam em tabelas próprias, editáveis, com proveniência
-  (`confirmado` / `inferido` / `ComicInfo`), nunca preenchidos só a partir de nome de arquivo.
+  (`confirmado` / `Metron` / `GCD` / `ComicInfo` / `fonte` / `inferido`), nunca preenchidos só a
+  partir de nome de arquivo. O Metron é consultado só quando o usuário pede, uma série por vez, com o
+  token dele; sem token, ou quando o Metron falha ou não acha, a busca vai ao Grand Comics Database.
 - **Nada sai do aparelho.** Nenhum evento novo passa pelo módulo `telemetry` (que tem uma variante
   Firebase); modo anônimo não grava sessão.
 
@@ -502,6 +504,77 @@ por período, com a unidade sempre visível (obras vs issues).
 esconder lembretes.
 **C5 — Backup dos metadados e coleções.**
 
+#### Coleta de metadados (decidido em 24/09/2026)
+
+**O que as fontes entregam hoje** (biblioteca do emulador): editora só como gênero (`DC Comics`),
+autor quase sempre vazio, artista nunca, ano só no título (`Batman (2025-)`), e números que o Mihon
+ordena errado: `#Annual 2025` vira capítulo 2025; `TPB_(Part_1)`, `Issue #1` e `#1 Noir Edition` viram
+todos 1.0. O ComicInfo que o Mihon grava nos downloads repete a fonte e não acrescenta nada.
+
+**Camadas, com a origem guardada em cada campo** (a primeira que houver é a sugerida):
+
+1. **Confirmado** pelo usuário — o único que conta como certo nas estatísticas. Editor por série,
+   "aplicar a todos os capítulos", exceção por capítulo, aceitar sugestões em lote.
+2. **Metron** (metron.cloud), sob demanda — ver abaixo; **GCD** (comics.org) como fallback do
+   Metron (decidido em 24/09/2026, com o cadastro no Metron fechado) — ver abaixo.
+3. **ComicInfo.xml** de arquivos da fonte local. Os campos que o Mihon ainda não lê (`Publisher`,
+   `Imprint`, `Volume`, `Count`, `Format`, `StoryArc`, `Characters`, `Teams`) são lidos por uma
+   classe própria do pacote (`ComicInfoMetadata`), sem mexer no `ComicInfo.kt` do `core-metadata`.
+4. **Fonte**: autor, artista, status, descrição.
+5. **Inferido**, sempre como sugestão: título `Nome (AAAA-)`/`(AAAA)` → série e ano de início;
+   gênero que bate com uma lista de editoras → editora; nome do capítulo → `Annual`, `TPB`, parte,
+   variante, `#0`, `#1/2`, `.MU` (rótulo + posição de ordenação própria); páginas conhecidas pela
+   leitura só como reforço de issue × encadernado. Nunca a partir só do nome de arquivo.
+
+**Metron** (escolhido em vez do Comic Vine: projeto comunitário feito para apps de terceiros, sem a
+restrição de uso não comercial nem a exigência de link em cada tela; campos já estruturados):
+- desligado por padrão; o usuário gera um token na conta dele em metron.cloud e cola na tela
+  "Metadados online" (menu da aba Stats; preferência privada, fora do backup comum — como as
+  credenciais dos rastreadores). Autenticação `Authorization: Bearer <token>` (knox);
+- só por ação explícita, uma série por vez: "Buscar online" no editor da série envia **apenas o
+  título e o ano** da série; nada da biblioteca nem da leitura; nada em segundo plano;
+- o usuário escolhe a série certa na lista; o app lê os issues dela e casa com os capítulos pelo
+  número (`number` do Metron contra o rótulo confirmado ou o nome do capítulo; a lista de issues
+  não traz `alt_number`); só capítulos regulares casam — anual, especial e encadernado são séries
+  à parte no Metron; o que não casar fica sem sugestão;
+- detalhe do issue só para os capítulos casados; tudo chega com origem "Metron" e link para
+  `resource_url`; aceitar em lote ou por campo; editar vira "confirmado";
+- limites: fila de ≤ 20 pedidos/minuto; 429 espera o `Retry-After` (até 5 min; mais que isso é a
+  cota do dia: para e guarda o que veio); detalhe de cada issue em cache no aparelho e pedido de novo
+  só quando o `modified` da lista de issues muda (no lugar de `modified_gt`, que exigiria guardar a
+  data da última busca); a série e cada capítulo casado guardam o id do Metron;
+- mapeamento (campos do modelo `Issue` do cliente oficial Mokkari): `publisher`, `imprint` → editora,
+  selo; `series.name/volume/year_began/series_type` → série e tipo de unidade padrão (tipos de
+  encadernado → TPB/capa dura/omnibus, demais → issue); `number` → rótulo e ordenação;
+  `cover_date`/`store_date` → ano; `page_count`; `credits[].creator/role` → roteirista, desenhista,
+  colorista etc.; `characters`, `teams`, `universes`; `arcs` → sugestão de arco em C2; `reprints` →
+  quantos e quais issues um encadernado reúne; `cv_id`/`gcd_id` guardados como referência;
+- testes sem rede: mapeamento e casamento de números sobre respostas JSON escritas a partir do
+  modelo do Mokkari (sem token não há como gravar respostas reais); fila de limite;
+- verificação no aparelho exige o token do usuário: **quem cola o token é o usuário** (não digito
+  credenciais).
+
+**GCD — Grand Comics Database** (fallback do Metron; API em comics.org/api, schema OpenAPI público):
+- usado quando não há token do Metron, quando o Metron recusa, estoura a cota, falha ou não acha a
+  série; a janela de escolha diz por que foi ao GCD e dá o crédito (dados CC BY-SA 4.0);
+- responde sem login, mas **30 pedidos por hora** (`settings.py` do gcd-django: `anon 30/hour`,
+  `user 2000/day`); login opcional do próprio usuário (Basic, preferência privada) sobe para 2.000
+  por dia — quem digita é o usuário;
+- a busca (`series/name/<nome>/year/<ano>/`) já traz os issues da série (`active_issues` +
+  `issue_descriptors`, com impressões e variantes entre colchetes), então escolher a série não
+  gasta pedido; a editora vem como link (um pedido, guardado em cache);
+- detalhe só dos issues casados, em cache por 30 dias (o GCD não informa data de mudança); quando a
+  cota acaba no meio, o que veio fica e a próxima busca continua pelo cache;
+- mapeamento: `name`, `year_began/ended`, `publishing_format`/`binding` → formato (edição encadernada
+  capa dura/TPB, graphic novel → outro, resto → issue); total = números distintos quando a série
+  terminou; `key_date` (`2011-07-00` → `2011-07`), `page_count`; créditos em texto da história
+  principal (`script`, `pencils`, `inks`, `colors`, `letters`) e da capa; `editing`; personagens em
+  texto, com grupos `Equipe [membro; membro]` virando equipe + personagens; não há arcos;
+- anonimato "provavelmente será desligado" segundo a própria wiki: sem login, a busca passa a
+  falhar com "acesso recusado".
+
+**Fora por agora:** importação de listas `.cbl`; Komga/Kavita como fonte de metadados.
+
 ### Fase D — análises e retrospectivas
 
 **D1 — Detalhes por período.** 7 dias / 30 dias / ano / tudo / intervalo; gráficos com rótulos e
@@ -570,7 +643,7 @@ antes de instalar no emulador.
 | `data/build.gradle.kts` | A1 | dependência de teste |
 | `Backup*.kt`, criadores/restauradores, opções | A6, C5 | formato de backup é upstream |
 | `HistoryTab.kt`, `HistoryScreen.kt`, `HistoryViewModel.kt` | A7 | a aba e a lista existentes |
-| `ui/manga/MangaScreen.kt` (menu) | C1 | ponto de entrada do editor de metadados |
+| `ui/manga/MangaScreen.kt`, `presentation/manga/MangaScreen.kt`, `MangaToolbar.kt` (menu) | C1 | ponto de entrada do editor de metadados: um item no menu da obra, repassado pelas duas diagramações |
 | `strings.xml` (base, pt-rBR) | todos | recursos de texto do projeto |
 
 ---
@@ -590,7 +663,15 @@ antes de instalar no emulador.
 - [x] B3 calendário de intensidade — cartão "Atividade"; tocar num dia abre o Histórico do dia
 - [x] B4 planos de leitura — `ReadingPlansScreen`, `ReadingPlanEditorScreen`, `PlanRules`
 - [x] B5 próximos passos — `NextSteps`
-- [ ] C1–C5 · D1–D4
+- [x] C1 metadados — `comic_metadata` (migração 17), `ComicMetadataScreen` (menu da obra), sugestões
+  por camada (`ComicSuggestions`), `IssueNumbers`, `ComicInference`, ComicInfo (`ComicInfoReader`),
+  Metron e GCD (`OnlineMetadata`, `MetronApi`, `GcdApi`)
+- [x] C2 coleções — `ReadingCollectionsScreen`, `ReadingCollectionEditorScreen` (ordem explícita,
+  arco a partir de metadados), plano que lê uma coleção, `CollectionRules`
+- [x] C3 biblioteca e backlog — `ComicLibrary`, cartão "Biblioteca", `ComicLibraryScreen`
+- [x] C4 perto de terminar e paradas — cartões com lembrete escondível
+- [x] C5 backup — `BackupReadingStats` campos 6 (metadados confirmados) e 7 (coleções)
+- [ ] D1–D4
 
 ### Verificação da Fase A (24/09/2026)
 
@@ -666,3 +747,68 @@ sem tocar em leitura, restaurar duas vezes em outro aparelho, **migração 16**)
 
 **Não verificado:** restaurar esse backup no aparelho; tema claro dos cartões novos (o app está no
 escuro por escolha do usuário); TalkBack.
+
+### Verificação da Fase C (24/09/2026)
+
+**Decisões tomadas durante a fase:**
+- **GCD como fallback do Metron** (pedido do usuário com o cadastro do Metron fechado): sem token,
+  ou quando o Metron recusa, estoura a cota, falha ou não acha a série, a busca vai ao GCD, e a
+  janela diz por quê. Limite anônimo do GCD: 30 pedidos/hora (`settings.py` do gcd-django); login
+  opcional do usuário sobe para 2.000/dia.
+- ComicInfo lido por uma classe própria (`ComicInfoMetadata`); o `ComicInfo.kt` do `core-metadata`
+  não mudou. Upstream tocado só no menu da obra (3 arquivos, 18 linhas).
+- Metadados confirmados e coleções vão no `BackupReadingStats` (campos 6 e 7), como o resto das
+  estatísticas, e não em `BackupManga` 115 como o §6 previa.
+- Variante só quando o texto depois do número tem palavra de variante ("edition", "cover",
+  "variant"…): "#12 - The Court of Owls" é título, não variante.
+- Rótulos de encadernado lêem o número depois do nome ("TPB 2"), para ordenar TPB 1 antes do 2.
+- No GCD, colchetes com `;` só são equipe quando algum membro tem colchetes próprios
+  ("Justice League of America [… Green Lantern [Hal Jordan] …]"); "Reverse-Flash [Professor Zoom;
+  Eobard Thawne]" é um personagem com outros nomes — achado no dado real do Flashpoint #1.
+
+**Testes na JVM (todos passando):** `IssueNumbersTest` (9: números reais das fontes, variante ×
+título, anual não é o issue 2025, TPB/HC/Omnibus/Vol., frações e sufixos, especiais, ordem),
+`ComicInferenceTest` (4), `ComicLibraryTest` (9: TPB não é issue, variante não conta, o mesmo issue
+lido duas vezes conta uma, total desconhecido sem %, estados, próximo na ordem da série, perto de
+terminar, paradas, backlog, período), `ComicSuggestionsTest` (3: Metron > GCD > ComicInfo > fonte >
+inferido; confirmado não fica pendente), `CollectionRulesTest` (2), `ComicMetadataRepositoryImplTest`
+(6, SQLite real: confirmar substitui por campo e escopo, sugestões por origem, biblioteca só com
+favoritos e sem scanlator oculto, concluídos no período, arco atravessando séries pela data de capa,
+restaurar em outro aparelho), `ReadingPlanRepositoryImplTest` (+4: **migrações 16 e 17**, anual e
+encadernado depois dos issues dentro de um item, coleção avulsa sobrevive ao plano e apagá-la
+encerra os planos, **um capítulo em duas coleções é lido uma vez**, coleções restauram uma vez),
+`OnlineMetadataMappingTest` (10: casamento por número, rótulo confirmado, Metron série/tipos/issue e
+créditos, GCD série/issues/créditos em texto/personagens e equipes/datas), `RequestLimiterTest` (3:
+21º pedido espera o primeiro sair da janela, 429 segura tudo, espera longa desiste),
+`ComicInfoMappingTest` (3), `BackupReadingStatsTest` (+2: ida e volta de metadados e coleções; backup
+anterior sem os campos). Fixtures do Metron escritas a partir do modelo do Mokkari (sem token não
+há como gravar respostas reais); as do GCD seguem respostas reais consultadas uma vez.
+
+**Emulador** (`tools/shots/stats-c-*.png`, pt-BR e tema escuro como o app estava):
+- migração 16→17 no banco do aparelho, sem erro; a aba Stats abre como antes;
+- cartão "Biblioteca": 4 obras, estados, "Para ler" por formato, entraram/concluídos na semana e no
+  mês — tudo "sem formato" até haver metadados; depois de confirmar o Flashpoint, "5 issues · 2
+  encadernados · 40 capítulos sem formato";
+- editor do Flashpoint (2011): sugestões inferidas (Issue, 2011, DC Comics pelo gênero) com a origem;
+  **"Buscar online" sem token foi ao GCD** — a janela diz "Sem token do Metron…", "Enviado: só o
+  nome “Flashpoint” e o ano 2011", lista a série limitada certa primeiro e dá o crédito CC BY-SA;
+  escolher a série buscou 5 issues com barra de progresso (7 pedidos ao GCD no total); "Total de
+  issues 5", créditos e personagens por capítulo; campo com alternativas por origem (escolhi "DC
+  Comics" no lugar do "DC" do GCD) e "Aceitar 69 sugestões" não sobrescreveu a escolha;
+- Biblioteca de HQ: "Flashpoint (2011) · Issue · 0 de 5 lidos" (os TPBs fora da conta);
+- obra sintética na fonte local ("Stats ComicInfo Test", 3 CBZ com ComicInfo.xml inventados): item
+  "Metadados de HQ" no menu da obra; "Ler ComicInfo" trouxe 35 valores (editora, selo, volume,
+  total, arco); ordem #1, #2, Annual #1;
+- coleção "Night Lanterns" criada a partir do arco confirmado (nome e tipo preenchidos), mais o
+  Flashpoint #1 de outra obra, reordenado; "Começar um plano" abriu o plano que lê a coleção (sem
+  nome nem itens editáveis), ritmo 2/semana, previsão e próximo passo no cartão; **apagar o plano
+  manteve a coleção**;
+- marcar Flashpoint #1–#3 como lidos: "Perto de terminar · Flashpoint (2011) · 3 de 5 · faltam 2 ·
+  próximo: Issue #4" e "concluídos: 3 issues" na semana; desmarcado em seguida (o Mihon zera a
+  página salva ao desmarcar: o #1 perdeu a "página 7");
+- Absolute Batman: "#Annual 2025" depois do #24, "#1 Noir Edition" logo depois do #1;
+- tela "Metadados online" (token do Metron, login opcional do GCD, aviso de privacidade).
+
+**Não verificado:** Metron ao vivo (sem token — o cadastro está fechado); login do GCD; "Paradas"
+(precisa de 30 dias sem leitura; coberto por teste); restaurar backup no aparelho; tema claro;
+TalkBack. Arcos só aparecem com metadados que os tragam (Metron ou ComicInfo; o GCD não tem arcos).

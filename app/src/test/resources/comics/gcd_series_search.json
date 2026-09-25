@@ -1,0 +1,62 @@
+{
+  "count": 3,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "api_url": "https://www.comics.org/api/series/75999/?format=json",
+      "name": "The Flash: The Road to Flashpoint",
+      "country": "us",
+      "language": "en",
+      "active_issues": ["https://www.comics.org/api/issue/1136904/?format=json"],
+      "issue_descriptors": [""],
+      "color": "color",
+      "dimensions": "standard Modern Age US",
+      "paper_stock": "glossy",
+      "binding": "hardcover with dustjacket",
+      "publishing_format": "collected edition",
+      "notes": "",
+      "year_began": 2011,
+      "year_ended": 2011,
+      "publisher": "https://www.comics.org/api/publisher/54/?format=json"
+    },
+    {
+      "api_url": "https://www.comics.org/api/series/58499/?format=json",
+      "name": "Flashpoint",
+      "country": "us",
+      "language": "en",
+      "active_issues": [
+        "https://www.comics.org/api/issue/833090/?format=json",
+        "https://www.comics.org/api/issue/854380/?format=json",
+        "https://www.comics.org/api/issue/833091/?format=json",
+        "https://www.comics.org/api/issue/833092/?format=json",
+        "https://www.comics.org/api/issue/833093/?format=json",
+        "https://www.comics.org/api/issue/833094/?format=json"
+      ],
+      "issue_descriptors": ["1 [Direct Sales]", "1 [Andy Kubert Sketch Cover]", "2", "3", "4", "5"],
+      "color": "color",
+      "dimensions": "standard Modern Age US",
+      "paper_stock": "glossy",
+      "binding": "saddle-stitched",
+      "publishing_format": "limited series",
+      "notes": "",
+      "year_began": 2011,
+      "year_ended": 2011,
+      "publisher": "https://www.comics.org/api/publisher/54/?format=json"
+    },
+    {
+      "api_url": "https://www.comics.org/api/series/58348/?format=json",
+      "name": "FCBD 2011 Green Lantern Flashpoint Special Edition",
+      "country": "us",
+      "language": "en",
+      "active_issues": ["https://www.comics.org/api/issue/831585/?format=json"],
+      "issue_descriptors": ["1 [Standard Issue]"],
+      "binding": "saddle-stitched",
+      "publishing_format": "one-shot",
+      "notes": "",
+      "year_began": 2011,
+      "year_ended": 2011,
+      "publisher": "https://www.comics.org/api/publisher/54/?format=json"
+    }
+  ]
+}

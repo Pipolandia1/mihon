@@ -39,6 +39,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.manga.components.MangaCover
+import eu.kanade.presentation.readingstats.collectionKindName
 import eu.kanade.presentation.util.Screen
 import eu.kanade.presentation.util.formatChapterNumber
 import kotlinx.coroutines.flow.collectLatest
@@ -47,6 +48,7 @@ import mihon.icons.materialsymbols.rounded.Close
 import mihon.icons.materialsymbols.rounded.Delete
 import mihon.icons.materialsymbols.rounded.Done
 import tachiyomi.domain.chapter.model.Chapter
+import tachiyomi.domain.readingstats.plans.ReadingCollection
 import tachiyomi.domain.readingstats.repository.PlannableEntry
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.SECONDARY_ALPHA
@@ -110,16 +112,19 @@ class ReadingPlanEditorScreen(private val planId: Long?) : Screen() {
                 contentPadding = contentPadding,
                 verticalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
             ) {
-                item {
-                    OutlinedTextField(
-                        value = state.name,
-                        onValueChange = viewModel::setName,
-                        label = { Text(stringResource(MR.strings.reading_stats_plan_name)) },
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = MaterialTheme.padding.medium),
-                    )
+                // A plan over a standalone collection goes by the collection's name.
+                if (state.collection == null) {
+                    item {
+                        OutlinedTextField(
+                            value = state.name,
+                            onValueChange = viewModel::setName,
+                            label = { Text(stringResource(MR.strings.reading_stats_plan_name)) },
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = MaterialTheme.padding.medium),
+                        )
+                    }
                 }
                 item {
                     Row(
@@ -165,19 +170,48 @@ class ReadingPlanEditorScreen(private val planId: Long?) : Screen() {
                         modifier = Modifier.padding(horizontal = MaterialTheme.padding.medium),
                     )
                 }
-                items(state.entries, key = { it.mangaId }) { entry ->
-                    EntryRow(
-                        entry = entry,
-                        onPickChapters = { viewModel.openChapterPicker(entry.mangaId) },
-                        onRemove = { viewModel.removeEntry(entry.mangaId) },
-                    )
-                }
-                item {
-                    OutlinedButton(
-                        onClick = viewModel::openEntryPicker,
-                        modifier = Modifier.padding(horizontal = MaterialTheme.padding.medium),
-                    ) {
-                        Text(stringResource(MR.strings.reading_stats_add_entry))
+                val collection = state.collection
+                if (collection != null) {
+                    // A plan over a standalone collection reads it as it is; the collection is edited on its own.
+                    item {
+                        Text(
+                            text = stringResource(MR.strings.reading_stats_plan_reads_collection, collection.name),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(horizontal = MaterialTheme.padding.medium),
+                        )
+                    }
+                    if (state.isNew) {
+                        item {
+                            TextButton(
+                                onClick = { viewModel.useCollection(null) },
+                                modifier = Modifier.padding(horizontal = MaterialTheme.padding.medium),
+                            ) {
+                                Text(stringResource(MR.strings.reading_stats_plan_no_collection))
+                            }
+                        }
+                    }
+                } else {
+                    items(state.entries, key = { it.mangaId }) { entry ->
+                        EntryRow(
+                            entry = entry,
+                            onPickChapters = { viewModel.openChapterPicker(entry.mangaId) },
+                            onRemove = { viewModel.removeEntry(entry.mangaId) },
+                        )
+                    }
+                    item {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
+                            modifier = Modifier.padding(horizontal = MaterialTheme.padding.medium),
+                        ) {
+                            OutlinedButton(onClick = viewModel::openEntryPicker) {
+                                Text(stringResource(MR.strings.reading_stats_add_entry))
+                            }
+                            if (state.isNew) {
+                                OutlinedButton(onClick = viewModel::openCollectionPicker) {
+                                    Text(stringResource(MR.strings.reading_stats_plan_use_collection))
+                                }
+                            }
+                        }
                     }
                 }
                 item {
@@ -194,7 +228,8 @@ class ReadingPlanEditorScreen(private val planId: Long?) : Screen() {
         val onDismissRequest = { viewModel.setDialog(null) }
         when (val dialog = state.dialog) {
             is ReadingPlanEditorViewModel.Dialog.PickEntry -> PickEntryDialog(
-                dialog = dialog,
+                query = dialog.query,
+                results = dialog.results,
                 onQuery = viewModel::search,
                 onPick = viewModel::addEntry,
                 onDismissRequest = onDismissRequest,
@@ -203,7 +238,8 @@ class ReadingPlanEditorScreen(private val planId: Long?) : Screen() {
                 val entry = state.entries.firstOrNull { it.mangaId == dialog.mangaId }
                 if (entry != null) {
                     PickChaptersDialog(
-                        entry = entry,
+                        title = entry.title,
+                        chapters = entry.chapters,
                         selected = dialog.selected,
                         onSelect = viewModel::setPickedChapters,
                         onConfirm = viewModel::confirmChapters,
@@ -211,6 +247,11 @@ class ReadingPlanEditorScreen(private val planId: Long?) : Screen() {
                     )
                 }
             }
+            is ReadingPlanEditorViewModel.Dialog.PickCollection -> PickCollectionDialog(
+                collections = dialog.collections,
+                onPick = viewModel::useCollection,
+                onDismissRequest = onDismissRequest,
+            )
             ReadingPlanEditorViewModel.Dialog.ConfirmDelete -> AlertDialog(
                 onDismissRequest = onDismissRequest,
                 title = { Text(stringResource(MR.strings.reading_stats_delete_plan)) },
@@ -279,8 +320,9 @@ private fun EntryRow(
 }
 
 @Composable
-private fun PickEntryDialog(
-    dialog: ReadingPlanEditorViewModel.Dialog.PickEntry,
+internal fun PickEntryDialog(
+    query: String,
+    results: List<PlannableEntry>,
     onQuery: (String) -> Unit,
     onPick: (PlannableEntry) -> Unit,
     onDismissRequest: () -> Unit,
@@ -291,14 +333,14 @@ private fun PickEntryDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small)) {
                 OutlinedTextField(
-                    value = dialog.query,
+                    value = query,
                     onValueChange = onQuery,
                     placeholder = { Text(stringResource(MR.strings.action_search_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 LazyColumn(modifier = Modifier.heightIn(max = DialogListMaxHeight)) {
-                    items(dialog.results, key = { it.mangaId }) { entry ->
+                    items(results, key = { it.mangaId }) { entry ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
@@ -327,8 +369,9 @@ private fun PickEntryDialog(
 }
 
 @Composable
-private fun PickChaptersDialog(
-    entry: ReadingPlanEditorViewModel.Entry,
+internal fun PickChaptersDialog(
+    title: String,
+    chapters: List<Chapter>,
     selected: Set<Long>,
     onSelect: (Set<Long>) -> Unit,
     onConfirm: () -> Unit,
@@ -336,15 +379,15 @@ private fun PickChaptersDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismissRequest,
-        title = { Text(entry.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        title = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         text = {
             Column {
                 FlowRow {
-                    TextButton(onClick = { onSelect(entry.chapters.map(Chapter::id).toSet()) }) {
+                    TextButton(onClick = { onSelect(chapters.map(Chapter::id).toSet()) }) {
                         Text(stringResource(MR.strings.action_select_all))
                     }
                     TextButton(onClick = {
-                        onSelect(entry.chapters.filterNot(Chapter::read).map(Chapter::id).toSet())
+                        onSelect(chapters.filterNot(Chapter::read).map(Chapter::id).toSet())
                     }) {
                         Text(stringResource(MR.strings.reading_stats_unread_only))
                     }
@@ -353,7 +396,7 @@ private fun PickChaptersDialog(
                     }
                 }
                 LazyColumn(modifier = Modifier.heightIn(max = DialogListMaxHeight)) {
-                    items(entry.chapters, key = { it.id }) { chapter ->
+                    items(chapters, key = { it.id }) { chapter ->
                         val checked = chapter.id in selected
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -388,4 +431,43 @@ private fun PickChaptersDialog(
 private fun chapterLabel(chapter: Chapter): String {
     val number = chapter.chapterNumber.takeIf { chapter.isRecognizedNumber }?.let { "#${formatChapterNumber(it)}" }
     return listOfNotNull(number, chapter.name.takeIf { it.isNotBlank() && it != number }).joinToString(" · ")
+}
+
+@Composable
+private fun PickCollectionDialog(
+    collections: List<ReadingCollection>,
+    onPick: (ReadingCollection) -> Unit,
+    onDismissRequest: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = { Text(stringResource(MR.strings.reading_stats_plan_use_collection)) },
+        text = {
+            if (collections.isEmpty()) {
+                Text(stringResource(MR.strings.reading_stats_collections_empty))
+            } else {
+                LazyColumn(modifier = Modifier.heightIn(max = DialogListMaxHeight)) {
+                    items(collections, key = { it.id }) { collection ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onPick(collection) }
+                                .padding(vertical = MaterialTheme.padding.small),
+                        ) {
+                            Text(collection.name, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                text = stringResource(collectionKindName(collection.kind)),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = SECONDARY_ALPHA),
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) { Text(stringResource(MR.strings.action_cancel)) }
+        },
+    )
 }

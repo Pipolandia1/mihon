@@ -36,12 +36,19 @@ class TestDatabase {
         Database.Schema.synchronous().create(driver)
     }
 
-    fun insertManga(id: Long, url: String = "/manga/$id", favorite: Boolean = true, title: String = "Title $id") {
+    fun insertManga(
+        id: Long,
+        url: String = "/manga/$id",
+        favorite: Boolean = true,
+        title: String = "Title $id",
+        status: Int = 0,
+        dateAdded: Long = 0,
+    ) {
         exec(
             """
             INSERT INTO mangas(_id, source, url, title, status, favorite, initialized, viewer, chapter_flags,
                 cover_last_modified, date_added)
-            VALUES ($id, 1, '$url', '$title', 0, ${if (favorite) 1 else 0}, 1, 0, 0, 0, 0)
+            VALUES ($id, 1, '$url', '$title', $status, ${if (favorite) 1 else 0}, 1, 0, 0, 0, $dateAdded)
             """.trimIndent(),
         )
     }
@@ -54,13 +61,15 @@ class TestDatabase {
         lastPageRead: Int = 0,
         number: Double = id.toDouble(),
         scanlator: String? = null,
+        name: String = "Chapter $id",
+        dateFetch: Long = 0,
     ) {
         exec(
             """
             INSERT INTO chapters(_id, manga_id, url, name, scanlator, read, bookmark, last_page_read,
                 chapter_number, source_order, date_fetch, date_upload)
-            VALUES ($id, $mangaId, '$url', 'Chapter $id', ${scanlator?.let { "'$it'" } ?: "NULL"},
-                ${if (read) 1 else 0}, 0, $lastPageRead, $number, 0, 0, 0)
+            VALUES ($id, $mangaId, '$url', '$name', ${scanlator?.let { "'$it'" } ?: "NULL"},
+                ${if (read) 1 else 0}, 0, $lastPageRead, $number, 0, $dateFetch, 0)
             """.trimIndent(),
         )
     }

@@ -8,6 +8,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.protobuf.ProtoBuf
 import kotlinx.serialization.protobuf.ProtoNumber
 import org.junit.jupiter.api.Test
+import tachiyomi.domain.readingstats.comics.ComicField
+import tachiyomi.domain.readingstats.comics.MetadataOrigin
+import tachiyomi.domain.readingstats.comics.MetadataValue
 import tachiyomi.domain.readingstats.goals.GoalMetric
 import tachiyomi.domain.readingstats.goals.GoalPeriod
 import tachiyomi.domain.readingstats.goals.ReadingGoal
@@ -19,7 +22,9 @@ import tachiyomi.domain.readingstats.model.SessionSnapshot
 import tachiyomi.domain.readingstats.model.SessionState
 import tachiyomi.domain.readingstats.plans.CollectionItem
 import tachiyomi.domain.readingstats.plans.CollectionKind
+import tachiyomi.domain.readingstats.plans.ReadingCollection
 import tachiyomi.domain.readingstats.plans.ReadingPlan
+import tachiyomi.domain.readingstats.repository.ExportedMetadata
 
 class BackupReadingStatsTest {
 
@@ -89,6 +94,51 @@ class BackupReadingStatsTest {
         val (restored, restoredItems) = decoded.plans.single().toPlan()
         restored shouldBe plan.copy(id = -1, collectionId = -1)
         restoredItems shouldBe items.map { it.copy(mangaId = null, chapterId = null) }
+    }
+
+    @Test
+    fun `comic metadata and collections survive a round trip`() {
+        val series = ExportedMetadata(
+            1,
+            "/m",
+            null,
+            MetadataValue(ComicField.PUBLISHER, null, listOf("DC Comics"), MetadataOrigin.GCD),
+        )
+        val chapter = ExportedMetadata(
+            1,
+            "/m",
+            "/c",
+            MetadataValue(ComicField.CHARACTER, null, listOf("Batman", "Robin"), MetadataOrigin.USER),
+        )
+        val collection = ReadingCollection(5, "arc", CollectionKind.ARC, "Night of the Owls", 77)
+        val items = listOf(CollectionItem(8, 9, 2, "/n", "/c", "Nightwing · #7"))
+        val stats = BackupReadingStats(
+            comicMetadata = listOf(BackupComicMetadata.of(series), BackupComicMetadata.of(chapter)),
+            collections = listOf(BackupReadingCollection.of(collection, items)),
+        )
+
+        val decoded = ProtoBuf.decodeFromByteArray(
+            BackupReadingStats.serializer(),
+            ProtoBuf.encodeToByteArray(BackupReadingStats.serializer(), stats),
+        )
+
+        decoded.comicMetadata.mapNotNull { it.toExported() } shouldBe listOf(series, chapter)
+        val (restored, restoredItems) = decoded.collections.single().toCollection()
+        restored shouldBe collection.copy(id = -1)
+        restoredItems shouldBe items.map { it.copy(mangaId = null, chapterId = null) }
+    }
+
+    @Test
+    fun `a backup from before comic metadata restores with none`() {
+        val old = BackupReadingStats(goals = listOf(BackupReadingGoal(GoalMetric.PAGES.id, GoalPeriod.DAY.id, 5)))
+
+        val decoded = ProtoBuf.decodeFromByteArray(
+            BackupReadingStats.serializer(),
+            ProtoBuf.encodeToByteArray(BackupReadingStats.serializer(), old),
+        )
+
+        decoded.comicMetadata shouldBe emptyList()
+        decoded.collections shouldBe emptyList()
     }
 
     @Test

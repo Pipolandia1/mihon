@@ -1,0 +1,20 @@
+-- Comic metadata, and collections that stand on their own.
+
+-- Comic metadata, one row per value: list fields (writers, characters) have several rows. A row is
+-- on the series (chapter_id NULL) or on one chapter. Confirmed rows are what the user accepted and
+-- the only ones statistics use; the others are suggestions kept from Metron or ComicInfo.
+CREATE TABLE comic_metadata(
+    _id INTEGER NOT NULL PRIMARY KEY,
+    manga_id INTEGER NOT NULL REFERENCES mangas(_id) ON DELETE CASCADE,
+    chapter_id INTEGER REFERENCES chapters(_id) ON DELETE CASCADE,
+    field INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    value TEXT NOT NULL,
+    origin INTEGER NOT NULL,
+    confirmed INTEGER NOT NULL
+);
+
+CREATE INDEX comic_metadata_manga_index ON comic_metadata(manga_id, confirmed);
+CREATE INDEX comic_metadata_field_index ON comic_metadata(field, confirmed);
+
+ALTER TABLE reading_collections ADD COLUMN standalone INTEGER NOT NULL DEFAULT 0;

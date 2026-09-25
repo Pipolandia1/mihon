@@ -21,6 +21,7 @@ import tachiyomi.domain.readingstats.model.SessionState
 import tachiyomi.domain.readingstats.model.SessionWrite
 import tachiyomi.domain.readingstats.plans.CollectionItem
 import tachiyomi.domain.readingstats.plans.CollectionKind
+import tachiyomi.domain.readingstats.plans.CollectionRules
 import tachiyomi.domain.readingstats.plans.PlanRules
 
 class ReadingPlanRepositoryImplTest {
@@ -167,14 +168,94 @@ class ReadingPlanRepositoryImplTest {
     }
 
     @Test
-    fun `migration 16 adds the plan tables to a database that has reading stats`() = runTest {
-        listOf("reading_plans", "reading_collection_items", "reading_collections", "reading_goals")
+    fun `migrations 16 and 17 add plans, standalone collections and comic metadata`() = runTest {
+        listOf("comic_metadata", "reading_plans", "reading_collection_items", "reading_collections", "reading_goals")
             .forEach { db.exec("DROP TABLE $it") }
 
-        Database.Schema.synchronous().migrate(db.driver, 16, 17)
+        Database.Schema.synchronous().migrate(db.driver, 16, 18)
 
         plans.setGoal(goal(GoalMetric.CHAPTERS, GoalPeriod.WEEK, 5), now = 1)
         plans.subscribeGoals().first().single().target shouldBe 5
+        db.insertManga(1)
+        plans.createCollection("Arc", CollectionKind.ARC, listOf(wholeEntry(1)), now = 1)
+        plans.subscribeCollections().first().single().name shouldBe "Arc"
+    }
+
+    @Test
+    fun `within an item, annuals and collected editions come after the issues`() = runTest {
+        db.insertManga(1)
+        db.insertChapter(10, mangaId = 1, name = "TPB_(Part_1)", number = 1.0)
+        db.insertChapter(11, mangaId = 1, name = "#Annual 2025", number = 2025.0)
+        db.insertChapter(12, mangaId = 1, name = "#2", number = 2.0)
+        db.insertChapter(13, mangaId = 1, name = "Issue #1", number = 1.0)
+        val planId = plans.createPlan("Series", CollectionKind.ENTRY, listOf(wholeEntry(1)), 2, now = 5, today = DAY)
+
+        val chapters = plans.subscribeCollectionChapters(plans.getPlan(planId)!!.collectionId).first()
+
+        chapters.map { it.chapterId } shouldBe listOf(13L, 12L, 11L, 10L)
+    }
+
+    @Test
+    fun `a standalone collection outlives its plans, and deleting it ends them`() = runTest {
+        db.insertManga(1)
+        db.insertChapter(10, mangaId = 1)
+        val collectionId = plans.createCollection("Arc", CollectionKind.ARC, listOf(chapterItem(1, 10)), now = 1)
+        val collection = plans.getCollection(collectionId).shouldNotBeNull()
+        val planId = plans.createPlanFor(collection, pacePerWeek = 2, now = 5, today = DAY)
+        val plan = plans.getPlan(planId).shouldNotBeNull()
+        plan.standaloneCollection shouldBe true
+        plan.name shouldBe "Arc"
+
+        // Editing the plan leaves the collection's items alone.
+        plans.updatePlan(plan.copy(pacePerWeek = 4), emptyList())
+        plans.getItems(collectionId).size shouldBe 1
+        plans.getPlan(planId)!!.pacePerWeek shouldBe 4
+
+        plans.deletePlan(plan)
+        plans.subscribePlans().first().shouldBeEmpty()
+        plans.getCollection(collectionId).shouldNotBeNull()
+
+        plans.createPlanFor(collection, pacePerWeek = 2, now = 6, today = DAY)
+        plans.deleteCollection(collection)
+        plans.subscribePlans().first().shouldBeEmpty()
+        plans.subscribeCollections().first().shouldBeEmpty()
+    }
+
+    @Test
+    fun `a chapter in two collections is read once`() = runTest {
+        db.insertManga(1)
+        db.insertChapter(10, mangaId = 1, read = true)
+        stats.saveSession(session("a", chapterId = 10, completedOn = DAY))
+        val first = plans.createCollection("Run", CollectionKind.RUN, listOf(chapterItem(1, 10)), now = 1)
+        val second = plans.createCollection("Event", CollectionKind.EVENT, listOf(chapterItem(1, 10)), now = 2)
+
+        listOf(first, second).forEach { id ->
+            val progress = CollectionRules.progress(
+                plans.getCollection(id)!!,
+                plans.subscribeCollectionChapters(id).first(),
+            )
+            progress.done shouldBe 1
+            progress.total shouldBe 1
+        }
+        stats.exportSessions().size shouldBe 1
+    }
+
+    @Test
+    fun `standalone collections restore once`() = runTest {
+        db.insertManga(1)
+        db.insertChapter(10, mangaId = 1)
+        plans.createCollection("Arc", CollectionKind.READING_ORDER, listOf(chapterItem(1, 10)), now = 1)
+        val exported = plans.exportCollections()
+
+        val other = TestDatabase()
+        other.insertManga(7, url = "/manga/1")
+        other.insertChapter(70, mangaId = 7, url = "/chapter/10")
+        val target = ReadingPlanRepositoryImpl(other.database)
+        repeat(2) { target.importCollections(exported) }
+
+        val restored = target.subscribeCollections().first().single()
+        restored.kind shouldBe CollectionKind.READING_ORDER
+        target.subscribeCollectionChapters(restored.id).first().single().chapterId shouldBe 70
     }
 
     private fun wholeEntry(mangaId: Long) =

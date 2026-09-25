@@ -4,6 +4,7 @@ import dev.zacsweers.metro.Inject
 import eu.kanade.tachiyomi.data.backup.models.BackupReadingStats
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.readingstats.repository.ComicMetadataRepository
 import tachiyomi.domain.readingstats.repository.ReadingPlanRepository
 import tachiyomi.domain.readingstats.repository.ReadingStatsRepository
 
@@ -12,6 +13,7 @@ import tachiyomi.domain.readingstats.repository.ReadingStatsRepository
 class ReadingStatsRestorer(
     private val repository: ReadingStatsRepository,
     private val planRepository: ReadingPlanRepository,
+    private val metadataRepository: ComicMetadataRepository,
 ) {
 
     /** Returns why the restore failed, or null if it did not. */
@@ -21,7 +23,10 @@ class ReadingStatsRestorer(
             repository.importProgress(stats.chapterProgress.map { it.toProgress() })
             repository.importRecordingStartedAt(stats.recordingStartedAt)
             planRepository.importGoals(stats.goals.mapNotNull { it.toGoal() })
+            // Collections first: a plan that reads a standalone collection finds it by its uuid.
+            planRepository.importCollections(stats.collections.map { it.toCollection() })
             planRepository.importPlans(stats.plans.map { it.toPlan() })
+            metadataRepository.import(stats.comicMetadata.mapNotNull { it.toExported() })
             null
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)

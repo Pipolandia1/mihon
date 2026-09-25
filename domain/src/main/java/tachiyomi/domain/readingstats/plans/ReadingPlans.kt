@@ -14,6 +14,18 @@ enum class CollectionKind(val id: Long) {
 
     /** Entries and chapters the user put together, possibly from several series. */
     LIST(1),
+
+    /** A creative team's run, across one or more series. */
+    RUN(2),
+
+    /** A story arc. */
+    ARC(3),
+
+    /** A crossover event. */
+    EVENT(4),
+
+    /** Any order to read things in. */
+    READING_ORDER(5),
     ;
 
     companion object {
@@ -45,7 +57,41 @@ data class ReadingPlan(
     val startedAt: Long,
     val startedOn: LocalDate,
     val paused: Boolean,
+    /** Whether the plan reads a collection that exists on its own, rather than one of its own. */
+    val standaloneCollection: Boolean = false,
 )
+
+/** A run, an arc, an event or a reading order, kept on its own and readable by plans. */
+data class ReadingCollection(
+    val id: Long,
+    val uuid: String,
+    val kind: CollectionKind,
+    val name: String,
+    val createdAt: Long,
+)
+
+data class CollectionProgress(
+    val collection: ReadingCollection,
+    val total: Int,
+    val done: Int,
+    val next: PlanChapter?,
+) {
+    val remaining: Int get() = total - done
+}
+
+object CollectionRules {
+
+    /** A collection's total is what it holds, each chapter once, whichever other collections hold it. */
+    fun progress(collection: ReadingCollection, chapters: List<PlanChapter>): CollectionProgress {
+        val unique = PlanRules.distinct(chapters)
+        return CollectionProgress(
+            collection = collection,
+            total = unique.size,
+            done = unique.count { it.read },
+            next = unique.firstOrNull { !it.read },
+        )
+    }
+}
 
 /** A chapter a plan covers, in the plan's reading order. */
 data class PlanChapter(

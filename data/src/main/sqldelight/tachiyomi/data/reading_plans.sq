@@ -12,13 +12,15 @@ CREATE TABLE reading_goals(
 );
 
 -- An ordered set of entries and chapters that may span several series. Items name what they hold by
--- source and URL as well as by id, so a collection survives backup and restore.
+-- source and URL as well as by id, so a collection survives backup and restore. A standalone
+-- collection (a run, an arc, an event) exists on its own; the others belong to one plan.
 CREATE TABLE reading_collections(
     _id INTEGER NOT NULL PRIMARY KEY,
     uuid TEXT NOT NULL UNIQUE,
     kind INTEGER NOT NULL,
     name TEXT NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    standalone INTEGER AS Boolean NOT NULL DEFAULT 0
 );
 
 CREATE TABLE reading_collection_items(
@@ -68,8 +70,28 @@ UPDATE reading_goals
 SET is_primary = 0;
 
 insertCollection:
-INSERT INTO reading_collections(uuid, kind, name, created_at)
-VALUES (:uuid, :kind, :name, :createdAt);
+INSERT INTO reading_collections(uuid, kind, name, created_at, standalone)
+VALUES (:uuid, :kind, :name, :createdAt, :standalone);
+
+updateCollection:
+UPDATE reading_collections
+SET name = :name, kind = :kind
+WHERE _id = :collectionId;
+
+getStandaloneCollections:
+SELECT *
+FROM reading_collections
+WHERE standalone = 1
+ORDER BY name COLLATE NOCASE;
+
+getCollection:
+SELECT *
+FROM reading_collections
+WHERE _id = :collectionId;
+
+deletePlan:
+DELETE FROM reading_plans
+WHERE _id = :planId;
 
 getCollectionId:
 SELECT _id
@@ -110,7 +132,7 @@ WHERE _id = :planId;
 
 getPlans:
 SELECT P._id, P.uuid, P.collection_id, P.pace_per_week, P.started_at, P.started_on, P.paused,
-       C.uuid AS collection_uuid, C.kind, C.name, C.created_at
+       C.uuid AS collection_uuid, C.kind, C.name, C.created_at, C.standalone
 FROM reading_plans P
 JOIN reading_collections C ON C._id = P.collection_id
 ORDER BY P.started_at;
@@ -124,7 +146,8 @@ WHERE uuid = :uuid;
 -- whole entry follows the scanlators the user has hidden, as the entry's chapter list does.
 collectionChapters:
 SELECT
-    I.position, C._id, C.manga_id, C.read, C.chapter_number, C.source_order,
+    I.position, C._id, C.manga_id, C.read, C.name, C.chapter_number, C.source_order,
+    L.value AS issue_label,
     (
         SELECT S.completed_on FROM reading_sessions S
         WHERE S.chapter_id = C._id AND S.first_completion = 1
@@ -140,6 +163,8 @@ JOIN chapters C ON (I.chapter_url IS NOT NULL AND C._id = I.chapter_id)
 LEFT JOIN excluded_scanlators ES ON I.chapter_url IS NULL
     AND ES.manga_id = C.manga_id
     AND ES.scanlator = C.scanlator
+-- The confirmed issue label (field 10), which orders annuals and collected editions after issues.
+LEFT JOIN comic_metadata L ON L.chapter_id = C._id AND L.field = 10 AND L.confirmed = 1 AND L.position = 0
 WHERE I.collection_id = :collectionId AND ES.scanlator IS NULL
 ORDER BY I.position, C.chapter_number, C.source_order DESC;
 

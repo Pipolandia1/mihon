@@ -89,11 +89,29 @@ fun ReadingHomeScreen(
                 onClick = { viewModel.setDialog(ReadingStatsViewModel.Dialog.Definitions) },
             ),
             AppBar.OverflowAction(
+                title = stringResource(MR.strings.reading_stats_comic_library),
+                onClick = { navigator.push(ComicLibraryScreen()) },
+            ),
+            AppBar.OverflowAction(
+                title = stringResource(MR.strings.reading_stats_collections),
+                onClick = { navigator.push(ReadingCollectionsScreen()) },
+            ),
+            AppBar.OverflowAction(
+                title = stringResource(MR.strings.reading_stats_online_settings),
+                onClick = { navigator.push(ComicOnlineSettingsScreen()) },
+            ),
+            AppBar.OverflowAction(
                 title = stringResource(
                     if (state.recordingEnabled) MR.strings.reading_stats_pause else MR.strings.reading_stats_resume,
                 ),
                 onClick = { viewModel.setRecordingEnabled(!state.recordingEnabled) },
             ),
+            *listOfNotNull(
+                AppBar.OverflowAction(
+                    title = stringResource(MR.strings.reading_stats_show_stalled),
+                    onClick = { viewModel.setHideStalled(false) },
+                ).takeIf { state.library?.hideStalled == true },
+            ).toTypedArray(),
             AppBar.OverflowAction(
                 title = stringResource(MR.strings.reading_stats_delete_all),
                 onClick = { viewModel.setDialog(ReadingStatsViewModel.Dialog.DeleteAll) },
@@ -112,6 +130,9 @@ fun ReadingHomeScreen(
                 onEditGoals = { navigator.push(ReadingGoalsScreen()) },
                 onEditPlans = { navigator.push(ReadingPlansScreen()) },
                 onShowMonth = viewModel::showMonth,
+                onOpenLibrary = { navigator.push(ComicLibraryScreen()) },
+                onOpenCollections = { navigator.push(ReadingCollectionsScreen()) },
+                onHideStalled = { viewModel.setHideStalled(true) },
             )
         },
     )

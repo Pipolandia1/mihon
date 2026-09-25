@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ComicInfo xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Title>Chapter One</Title>
+  <Series>Flashpoint</Series>
+  <Number>1</Number>
+  <Count>5</Count>
+  <Volume>2011</Volume>
+  <Year>2011</Year>
+  <Month>7</Month>
+  <Writer>Geoff Johns</Writer>
+  <Penciller>Andy Kubert</Penciller>
+  <Inker>Sandra Hope</Inker>
+  <Colorist>Alex Sinclair</Colorist>
+  <Letterer>Nick Napolitano</Letterer>
+  <CoverArtist>Andy Kubert</CoverArtist>
+  <Editor>Adam Schlagman, Rex Ogle</Editor>
+  <Publisher>DC Comics</Publisher>
+  <Genre>Superhero</Genre>
+  <PageCount>40</PageCount>
+  <Format>Limited Series</Format>
+  <StoryArc>Flashpoint</StoryArc>
+  <Characters>Flash, Batman</Characters>
+  <Teams>Justice League</Teams>
+  <Web>https://example.org</Web>
+</ComicInfo>

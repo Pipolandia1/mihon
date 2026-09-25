@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.datetime.TimeZone
@@ -27,6 +28,7 @@ import tachiyomi.domain.manga.model.asMangaCover
 import tachiyomi.domain.readingstats.metrics.ReadingCalendar
 import tachiyomi.domain.readingstats.plans.CollectionItem
 import tachiyomi.domain.readingstats.plans.CollectionKind
+import tachiyomi.domain.readingstats.plans.ReadingCollection
 import tachiyomi.domain.readingstats.plans.ReadingPlan
 import tachiyomi.domain.readingstats.repository.PlannableEntry
 import tachiyomi.domain.readingstats.repository.ReadingPlanRepository
@@ -67,6 +69,7 @@ class ReadingPlanEditorViewModel(
             return
         }
         this.plan = plan
+        val collection = if (plan.standaloneCollection) repository.getCollection(plan.collectionId) else null
         // Items of one entry become one row: the whole entry, or the chapters picked from it.
         val entries = repository.getItems(plan.collectionId)
             .mapNotNull { item -> item.mangaId?.let { it to item } }
@@ -90,7 +93,8 @@ class ReadingPlanEditorViewModel(
                 nameEdited = true,
                 pace = plan.pacePerWeek.toString(),
                 paused = plan.paused,
-                entries = entries,
+                entries = if (collection != null) emptyList() else entries,
+                collection = collection,
             )
         }
     }
@@ -170,15 +174,42 @@ class ReadingPlanEditorViewModel(
 
     fun setDialog(dialog: Dialog?) = mutableState.update { it.copy(dialog = dialog) }
 
+    fun openCollectionPicker() {
+        viewModelScope.launchIO {
+            val collections = repository.subscribeCollections().first()
+            mutableState.update { it.copy(dialog = Dialog.PickCollection(collections)) }
+        }
+    }
+
+    /** Reads a standalone collection instead of entries picked here; null goes back to picking. */
+    fun useCollection(collection: ReadingCollection?) {
+        mutableState.update {
+            it.copy(
+                dialog = null,
+                collection = collection,
+                name = if (collection != null && !it.nameEdited) collection.name else it.name,
+            )
+        }
+    }
+
     fun save() {
         val state = state.value
         val pace = state.pace.toIntOrNull()?.takeIf { it > 0 } ?: return
         val items = state.entries.flatMap(::itemsOf)
-        if (items.isEmpty()) return
+        val collection = state.collection
+        if (items.isEmpty() && collection == null) return
         val name = state.name.trim().ifEmpty { autoName(state.entries) }
         viewModelScope.launchIO {
             val existing = plan
-            if (existing == null) {
+            if (existing == null && collection != null) {
+                val now = Clock.System.now().toEpochMilliseconds()
+                repository.createPlanFor(
+                    collection = collection,
+                    pacePerWeek = pace,
+                    now = now,
+                    today = ReadingCalendar.dateOf(now, TimeZone.currentSystemDefault()),
+                )
+            } else if (existing == null) {
                 val now = Clock.System.now().toEpochMilliseconds()
                 val single = state.entries.size == 1 && state.entries[0].selected == null
                 repository.createPlan(
@@ -250,15 +281,19 @@ class ReadingPlanEditorViewModel(
         val pace: String = DEFAULT_PACE.toString(),
         val paused: Boolean = false,
         val entries: List<Entry> = emptyList(),
+        /** The standalone collection the plan reads, in place of [entries]. */
+        val collection: ReadingCollection? = null,
         val dialog: Dialog? = null,
     ) {
         val canSave: Boolean
-            get() = (pace.toIntOrNull() ?: 0) > 0 && entries.any { it.selected == null || it.selected.isNotEmpty() }
+            get() = (pace.toIntOrNull() ?: 0) > 0 &&
+                (collection != null || entries.any { it.selected == null || it.selected.isNotEmpty() })
     }
 
     sealed interface Dialog {
         data class PickEntry(val query: String, val results: List<PlannableEntry>) : Dialog
         data class PickChapters(val mangaId: Long, val selected: Set<Long>) : Dialog
+        data class PickCollection(val collections: List<ReadingCollection>) : Dialog
         data object ConfirmDelete : Dialog
     }
 

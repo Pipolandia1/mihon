@@ -64,6 +64,9 @@ fun ReadingStatsContent(
     onEditGoals: () -> Unit,
     onEditPlans: () -> Unit,
     onShowMonth: (LocalDate) -> Unit,
+    onOpenLibrary: () -> Unit,
+    onOpenCollections: () -> Unit,
+    onHideStalled: () -> Unit,
 ) {
     val week = state.week
     if (week == null) {
@@ -104,10 +107,33 @@ fun ReadingStatsContent(
                 }
             }
         }
+        state.library?.let { library ->
+            if (library.nearFinish.isNotEmpty()) {
+                item {
+                    SectionCard(MR.strings.reading_stats_near_finish) {
+                        NearFinishCard(library.nearFinish, onClickContinue)
+                    }
+                }
+            }
+            if (library.stalled.isNotEmpty() && !library.hideStalled) {
+                item {
+                    SectionCard(MR.strings.reading_stats_stalled) {
+                        StalledCard(library.stalled, library.nowMs, onClickContinue, onHideStalled)
+                    }
+                }
+            }
+        }
         state.activity?.let { activity ->
             item {
                 SectionCard(MR.strings.reading_stats_activity) {
                     ReadingActivity(activity, onClickDay, onShowMonth)
+                }
+            }
+        }
+        state.library?.takeIf { it.entries > 0 }?.let { library ->
+            item {
+                SectionCard(MR.strings.reading_stats_library) {
+                    LibraryCard(library, onOpenLibrary, onOpenCollections)
                 }
             }
         }

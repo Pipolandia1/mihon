@@ -1,0 +1,102 @@
+import kotlin.Boolean;
+
+-- Comic metadata, one row per value: list fields (writers, characters) have several rows. A row is
+-- on the series (chapter_id NULL) or on one chapter. Confirmed rows are what the user accepted and
+-- the only ones statistics use; the others are suggestions kept from Metron or ComicInfo.
+CREATE TABLE comic_metadata(
+    _id INTEGER NOT NULL PRIMARY KEY,
+    manga_id INTEGER NOT NULL REFERENCES mangas(_id) ON DELETE CASCADE,
+    chapter_id INTEGER REFERENCES chapters(_id) ON DELETE CASCADE,
+    field INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    value TEXT NOT NULL,
+    origin INTEGER NOT NULL,
+    confirmed INTEGER AS Boolean NOT NULL
+);
+
+CREATE INDEX comic_metadata_manga_index ON comic_metadata(manga_id, confirmed);
+CREATE INDEX comic_metadata_field_index ON comic_metadata(field, confirmed);
+
+metadataOf:
+SELECT *
+FROM comic_metadata
+WHERE manga_id = :mangaId
+ORDER BY chapter_id, field, position;
+
+insertValue:
+INSERT INTO comic_metadata(manga_id, chapter_id, field, position, value, origin, confirmed)
+VALUES (:mangaId, :chapterId, :field, :position, :value, :origin, :confirmed);
+
+deleteField:
+DELETE FROM comic_metadata
+WHERE manga_id = :mangaId AND chapter_id IS :chapterId AND field = :field AND confirmed = :confirmed;
+
+deleteSuggestions:
+DELETE FROM comic_metadata
+WHERE manga_id = :mangaId AND confirmed = 0 AND origin = :origin;
+
+confirmedOfLibrary:
+SELECT D.*
+FROM comic_metadata D
+JOIN mangas M ON M._id = D.manga_id
+WHERE D.confirmed = 1 AND M.favorite = 1;
+
+libraryEntries:
+SELECT _id, title, thumbnail_url, source, favorite, cover_last_modified, status, date_added
+FROM mangas
+WHERE favorite = 1;
+
+-- The chapters of library entries as their chapter lists show them, hidden scanlators left out.
+libraryChapters:
+SELECT C._id, C.manga_id, C.read, C.name, C.chapter_number, C.date_fetch
+FROM chapters C
+JOIN mangas M ON M._id = C.manga_id
+LEFT JOIN excluded_scanlators ES ON ES.manga_id = C.manga_id AND ES.scanlator = C.scanlator
+WHERE M.favorite = 1 AND ES.scanlator IS NULL;
+
+lastReadByManga:
+SELECT manga_id, max(ended_at) AS last_read
+FROM reading_sessions
+WHERE manga_id IS NOT NULL
+GROUP BY manga_id;
+
+lastOpenedByManga:
+SELECT C.manga_id, max(H.last_read) AS last_read
+FROM history H
+JOIN chapters C ON C._id = H.chapter_id
+GROUP BY C.manga_id;
+
+completedChapterIds:
+SELECT chapter_id
+FROM reading_sessions
+WHERE first_completion = 1 AND chapter_id IS NOT NULL AND completed_on BETWEEN :from AND :to
+UNION
+SELECT chapter_id
+FROM chapter_reading_progress
+WHERE completion_origin = 1 AND completed_on BETWEEN :from AND :to;
+
+confirmedArcs:
+SELECT DISTINCT value
+FROM comic_metadata
+WHERE field = 23 AND confirmed = 1 AND chapter_id IS NOT NULL
+ORDER BY value COLLATE NOCASE;
+
+chaptersOfArc:
+SELECT
+    A.manga_id, A.chapter_id,
+    C.name AS chapter_name, C.chapter_number, C.url AS chapter_url,
+    M.title, M.url AS manga_url, M.source,
+    D.value AS cover_date
+FROM comic_metadata A
+JOIN chapters C ON C._id = A.chapter_id
+JOIN mangas M ON M._id = A.manga_id
+-- The confirmed cover date (field 13), to order the arc across series.
+LEFT JOIN comic_metadata D ON D.chapter_id = A.chapter_id AND D.field = 13 AND D.confirmed = 1 AND D.position = 0
+WHERE A.field = 23 AND A.confirmed = 1 AND A.value = :arc;
+
+exportConfirmed:
+SELECT D.*, M.source, M.url AS manga_url, C.url AS chapter_url
+FROM comic_metadata D
+JOIN mangas M ON M._id = D.manga_id
+LEFT JOIN chapters C ON C._id = D.chapter_id
+WHERE D.confirmed = 1;

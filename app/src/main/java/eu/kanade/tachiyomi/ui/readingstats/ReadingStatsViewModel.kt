@@ -11,6 +11,8 @@ import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import eu.kanade.tachiyomi.readingstats.PlanProgressSource
 import eu.kanade.tachiyomi.readingstats.ReadingDays
 import eu.kanade.tachiyomi.readingstats.ReadingStatsConfig
+import eu.kanade.tachiyomi.readingstats.comics.LibrarySummary
+import eu.kanade.tachiyomi.readingstats.comics.LibrarySummarySource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
@@ -27,6 +29,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -73,6 +76,7 @@ class ReadingStatsViewModel(
     private val planRepository: ReadingPlanRepository,
     readingDays: ReadingDays,
     planProgress: PlanProgressSource,
+    librarySummary: LibrarySummarySource,
     private val preferences: ReadingStatsPreferences,
     private val getHistory: GetHistory,
     private val getNextChapters: GetNextChapters,
@@ -143,6 +147,10 @@ class ReadingStatsViewModel(
         .catch { logcat(LogPriority.ERROR, it) }
         .flowOn(Dispatchers.IO)
 
+    private val library: Flow<LibrarySummary?> = librarySummary.subscribe(today, firstDayOfWeek)
+        .catch { logcat(LogPriority.ERROR, it) }
+        .flowOn(Dispatchers.IO)
+
     private val continueReading: Flow<List<ContinueItem>> = getHistory.subscribe("")
         .distinctUntilChanged()
         .mapLatest { history ->
@@ -174,9 +182,7 @@ class ReadingStatsViewModel(
         .flowOn(Dispatchers.IO)
 
     private val summaries =
-        combine(week, objectives, activity, continueReading) { week, objectives, activity, continueReading ->
-            Summaries(week, objectives, activity, continueReading)
-        }
+        combine(week, objectives, activity, continueReading, library.onStart { emit(null) }, ::Summaries)
 
     val state: StateFlow<State> = combine(
         summaries,
@@ -189,6 +195,7 @@ class ReadingStatsViewModel(
             objectives = summaries.objectives,
             activity = summaries.activity,
             continueReading = summaries.continueReading,
+            library = summaries.library,
             selectedDay = day,
             dayEntries = entries?.takeIf { day != null },
             recordingEnabled = recording,
@@ -207,6 +214,10 @@ class ReadingStatsViewModel(
 
     fun setRecordingEnabled(enabled: Boolean) {
         preferences.recordingEnabled.set(enabled)
+    }
+
+    fun setHideStalled(hide: Boolean) {
+        preferences.hideStalledReminders.set(hide)
     }
 
     fun setDialog(dialog: Dialog?) {
@@ -270,6 +281,7 @@ class ReadingStatsViewModel(
         val objectives: ObjectivesState,
         val activity: ActivityState,
         val continueReading: List<ContinueItem>,
+        val library: LibrarySummary?,
     )
 
     @Immutable
@@ -278,6 +290,8 @@ class ReadingStatsViewModel(
         val objectives: ObjectivesState? = null,
         val activity: ActivityState? = null,
         val continueReading: List<ContinueItem> = emptyList(),
+        /** Null while loading. */
+        val library: LibrarySummary? = null,
         val selectedDay: LocalDate? = null,
         /** Null while the day is loading, or when no day is selected. */
         val dayEntries: List<ReadingDayEntry>? = null,

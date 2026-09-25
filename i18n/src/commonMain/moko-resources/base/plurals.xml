@@ -140,4 +140,40 @@
         <item quantity="one">%1$s reading days a week on average over the last week</item>
         <item quantity="other">%1$s reading days a week on average over the last %2$d weeks</item>
     </plurals>
+    <plurals name="reading_stats_accept_suggestions">
+        <item quantity="one">Accept %d suggestion</item>
+        <item quantity="other">Accept %d suggestions</item>
+    </plurals>
+    <plurals name="reading_stats_comic_info_read">
+        <item quantity="one">ComicInfo: %d value suggested.</item>
+        <item quantity="other">ComicInfo: %d values suggested.</item>
+    </plurals>
+    <plurals name="reading_stats_count_entries">
+        <item quantity="one">%d series</item>
+        <item quantity="other">%d series</item>
+    </plurals>
+    <plurals name="reading_stats_count_issues">
+        <item quantity="one">%d issue</item>
+        <item quantity="other">%d issues</item>
+    </plurals>
+    <plurals name="reading_stats_count_collected">
+        <item quantity="one">%d collected edition</item>
+        <item quantity="other">%d collected editions</item>
+    </plurals>
+    <plurals name="reading_stats_count_other">
+        <item quantity="one">%d other</item>
+        <item quantity="other">%d other</item>
+    </plurals>
+    <plurals name="reading_stats_count_unknown">
+        <item quantity="one">%d chapter of unknown format</item>
+        <item quantity="other">%d chapters of unknown format</item>
+    </plurals>
+    <plurals name="reading_stats_left">
+        <item quantity="one">%d left</item>
+        <item quantity="other">%d left</item>
+    </plurals>
+    <plurals name="reading_stats_stalled_for">
+        <item quantity="one">Nothing read for %d day</item>
+        <item quantity="other">Nothing read for %d days</item>
+    </plurals>
 </resources>

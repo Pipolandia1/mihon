@@ -1,0 +1,32 @@
+{
+  "api_url": "https://www.comics.org/api/issue/833090/?format=json",
+  "series_name": "Flashpoint (2011 series)",
+  "descriptor": "1 [Direct Sales]",
+  "number": "1",
+  "volume": "",
+  "variant_name": "Direct Sales",
+  "title": "",
+  "publication_date": "July 2011",
+  "key_date": "2011-07-00",
+  "price": "3.99 USD",
+  "page_count": "44.000",
+  "editing": "Adam Schlagman (editor); Rex Ogle (editor); Eddie Berganza (executive editor)",
+  "indicia_publisher": "DC Comics",
+  "brand_emblem": "DC [swirl]",
+  "isbn": "",
+  "barcode": "",
+  "rating": "Rated T Teen",
+  "on_sale_date": "2011-05-11",
+  "indicia_frequency": "monthly",
+  "notes": "",
+  "variant_of": null,
+  "series": "https://www.comics.org/api/series/58499/?format=json",
+  "indicia_printer": "",
+  "keywords": "",
+  "story_set": [
+    {"type": "cover", "title": "", "feature": "The Flash", "sequence_number": 0, "page_count": "1.000", "script": "None", "pencils": "Andy Kubert (signed)", "inks": "Sandra Hope (signed)", "colors": "Alex Sinclair (signed as Sinc)", "letters": "None", "editing": "None", "job_number": "", "genre": "superhero", "characters": "Flash [Barry Allen]; Cyborg [Victor Stone]", "synopsis": "", "notes": "", "keywords": ""},
+    {"type": "comic story", "title": "Flashpoint Chapter One of Five", "feature": "The Flash", "sequence_number": 1, "page_count": "34.000", "script": "Geoff Johns", "pencils": "Andy Kubert", "inks": "Sandra Hope", "colors": "Alex Sinclair", "letters": "Nick Napolitano", "editing": "None", "job_number": "", "genre": "superhero", "characters": "Flash [Barry Allen]; Nora Allen (in flashback); Justice League [Batman [Thomas Wayne]; Cyborg [Victor Stone]]; VILLAINS: Reverse-Flash [Professor Zoom; Eobard Thawne]", "synopsis": "", "notes": "", "keywords": ""},
+    {"type": "in-house column", "title": "DC Nation", "feature": "DC Nation", "sequence_number": 2, "page_count": "1.000", "script": "Ian Sattler", "pencils": "?", "inks": "?", "colors": "?", "letters": "typeset", "editing": "None", "job_number": "", "genre": "superhero", "characters": "", "synopsis": "", "notes": "", "keywords": ""}
+  ],
+  "cover": ""
+}
