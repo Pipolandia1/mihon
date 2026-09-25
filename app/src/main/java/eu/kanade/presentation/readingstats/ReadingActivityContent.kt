@@ -40,7 +40,6 @@ import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.rounded.KeyboardArrowLeft
 import mihon.icons.materialsymbols.rounded.KeyboardArrowRight
 import tachiyomi.domain.readingstats.habits.ReadingHabits
-import tachiyomi.domain.readingstats.metrics.ReadingPeriod
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.material.SECONDARY_ALPHA
 import tachiyomi.presentation.core.components.material.padding
@@ -282,9 +281,6 @@ private fun Records(activity: ReadingStatsViewModel.ActivityState, context: andr
         lines.forEach { Footnote(it) }
     }
 }
-
-private fun periodText(period: ReadingPeriod, today: LocalDate): String =
-    "${readingShortDateText(period.from, today)} – ${readingShortDateText(period.to, today)}"
 
 @Composable
 private fun Footnote(text: String) {

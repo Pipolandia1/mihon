@@ -67,6 +67,8 @@ fun ReadingStatsContent(
     onOpenLibrary: () -> Unit,
     onOpenCollections: () -> Unit,
     onHideStalled: () -> Unit,
+    onOpenDetails: () -> Unit,
+    onOpenRetrospective: () -> Unit,
 ) {
     val week = state.week
     if (week == null) {
@@ -121,6 +123,11 @@ fun ReadingStatsContent(
                         StalledCard(library.stalled, library.nowMs, onClickContinue, onHideStalled)
                     }
                 }
+            }
+        }
+        item {
+            SectionCard(MR.strings.reading_stats_insights) {
+                InsightsCard(state.insights, week.today, onOpenDetails, onOpenRetrospective)
             }
         }
         state.activity?.let { activity ->

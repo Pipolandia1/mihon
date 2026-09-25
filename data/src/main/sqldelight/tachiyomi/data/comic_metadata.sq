@@ -100,3 +100,8 @@ FROM comic_metadata D
 JOIN mangas M ON M._id = D.manga_id
 LEFT JOIN chapters C ON C._id = D.chapter_id
 WHERE D.confirmed = 1;
+
+confirmedOfMangas:
+SELECT *
+FROM comic_metadata
+WHERE confirmed = 1 AND manga_id IN :mangaIds;

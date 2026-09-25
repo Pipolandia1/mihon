@@ -176,4 +176,16 @@
         <item quantity="one">Nothing read for %d day</item>
         <item quantity="other">Nothing read for %d days</item>
     </plurals>
+    <plurals name="reading_stats_insight_streak">
+        <item quantity="one">You have read %d day in a row.</item>
+        <item quantity="other">You have read %d days in a row.</item>
+    </plurals>
+    <plurals name="reading_stats_insight_backlog">
+        <item quantity="one">At your pace of the last 4 weeks, what is left to read in your library would take about %d week.</item>
+        <item quantity="other">At your pace of the last 4 weeks, what is left to read in your library would take about %d weeks.</item>
+    </plurals>
+    <plurals name="reading_stats_retro_streak">
+        <item quantity="one">Longest streak: %d day</item>
+        <item quantity="other">Longest streak: %d days</item>
+    </plurals>
 </resources>

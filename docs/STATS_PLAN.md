@@ -671,7 +671,16 @@ antes de instalar no emulador.
 - [x] C3 biblioteca e backlog — `ComicLibrary`, cartão "Biblioteca", `ComicLibraryScreen`
 - [x] C4 perto de terminar e paradas — cartões com lembrete escondível
 - [x] C5 backup — `BackupReadingStats` campos 6 (metadados confirmados) e 7 (coleções)
-- [ ] D1–D4
+- [x] D1 detalhes por período — `ReadingDetailsScreen` (7/30 dias, 12 meses, tudo, intervalo), gráfico por
+  dia/semana/mês com barras desconhecidas vazadas e resumo em texto, `PeriodBreakdown`; tela
+  `ReadingDefinitionsScreen` ("Como contamos") com os limites vindos das constantes do código
+- [x] D2 ritmo e hábitos — `ReadingPace`: páginas/hora, minutos por dia de leitura, capítulos/semana,
+  sessões (mediana, média, faixas), dias da semana e horas no fuso de cada sessão, estimativa
+  condicional "no seu ritmo das últimas 4 semanas"
+- [x] D3 rankings — `Rankings` por obra, editora, selo, roteiro, arte, gênero, personagem, universo e
+  década; só com ≥ 60 % do tempo classificado, com "baseado em X %"; desconhecido nunca entra
+- [x] D4 insights e retrospectivas — `InsightRules` (7 regras com "Por quê?"), cartão Insights na aba
+  Stats, `ReadingRetrospectiveScreen` (mês e ano), compartilhar como texto ou imagem feita no aparelho
 
 ### Verificação da Fase A (24/09/2026)
 
@@ -812,3 +821,54 @@ há como gravar respostas reais); as do GCD seguem respostas reais consultadas u
 **Não verificado:** Metron ao vivo (sem token — o cadastro está fechado); login do GCD; "Paradas"
 (precisa de 30 dias sem leitura; coberto por teste); restaurar backup no aparelho; tema claro;
 TalkBack. Arcos só aparecem com metadados que os tragam (Metron ou ComicInfo; o GCD não tem arcos).
+
+### Verificação da Fase D (25/09/2026)
+
+**Como ficou:**
+- Tudo nos pacotes da feature; nenhum arquivo upstream tocado nesta fase. Novas consultas em
+  `reading_stats.sq` (primeiro dia com atividade, sessões do período, tempo por capítulo, concluídos do
+  período) e `comic_metadata.sq` (confirmados de várias obras de uma vez); sem migração.
+- "Ano" virou **12 meses** corridos (como 7 e 30 dias); a retrospectiva anual usa o ano civil.
+- Horas: cada sessão conta nas horas do relógio que atravessou, em proporção, no fuso gravado nela
+  (inclusive fusos de meia hora). Dia da semana vem dos segmentos por dia.
+- Rankings: um capítulo com vários nomes conta inteiro para cada um; a porcentagem é do tempo total do
+  período; abaixo de 60 % aparece só a cobertura e um atalho para a Biblioteca de HQ.
+- Insights: melhor semana, variação da semana, sequência, obra em destaque, parte do dia, dia da semana
+  e backlog no ritmo recente; no máximo 3 no cartão; cada um mostra números e regra.
+- Compartilhar: só por ação do usuário, pela folha do sistema; a imagem é desenhada no aparelho
+  (`RetrospectiveShare`, cache `shared_image`).
+
+**Testes na JVM (31 novos, 507 no total, todos passando):** `PeriodBreakdownTest` (4),
+`ReadingPaceTest` (9: ritmo só nos dias registrados, desconhecido não é zero, mediana e faixas, horas
+repartidas no fuso de São Paulo e num fuso de meia hora, partes do dia, dias da semana, ritmo recente
+com mínimos, estimativas só com total conhecido), `RankingsTest` (4: desconhecido nunca lidera e
+cobertura abaixo de 60 % não mostra, vários nomes contam para cada um, década, obra sem metadado),
+`InsightsTest` (8: cada regra com o seu limite e a ordem), `RetrospectiveTest` (2),
+`ReadingAnalysisQueriesTest` (4, SQLite real).
+
+**Emulador** (`tools/shots/stats-d-*.png`; só há leitura registrada em 24/09, então a maioria dos
+números é pequena — o que também testa os estados "pouco para dizer"):
+- cartão Insights: "Ainda nada a destacar…" (correto com um dia de dados) + Detalhes e Resumo do mês;
+- Detalhes, 30 dias: "27 de ago. – 25 de set.", nota de registro, resumo (2m, 4 páginas, 1 de 2 dias,
+  "De antes do registro: 3"), "Sem comparação: o período anterior … não foi registrado inteiro";
+  gráfico com 28 barras vazadas antes do registro e o pico em 24 de set.;
+- ritmo: páginas/hora e capítulos/semana "—" (pouco dado), 2 min por dia de leitura; sessões: 3,
+  mediana 42s, mais longa 1m (Absolute Batman #15), faixa "<5";
+- quando você lê: quinta-feira; horas 19h e 21h (as sessões de 16h19 e 18h24 de Brasília, no fuso GMT
+  do emulador) → "Você lê mais à noite"; estimativa: "Ainda sem ritmo para estimar…";
+- rankings: Obras "Absolute Batman (2024-) 2m · 100%"; Editora "Só 0% … confirmado"; depois de
+  confirmar "DC Comics" no Absolute Batman (sugestão pelo gênero), "DC Comics 2m · 100% · Baseado em
+  100%";
+- 12 meses em barras mensais (set…set); Tudo começa em 22/09 (primeira conclusão importada) e não
+  compara; Intervalo 10–24/09 compara com 26/08–09/09;
+- Resumo do mês (setembro, em andamento) e Retrospectiva do ano (2026, com melhor semana);
+  compartilhar como imagem abriu a folha do sistema (nenhum destino escolhido) e a imagem gerada no
+  aparelho (`cache/shared_image/reading_retrospective.png`, 1080×947) mostra o resumo certo;
+- "Como contamos" com os limites vindos do código (2m/1m, 28/14/2, 60 %, limites dos insights).
+
+**Corrigido depois de olhar:** cabeçalho do seletor de intervalo quebrava "Data de término" letra a
+letra em pt-BR (trocado por um cabeçalho próprio, sem o botão de modo); "tem editora confirmado"
+(concordância) → "tem o campo “editora” confirmado"; mês da retrospectiva com inicial maiúscula.
+
+**Não verificado:** os insights com dados reais (precisam de semanas de leitura; cobertos por teste);
+estimativas de término no aparelho (idem); compartilhar como texto; tema claro; TalkBack.

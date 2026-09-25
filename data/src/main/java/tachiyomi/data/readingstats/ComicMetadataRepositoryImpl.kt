@@ -42,6 +42,13 @@ class ComicMetadataRepositoryImpl(
         return metadata(mangaId, queries.metadataOf(mangaId).awaitAsList())
     }
 
+    override suspend fun getConfirmed(mangaIds: Collection<Long>): Map<Long, ComicMetadata> {
+        if (mangaIds.isEmpty()) return emptyMap()
+        return mangaIds.distinct().chunked(MAX_QUERY_IDS).flatMap { queries.confirmedOfMangas(it).awaitAsList() }
+            .groupBy { it.manga_id }
+            .mapValues { (mangaId, rows) -> metadata(mangaId, rows) }
+    }
+
     override suspend fun confirm(mangaId: Long, values: List<MetadataValue>) {
         database.transaction {
             values.forEach { value ->
@@ -192,5 +199,8 @@ class ComicMetadataRepositoryImpl(
     private companion object {
         /** Publication statuses after which the chapters a source lists are all there will be. */
         val FINISHED = setOf(SManga.COMPLETED, SManga.PUBLISHING_FINISHED, SManga.CANCELLED)
+
+        /** SQLite allows 999 variables in a statement. */
+        const val MAX_QUERY_IDS = 900
     }
 }

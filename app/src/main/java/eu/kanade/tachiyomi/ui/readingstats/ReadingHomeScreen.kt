@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -33,8 +31,6 @@ import eu.kanade.presentation.components.TabContent
 import eu.kanade.presentation.components.TabbedScreen
 import eu.kanade.presentation.readingstats.ReadingDayContent
 import eu.kanade.presentation.readingstats.ReadingStatsContent
-import eu.kanade.presentation.readingstats.readingTimeText
-import eu.kanade.tachiyomi.readingstats.ReadingStatsConfig
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.stats.StatsScreen
@@ -48,8 +44,7 @@ import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.rounded.CalendarMonth
 import mihon.icons.materialsymbols.rounded.DeleteSweep
 import mihon.icons.materialsymbols.rounded.QueryStats
-import tachiyomi.domain.readingstats.metrics.ReadingMetrics
-import tachiyomi.domain.readingstats.plans.PlanRules
+import tachiyomi.domain.readingstats.analysis.RetrospectiveKind
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 import kotlin.time.Clock
@@ -85,8 +80,12 @@ fun ReadingHomeScreen(
                 onClick = { navigator.push(StatsScreen()) },
             ),
             AppBar.OverflowAction(
+                title = stringResource(MR.strings.reading_stats_details),
+                onClick = { navigator.push(ReadingDetailsScreen()) },
+            ),
+            AppBar.OverflowAction(
                 title = stringResource(MR.strings.reading_stats_how_counted),
-                onClick = { viewModel.setDialog(ReadingStatsViewModel.Dialog.Definitions) },
+                onClick = { navigator.push(ReadingDefinitionsScreen()) },
             ),
             AppBar.OverflowAction(
                 title = stringResource(MR.strings.reading_stats_comic_library),
@@ -133,6 +132,8 @@ fun ReadingHomeScreen(
                 onOpenLibrary = { navigator.push(ComicLibraryScreen()) },
                 onOpenCollections = { navigator.push(ReadingCollectionsScreen()) },
                 onHideStalled = { viewModel.setHideStalled(true) },
+                onOpenDetails = { navigator.push(ReadingDetailsScreen()) },
+                onOpenRetrospective = { navigator.push(ReadingRetrospectiveScreen(RetrospectiveKind.MONTH)) },
             )
         },
     )
@@ -198,30 +199,6 @@ fun ReadingHomeScreen(
             text = stringResource(MR.strings.reading_stats_delete_all_confirm),
             onConfirm = viewModel::deleteAll,
             onDismissRequest = onDismissRequest,
-        )
-        ReadingStatsViewModel.Dialog.Definitions -> AlertDialog(
-            onDismissRequest = onDismissRequest,
-            confirmButton = {
-                TextButton(onClick = onDismissRequest) { Text(stringResource(MR.strings.action_ok)) }
-            },
-            title = { Text(stringResource(MR.strings.reading_stats_how_counted)) },
-            text = {
-                val tracker = ReadingStatsConfig.TRACKER
-                Text(
-                    text = stringResource(
-                        MR.strings.reading_stats_definitions,
-                        readingTimeText(context, tracker.idleTimeout.inWholeMilliseconds),
-                        readingTimeText(context, tracker.idleGrace.inWholeMilliseconds),
-                        readingTimeText(context, ReadingMetrics.READING_DAY_MIN_ACTIVE.inWholeMilliseconds),
-                    ) + "\n\n" + stringResource(
-                        MR.strings.reading_stats_definitions_habits,
-                        PlanRules.FORECAST_WINDOW_DAYS,
-                        PlanRules.FORECAST_MIN_DAYS,
-                        PlanRules.FORECAST_MIN_FINISHED,
-                    ),
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                )
-            },
         )
         ReadingStatsViewModel.Dialog.PickDay -> PickDayDialog(
             initial = state.selectedDay ?: state.week?.today,

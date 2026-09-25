@@ -177,4 +177,16 @@
         <item quantity="one">Parada há %d dia</item>
         <item quantity="other">Parada há %d dias</item>
     </plurals>
+    <plurals name="reading_stats_insight_streak">
+        <item quantity="one">Você leu %d dia seguido.</item>
+        <item quantity="other">Você leu %d dias seguidos.</item>
+    </plurals>
+    <plurals name="reading_stats_insight_backlog">
+        <item quantity="one">No seu ritmo das últimas 4 semanas, o que falta ler na biblioteca levaria cerca de %d semana.</item>
+        <item quantity="other">No seu ritmo das últimas 4 semanas, o que falta ler na biblioteca levaria cerca de %d semanas.</item>
+    </plurals>
+    <plurals name="reading_stats_retro_streak">
+        <item quantity="one">Maior sequência: %d dia</item>
+        <item quantity="other">Maior sequência: %d dias</item>
+    </plurals>
 </resources>

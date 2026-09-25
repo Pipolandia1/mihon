@@ -2,6 +2,9 @@ package tachiyomi.domain.readingstats.repository
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.datetime.LocalDate
+import tachiyomi.domain.readingstats.analysis.ChapterReading
+import tachiyomi.domain.readingstats.analysis.CompletedChapter
+import tachiyomi.domain.readingstats.analysis.SessionFacts
 import tachiyomi.domain.readingstats.habits.SessionRecord
 import tachiyomi.domain.readingstats.model.ChapterKey
 import tachiyomi.domain.readingstats.model.ChapterProgress
@@ -52,6 +55,18 @@ interface ReadingStatsRepository {
 
     /** The session with the most active time. */
     suspend fun getLongestSession(): SessionRecord?
+
+    /** The earliest day with anything recorded or carried over; null before any reading. */
+    suspend fun getFirstActivityDate(): LocalDate?
+
+    /** Reader sessions with any reading on the days from [from] to [to], oldest first. */
+    suspend fun getSessions(from: LocalDate, to: LocalDate): List<SessionFacts>
+
+    /** Active time per chapter on the days from [from] to [to]. */
+    suspend fun getReadingByChapter(from: LocalDate, to: LocalDate): List<ChapterReading>
+
+    /** Chapters first completed in the reader, or marked read by hand, from [from] to [to]. */
+    suspend fun getCompletedChapters(from: LocalDate, to: LocalDate): List<CompletedChapter>
 
     /** Everything read on [date]: sessions, hand-marked and carried-over completions. */
     fun subscribeDayEntries(date: LocalDate, dayStart: Long, dayEnd: Long): Flow<List<ReadingDayEntry>>

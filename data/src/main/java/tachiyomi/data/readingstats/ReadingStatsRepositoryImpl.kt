@@ -17,6 +17,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.datetime.LocalDate
 import tachiyomi.data.Database
 import tachiyomi.data.subscribeToList
+import tachiyomi.domain.readingstats.analysis.ChapterReading
+import tachiyomi.domain.readingstats.analysis.CompletedChapter
+import tachiyomi.domain.readingstats.analysis.SessionFacts
 import tachiyomi.domain.readingstats.habits.SessionRecord
 import tachiyomi.domain.readingstats.model.ChapterKey
 import tachiyomi.domain.readingstats.model.ChapterPages
@@ -198,6 +201,36 @@ class ReadingStatsRepositoryImpl(
             SessionRecord(it.manga_title, it.chapter_name, it.chapter_number, it.active_ms, it.started_at)
         }
     }
+
+    override suspend fun getFirstActivityDate(): LocalDate? =
+        queries.firstActivityDate().awaitAsOneOrNull()?.first_date?.let(LocalDate::parse)
+
+    override suspend fun getSessions(from: LocalDate, to: LocalDate): List<SessionFacts> =
+        queries.sessionsInPeriod(from.toString(), to.toString()).awaitAsList().map {
+            SessionFacts(
+                id = it._id,
+                startedAt = it.started_at,
+                endedAt = it.ended_at,
+                activeMs = it.active_ms,
+                pagesNew = it.pages_new.toInt(),
+                zoneId = it.zone_id,
+                mangaId = it.manga_id,
+                chapterId = it.chapter_id,
+                title = it.manga_title,
+                chapterName = it.chapter_name,
+                chapterNumber = it.chapter_number,
+            )
+        }
+
+    override suspend fun getReadingByChapter(from: LocalDate, to: LocalDate): List<ChapterReading> =
+        queries.readingByChapter(from.toString(), to.toString()).awaitAsList().map {
+            ChapterReading(it.manga_id, it.chapter_id, it.manga_title, it.active_ms ?: 0)
+        }
+
+    override suspend fun getCompletedChapters(from: LocalDate, to: LocalDate): List<CompletedChapter> =
+        queries.completedChaptersInPeriod(from.toString(), to.toString()).awaitAsList().mapNotNull { row ->
+            row.chapter_id?.let { CompletedChapter(it, row.manga_id) }
+        }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun subscribeDayEntries(date: LocalDate, dayStart: Long, dayEnd: Long): Flow<List<ReadingDayEntry>> {

@@ -9,6 +9,7 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import eu.kanade.tachiyomi.readingstats.PlanProgressSource
+import eu.kanade.tachiyomi.readingstats.ReadingAnalysisSource
 import eu.kanade.tachiyomi.readingstats.ReadingDays
 import eu.kanade.tachiyomi.readingstats.ReadingStatsConfig
 import eu.kanade.tachiyomi.readingstats.comics.LibrarySummary
@@ -44,6 +45,7 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.history.interactor.GetHistory
 import tachiyomi.domain.history.interactor.GetNextChapters
 import tachiyomi.domain.manga.model.MangaCover
+import tachiyomi.domain.readingstats.analysis.Insight
 import tachiyomi.domain.readingstats.goals.GoalProgress
 import tachiyomi.domain.readingstats.goals.GoalRules
 import tachiyomi.domain.readingstats.habits.Frequency
@@ -77,6 +79,7 @@ class ReadingStatsViewModel(
     readingDays: ReadingDays,
     planProgress: PlanProgressSource,
     librarySummary: LibrarySummarySource,
+    analysis: ReadingAnalysisSource,
     private val preferences: ReadingStatsPreferences,
     private val getHistory: GetHistory,
     private val getNextChapters: GetNextChapters,
@@ -147,6 +150,10 @@ class ReadingStatsViewModel(
         .catch { logcat(LogPriority.ERROR, it) }
         .flowOn(Dispatchers.IO)
 
+    private val insights: Flow<List<Insight>> = analysis.insights(today, recordingStartedOn, firstDayOfWeek)
+        .catch { logcat(LogPriority.ERROR, it) }
+        .flowOn(Dispatchers.IO)
+
     private val library: Flow<LibrarySummary?> = librarySummary.subscribe(today, firstDayOfWeek)
         .catch { logcat(LogPriority.ERROR, it) }
         .flowOn(Dispatchers.IO)
@@ -181,8 +188,14 @@ class ReadingStatsViewModel(
         .catch { logcat(LogPriority.ERROR, it) }
         .flowOn(Dispatchers.IO)
 
-    private val summaries =
-        combine(week, objectives, activity, continueReading, library.onStart { emit(null) }, ::Summaries)
+    private val summaries = combine(
+        combine(week, objectives, activity, ::Triple),
+        continueReading,
+        library.onStart { emit(null) },
+        insights.onStart { emit(emptyList()) },
+    ) { (week, objectives, activity), continueReading, library, insights ->
+        Summaries(week, objectives, activity, continueReading, library, insights)
+    }
 
     val state: StateFlow<State> = combine(
         summaries,
@@ -196,6 +209,7 @@ class ReadingStatsViewModel(
             activity = summaries.activity,
             continueReading = summaries.continueReading,
             library = summaries.library,
+            insights = summaries.insights,
             selectedDay = day,
             dayEntries = entries?.takeIf { day != null },
             recordingEnabled = recording,
@@ -282,6 +296,7 @@ class ReadingStatsViewModel(
         val activity: ActivityState,
         val continueReading: List<ContinueItem>,
         val library: LibrarySummary?,
+        val insights: List<Insight>,
     )
 
     @Immutable
@@ -292,6 +307,7 @@ class ReadingStatsViewModel(
         val continueReading: List<ContinueItem> = emptyList(),
         /** Null while loading. */
         val library: LibrarySummary? = null,
+        val insights: List<Insight> = emptyList(),
         val selectedDay: LocalDate? = null,
         /** Null while the day is loading, or when no day is selected. */
         val dayEntries: List<ReadingDayEntry>? = null,
@@ -350,7 +366,6 @@ class ReadingStatsViewModel(
     sealed interface Dialog {
         data class DeleteSession(val sessionId: Long) : Dialog
         data object DeleteAll : Dialog
-        data object Definitions : Dialog
         data object PickDay : Dialog
     }
 

@@ -21,16 +21,19 @@ object ReadingStatsFixtures {
         endedAt: Long = activeMs,
         pagesNew: Int = 1,
         completedOn: LocalDate? = null,
+        day: LocalDate = DAY,
+        mangaId: Long = 1,
+        title: String = "Title 1",
     ): SessionWrite {
         val snapshot = SessionSnapshot(
             uuid = uuid,
-            mangaId = 1,
+            mangaId = mangaId,
             chapterId = chapterId,
             key = ChapterKey(
                 1,
                 "/manga/1",
                 "/chapter/$chapterId",
-                "Title 1",
+                title,
                 "Chapter $chapterId",
                 chapterId.toDouble(),
             ),
@@ -51,7 +54,7 @@ object ReadingStatsFixtures {
             origin = ReadingOrigin.READER,
             state = SessionState.CLOSED,
             zoneId = "UTC",
-            days = listOf(DayTotals(DAY, activeMs, pagesNew, pagesNew)),
+            days = listOf(DayTotals(day, activeMs, pagesNew, pagesNew)),
         )
         val progress = ChapterProgress(
             chapterId = chapterId,

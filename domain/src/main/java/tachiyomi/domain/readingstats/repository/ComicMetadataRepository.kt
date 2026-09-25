@@ -16,6 +16,9 @@ interface ComicMetadataRepository {
 
     suspend fun get(mangaId: Long): ComicMetadata
 
+    /** The confirmed metadata of each of [mangaIds] that has any. */
+    suspend fun getConfirmed(mangaIds: Collection<Long>): Map<Long, ComicMetadata>
+
     /** Confirms values, each replacing what was confirmed for its field and scope. Empty values remove it. */
     suspend fun confirm(mangaId: Long, values: List<MetadataValue>)
 

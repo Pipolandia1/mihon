@@ -329,3 +329,43 @@ SELECT P.*, C.url AS chapter_url, C.name AS chapter_name, C.chapter_number,
 FROM chapter_reading_progress P
 JOIN chapters C ON C._id = P.chapter_id
 JOIN mangas M ON M._id = C.manga_id;
+
+-- The earliest day with anything recorded or carried over, for "all time".
+firstActivityDate:
+SELECT min(d) AS first_date FROM (
+    SELECT min(local_date) AS d FROM reading_day_segments
+    UNION ALL
+    SELECT min(completed_on) FROM chapter_reading_progress WHERE completion_origin IN (1, 2)
+    UNION ALL
+    SELECT min(completed_on) FROM reading_sessions WHERE first_completion = 1
+);
+
+-- Reader sessions with any reading on the days from :from to :to.
+sessionsInPeriod:
+SELECT _id, started_at, ended_at, active_ms, pages_new, zone_id, manga_id, chapter_id,
+       manga_title, chapter_name, chapter_number
+FROM reading_sessions
+WHERE origin = 0 AND _id IN (
+    SELECT session_id FROM reading_day_segments WHERE local_date BETWEEN :from AND :to
+)
+ORDER BY started_at;
+
+-- Active time per chapter on the days from :from to :to; a deleted chapter keeps its entry's title.
+readingByChapter:
+SELECT S.manga_id, S.chapter_id, S.manga_title, sum(D.active_ms) AS active_ms
+FROM reading_day_segments D
+JOIN reading_sessions S ON S._id = D.session_id
+WHERE D.local_date BETWEEN :from AND :to
+GROUP BY S.manga_id, S.chapter_id, S.manga_title;
+
+-- Chapters first completed in the reader, or marked read by hand, on the days from :from to :to.
+completedChaptersInPeriod:
+SELECT S.chapter_id, C.manga_id
+FROM reading_sessions S
+JOIN chapters C ON C._id = S.chapter_id
+WHERE S.first_completion = 1 AND S.completed_on BETWEEN :from AND :to
+UNION
+SELECT P.chapter_id, C.manga_id
+FROM chapter_reading_progress P
+JOIN chapters C ON C._id = P.chapter_id
+WHERE P.completion_origin = 1 AND P.completed_on BETWEEN :from AND :to;
