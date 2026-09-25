@@ -244,4 +244,9 @@
         <item quantity="many">%d edições disponíveis</item>
         <item quantity="other">%d edições disponíveis</item>
     </plurals>
+    <plurals name="start_sources_attempt_no_match">
+        <item quantity="one">%1$d resultado, não é esta série (“%2$s”)</item>
+        <item quantity="many">%1$d resultados, nenhum é esta série (o primeiro: “%2$s”)</item>
+        <item quantity="other">%1$d resultados, nenhum é esta série (o primeiro: “%2$s”)</item>
+    </plurals>
 </resources>

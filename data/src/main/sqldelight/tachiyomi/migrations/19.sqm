@@ -1,0 +1,12 @@
+-- Where the Início's recommendations from outside the library were found (docs/HOME_PLAN.md, H4).
+
+CREATE TABLE start_source_matches(
+    catalog_key TEXT NOT NULL PRIMARY KEY,
+    source_id INTEGER,
+    manga_url TEXT,
+    manga_id INTEGER REFERENCES mangas(_id) ON DELETE SET NULL,
+    matched_title TEXT,
+    tried_sources TEXT NOT NULL,
+    checked_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+);

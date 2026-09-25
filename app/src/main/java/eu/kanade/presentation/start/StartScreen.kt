@@ -84,6 +84,7 @@ fun StartScreen(
     onOpenLibrary: () -> Unit,
     onFeedback: (mangaId: Long, verdict: FeedbackVerdict) -> Unit,
     onUndoFeedback: (mangaId: Long) -> Unit,
+    onOpenSources: () -> Unit,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -118,6 +119,10 @@ fun StartScreen(
                                 title = stringResource(MR.strings.action_global_search),
                                 icon = MaterialSymbols.Rounded.Search,
                                 onClick = onClickSearch,
+                            ),
+                            AppBar.OverflowAction(
+                                title = stringResource(MR.strings.start_sources_title),
+                                onClick = onOpenSources,
                             ),
                         ),
                     )

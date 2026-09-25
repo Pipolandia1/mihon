@@ -19,6 +19,7 @@ import eu.kanade.tachiyomi.ui.library.LibraryTab
 import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
+import eu.kanade.tachiyomi.ui.start.sources.RecommendationSourcesScreen
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.rounded.Home
 import mihon.icons.materialsymbols.roundedfilled.Home
@@ -68,6 +69,7 @@ data object StartTab : Tab {
             onOpenLibrary = { tabNavigator.current = LibraryTab },
             onFeedback = viewModel::setFeedback,
             onUndoFeedback = viewModel::undoFeedback,
+            onOpenSources = { navigator.push(RecommendationSourcesScreen()) },
         )
 
         // The splash screen waits for the first tab to have something to show.

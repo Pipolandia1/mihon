@@ -232,4 +232,8 @@
         <item quantity="one">%d issue available</item>
         <item quantity="other">%d issues available</item>
     </plurals>
+    <plurals name="start_sources_attempt_no_match">
+        <item quantity="one">%1$d result, not this series (“%2$s”)</item>
+        <item quantity="other">%1$d results, none of them this series (first “%2$s”)</item>
+    </plurals>
 </resources>

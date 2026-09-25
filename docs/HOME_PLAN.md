@@ -532,7 +532,8 @@ ficam intactos. O cartão "Continuar lendo" do Stats está no pacote da feature.
   até o fim e volta com edição nova; Continuar lendo e Perto de terminar saíram da aba Stats
 - [x] H3 motor de afinidade, "Leia isso agora", "Por quê?", feedback — `Affinity`, `Recommender`,
   `StartRepository` (domínio), `start_feedback` (migração 18) e backup do feedback (campo 9)
-- [ ] H4 fonte principal e busca nas fontes
+- [x] H4 fonte principal e busca nas fontes — `TitleMatch`, `SourceResolver` (domínio), `start_source_matches`
+  (migração 19), `SourceFinder`, tela "Fontes das recomendações" com "Testar uma busca"
 - [ ] H5 descoberta pelo catálogo (Metron): "Porque você gostou de X", autores e personagens
 - [ ] H6 lançamentos da semana + calendário
 - [ ] H7 alertas e notificações
@@ -714,3 +715,89 @@ depois dos 10 s do snackbar): volta sozinha em 30 dias, ou limpando os dados do 
 
 **Não verificado no aparelho:** a restauração do feedback de um backup (coberta por teste, com SQLite
 real); obra abandonada (precisa de 60 dias parada; coberta por teste); tema claro; TalkBack; tablet.
+
+### Verificação do H4 (25/09/2026)
+
+**Como ficou:**
+- **Fontes das recomendações** (menu ⋮ do Início): a lista em ordem, com "Principal" e "Reserva N";
+  tocar numa fonte de "Outras fontes" a põe no fim da lista, o ✕ a tira, e a alça arrasta para
+  reordenar. Só fontes online que buscam; a fonte local fica de fora (o que está nela já é do leitor).
+  Vazia por padrão. "Copiar a ordem da migração" aparece no menu quando a migração tem uma ordem.
+- **Procurar recomendações nas fontes** (ligado por padrão): desligado, o Início não procura nada
+  sozinho. A busca de teste, feita à mão, não depende dele.
+- **Casamento estrito** (`TitleMatch`, domínio, puro): nome igual depois de tirar o ano entre
+  parênteses, "Vol. N", pontuação, acentos e artigo inicial; ano igual quando os dois lados têm;
+  quase igual (≥ 0,9) só com ano igual; duas séries diferentes empatadas não são resposta ("Batman"
+  sem ano, com "Batman (2016-2020)" e "Batman (2025-)" na fonte). Só a primeira página de resultados
+  de cada fonte é olhada. O ano só é lido entre parênteses ou colchetes.
+- **Resolvedor** (`SourceResolver`, domínio, puro): uma série por vez, em fila; a principal
+  primeiro, a próxima só sem resultado, sem a série entre os resultados, ou com falha. Achada: 7
+  dias; não achada: 1 dia; achada só depois de uma falha da principal: 1 dia, para a principal ser
+  tentada de novo logo; falha sem achado: nada guardado. A resposta guardada vale para a mesma ordem
+  até a fonte que achou (uma reserva nova depois dela não invalida). Fonte que falhou não é
+  perguntada de novo por 30 minutos. No máximo 10 séries vão à rede por sessão (`LIMITED`); o cache
+  não conta.
+- **`SourceFinder`** (app): busca nas fontes do Mihon (40 s por fonte, mais que os 30 s que o
+  desafio do Cloudflare recebe), classifica a falha, cria a entrada **fora da biblioteca** com
+  `NetworkToLocalManga` (o mesmo de abrir uma obra pela busca; nunca favorita) e escreve no logcat
+  `StartFeed source "<série>" (<ano>) <status> <fonte>: <resposta>; …`.
+- **Por que a fonte falhou**, sem chutar: Cloudflare quando o interceptador do Mihon desiste do
+  desafio, **ou** quando uma busca recusada com 403/429/503 é seguida de um pedido ao endereço da
+  fonte, sem o interceptador (que abriria o WebView de novo), e a resposta traz
+  `cf-mitigated: challenge`; "o site não respondeu" para 520–527, os códigos do próprio Cloudflare
+  para um site fora do ar; erro HTTP, tempo esgotado, sem conexão, não instalada.
+- **Testar uma busca**: nome e ano, cada fonte da lista perguntada do zero, sem ler nem gravar o
+  cache e sem pular fonte que falhou; mostra o que cada fonte respondeu e [Abrir] a obra achada.
+- **`start_source_matches`** (migração 19): o cache, fora do backup. `manga_id` vira nulo se a
+  entrada for apagada (limpeza do banco do Mihon), e a entrada é refeita pela URL guardada.
+
+**Mudou em relação ao plano:**
+- A **ordem das fontes** é uma preferência (`start_recommendation_sources`), como a
+  `migration_sources` da migração, e vai no backup junto com as configurações do app. O campo 10 do
+  `BackupReadingStats` não foi necessário.
+- **"Testar uma busca"** não estava no plano: sem o H5, é o único jeito de ver o resolvedor
+  trabalhar no aparelho, e serve ao leitor para saber se a principal está respondendo.
+- "Pedir a principal na primeira recomendação de fora da biblioteca" (§7.2) fica para o H5, que é
+  quando essas recomendações existem. O `SourceFinder.find` (com cache, limite e entrada guardada)
+  já está pronto para ele.
+
+**Testes na JVM:** `TitleMatchTest` (9, com os títulos reais das fontes do emulador: `Absolute
+Batman (2024-)`, `Batman (2025-)`, `Batman (2016-2020)`, `Flashpoint (2011)`, `Flashpoint: The World
+of Flashpoint`), `SourceResolverTest` (13: a principal primeiro e só ela quando tem; reservas na
+ordem; Cloudflare passa para a reserva e diz por quê; achado 7 dias; não achado 1 dia; achado depois
+de falha 1 dia; falha não guarda; ordem nova pergunta de novo; reserva nova depois não invalida;
+fonte que falhou pulada por 30 min; limite por sessão com o cache livre; teste à mão sem cache; sem
+fontes), `SourceMatchRepositoryImplTest` (5, SQLite real: ida e volta, achado ou não; resposta nova
+substitui e as vencidas saem; entrada apagada deixa o casamento; **a entrada criada fica fora da
+biblioteca e a que já estava nela continua nela**; migração 19). Domínio 228, dados 47, app 348,
+todos passando; spotless limpo.
+
+**Emulador** (`tools/shots/home-h4-*.png`), com as três fontes online instaladas (Read Comics
+Online, ReadAllComics, XOXO Comics), todas atrás do Cloudflare:
+- ⋮ do Início → "Fontes das recomendações": lista vazia com a explicação, as três em "Outras
+  fontes", "Procurar" desabilitado; escolhidas, "Principal · Reserva 1 · Reserva 2", e "Outras
+  fontes" some;
+- **principal falhando, achada na reserva** (primeira busca do dia): "Absolute Batman" 2024 → Read
+  Comics Online *falhou: erro do site (HTTP 403)*, ReadAllComics *falhou (HTTP 522)*, XOXO Comics
+  *achou "Absolute Batman"*. Do PC, `curl` mostrou que o 403 era o desafio do Cloudflare
+  (`cf-mitigated: challenge`, `server: cloudflare`) e o 522 o site do ReadAllComics fora do ar —
+  daí a checagem do desafio e o "o site não respondeu", feitos depois disso;
+- **achada na principal:** com o desafio já passado, "Absolute Batman" 2024 → Read Comics Online
+  *achou "Absolute Batman (2024-)"*, e as reservas não foram perguntadas;
+- **principal sem a série:** XOXO Comics arrastada para principal, "Batman" 2025 → XOXO *36
+  resultados, nenhum é esta série (o primeiro: "Batman & Robin Eternal")*, Read Comics Online *achou
+  "Batman (2025-)"*;
+- **principal fora do ar:** ReadAllComics arrastada para principal, "Flashpoint" 2011 → *o site não
+  respondeu (HTTP error 522)*, Read Comics Online *3 resultados, nenhum é esta série (o primeiro:
+  "Flashpoint Beyond (2022-)")*, XOXO Comics *achou "Flashpoint (2011)"*;
+- **Abrir:** "Absolute Wonder Woman" 2024 achada no Read Comics Online abriu a página da obra com
+  "Adicionar à biblioteca" — criada fora da biblioteca;
+- a chave desligada e a ordem sobreviveram a sair e voltar; ✕ tirou uma fonte para "Outras fontes"
+  e o toque a devolveu; nenhum crash.
+
+**Não visto no aparelho:** o rótulo "bloqueada pelo Cloudflare" depois da checagem. Limpar os cookies
+do Read Comics Online não trouxe o bloqueio de volta — o WebView do Mihon passou o desafio sozinho —
+e o bloqueio não se provoca de propósito. A primeira busca mostrou a falha real (como HTTP 403, antes
+da checagem existir), e a checagem se apoia no cabeçalho visto com `curl`. Também não visto: o
+caminho automático (`find`, cache, limite de 10), que só o H5 chama (coberto pelos testes do
+resolvedor e do banco); tema claro; TalkBack; tablet.

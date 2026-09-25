@@ -1,0 +1,28 @@
+-- Where a series the Início recommends from outside the library was found in the reader's sources,
+-- or that it was not (docs/HOME_PLAN.md §7.3, H4). A cache: kept a week when found, a day when not,
+-- and never backed up. source_id NULL: not found in any of tried_sources (ids, comma separated).
+CREATE TABLE start_source_matches(
+    catalog_key TEXT NOT NULL PRIMARY KEY,
+    source_id INTEGER,
+    manga_url TEXT,
+    manga_id INTEGER REFERENCES mangas(_id) ON DELETE SET NULL,
+    matched_title TEXT,
+    tried_sources TEXT NOT NULL,
+    checked_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+);
+
+getMatch:
+SELECT *
+FROM start_source_matches
+WHERE catalog_key = :catalogKey;
+
+upsertMatch:
+INSERT OR REPLACE INTO start_source_matches(
+    catalog_key, source_id, manga_url, manga_id, matched_title, tried_sources, checked_at, expires_at
+)
+VALUES (:catalogKey, :sourceId, :mangaUrl, :mangaId, :matchedTitle, :triedSources, :checkedAt, :expiresAt);
+
+deleteExpired:
+DELETE FROM start_source_matches
+WHERE expires_at <= :now;
