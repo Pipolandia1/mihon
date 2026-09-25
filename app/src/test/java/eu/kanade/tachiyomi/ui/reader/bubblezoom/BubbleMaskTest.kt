@@ -218,6 +218,34 @@ class BubbleMaskTest {
     // --- fixtures ------------------------------------------------------------------------
 
     /** Extracts and insists it worked, so each test reads as what it is actually checking. */
+    @Test
+    fun `the surface and its outline are the silhouette extract gives`() {
+        // Amendment E18 split extract in two so a tail can be read off the surface; the two
+        // halves together must be exactly what it was.
+        val page = bubblePage()
+        val surface = BubbleMask.surface(page, side, side, box)
+        assertNotNull(surface)
+
+        assertTrue(BubbleMask.outline(surface!!, side, side, passes).contentEquals(traced(page)))
+    }
+
+    @Test
+    fun `a capture off centre is traced from the middle of the balloon`() {
+        // A widened capture has the balloon to one side and page at its middle. Started from
+        // there, the fill finds page, not balloon; started from the box it finds the balloon.
+        val pixels = IntArray(side * side) { GREY }
+        for (y in 10 until 40) {
+            for (x in 10 until 50) pixels[at(x, y)] = PAPER
+        }
+        val offCentre = BubbleMask.MaskRect(10, 10, 50, 40)
+
+        val surface = BubbleMask.surface(pixels, side, side, offCentre, aroundBox = true)
+
+        assertNotNull(surface)
+        assertTrue(surface!![at(30, 25)], "the balloon is the surface")
+        assertFalse(surface[at(centre, centre)], "the page at the capture's middle is not")
+    }
+
     private fun traced(pixels: IntArray): BooleanArray {
         val mask = BubbleMask.extract(pixels, side, side, box, passes)
         assertNotNull(mask, "expected the bubble to be traced")
@@ -255,5 +283,6 @@ class BubbleMaskTest {
     private companion object {
         const val PAPER = 0xFFFFFFFF.toInt()
         const val INK = 0xFF000000.toInt()
+        const val GREY = 0xFF808080.toInt()
     }
 }

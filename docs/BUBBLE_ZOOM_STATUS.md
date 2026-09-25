@@ -1944,6 +1944,60 @@ base e pt-BR.
 
 Testes: 322 do app, 0 falhas; spotless limpo.
 
+## E18 — o card leva o rabicho do balão
+
+Pedido do usuário: que o Bubble Zoom sempre pegue a ponta do balão (o rabicho que aponta para
+quem fala) — "só os normais", sem os de traço.
+
+**O problema, medido.** A silhueta do card é traçada numa captura do tamanho do balão mais um
+quarto do lado menor. Isso cabe o contorno, mas não um rabicho comprido: ele sai da captura e o
+card o mostra serrado. Nos 263 balões de Absolute Batman #17 (porte em Python do traçado, rodando
+sobre o CBZ): **94 silhuetas encostavam na borda da captura**, a maioria rabichos cortados.
+
+**Como segue.** `BubbleTail` (novo, puro): se a superfície sai da captura por uma passagem
+estreita (≤ 0,35 do lado menor do balão), é rabicho; a captura é alargada daquele lado pelo lado
+maior do balão e o balão é traçado de novo, a partir do centro dele, até não encostar mais — no
+máximo 3 vezes, na mesma densidade de pixels da primeira (teto de 512 px). Recusa e fica com o
+card de hoje quando:
+- o rabicho aumenta a área do balão em mais de 0,35 — mediu-se: rabicho real ≤ 0,20, rabicho
+  que encosta em outro balão (os "conectores" da mesma fala) ≥ 0,42;
+- o rabicho tem outro **matiz** que o balão (cor sem o brilho, comparada por mediana) — o
+  preenchimento só compara brilho, e uma legenda verde-clara colou num rastro de neve azulada,
+  um balão branco numa parede bege, uma legenda no fogo. Medido: rabicho real ≤ 0,061; esses
+  três ≥ 0,133; limite 0,10. O matiz, e não a cor inteira, porque um rabicho fino mistura o
+  branco com a linha preta e fica mais escuro sem mudar de cor;
+- continua aberto depois da 3.ª ampliação, ou um retraçado falha.
+Um lado por onde a superfície sai **larga** (balão que vaza do quadrinho para a calha, legenda que
+continua sob a borda) é deixado como está, e só os lados estreitos são seguidos. A borda da
+própria página não é rabicho. Rabicho de traço não tem superfície e não é tocado.
+
+**O card.** O corpo do balão é dimensionado e posicionado exatamente como antes; o rabicho só
+**sobra** para fora dele, na mesma escala, cortado pela borda da tela se for preciso — nunca
+encolhe as letras nem move o corpo. A decodificação nítida (E2) cobre o rabicho também.
+
+**Resultado no Python (263 balões):** 136 fechados (iguais), 69 rabichos seguidos inteiros —
+conferidos nas folhas de revisão, incluindo os zigue-zagues longos —, 15 recusados por
+crescimento (todos rabichos que ligam dois balões: ficam como hoje), 3 por matiz, 7 largos, 33
+sem silhueta (retângulo, como hoje). A primeira revisão visual deixou passar a legenda na neve;
+foi o percurso no emulador que a mostrou, e daí veio a regra do matiz.
+
+**No emulador:** o capítulo inteiro percorrido balão a balão com o build final (263 cards):
+**66 rabichos seguidos**, 19 recusados (mostram o card de sempre — conferidos nas capturas), 8
+largos, 133 fechados, 37 sem silhueta; nenhum crash. O rabicho do "I #$%& KNOW!" (p11) passou a
+apontar para o Batman, o zigue-zague do "No, they're not…" (p26) vem inteiro, e a legenda da neve
+(p19) voltou a ser o card de antes. **Custo na thread principal**, só quando há rabicho: mediana
+7 ms, p90 16 ms, máximo 46 ms (três recapturas) — um soluço de até ~3 quadros no instante em que
+o card sobe; os 133 fechados custam 0–1 ms. Capturas: `tools/shots/e18-p11-tails-zoom.png`,
+`e18-final-NNN.png` (cada rabicho seguido ou recusado), `e18-refused-sheet.png`.
+
+**Arquivos.** Novos: `BubbleTail.kt`, `BubbleTailTest.kt` (cena sintética rasterizada como a tela). Alterados: `BubbleMask` (`extract` dividido em `surface` + `outline`, com o mesmo
+resultado; modo `aroundBox` para as recapturas), `BubbleCardGeometry` (`withTail`,
+`regionWithin`), `BubbleZoomOverlayView` (segue o rabicho em `findSilhouette`; corpo e rabicho em
+`show`), `BubbleZoomConfig` (6 constantes `TAIL_*`), e os testes de `BubbleMask` e
+`BubbleCardGeometry`. Nenhum arquivo upstream.
+
+Testes: 339 do app, 0 falhas (10 novos em `BubbleTailTest`, 5 em `BubbleCardGeometryTest`, 2 em `BubbleMaskTest`); spotless limpo.
+
 ## Onde estamos contra o Play Books — medido em 22/09/2026
 
 Mesma HQ aberta nos dois leitores, mesmas páginas, emulador. O que a comparação achou, em

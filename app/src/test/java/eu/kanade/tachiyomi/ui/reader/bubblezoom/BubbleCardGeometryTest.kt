@@ -381,4 +381,64 @@ class BubbleCardGeometryTest {
             BubbleCardGeometry.outlineGrowPasses(192, 40f, 1600f),
         )
     }
+
+    // Amendment E18: the card grown by the balloon's tail.
+
+    private val body = BubbleBox(0.4f, 0.24f, 0.2f, 0.12f)
+    private val bodyCard = CardRect(100f, 100f, 500f, 340f)
+
+    @Test
+    fun `a balloon with nothing to follow is the card it always was`() {
+        val (rect, shown) = BubbleCardGeometry.withTail(bodyCard, body, body, 2f, 1000f, 1000f, 1080f, 2400f)
+
+        assertEquals(bodyCard, rect)
+        assertEquals(body, shown)
+    }
+
+    @Test
+    fun `a tail adds to the card at the body's scale, without moving the body`() {
+        // The tail runs 0.24 of the page below the body; at 2x a 1000 px page that is 480 px.
+        val whole = BubbleBox(0.4f, 0.24f, 0.2f, 0.36f)
+
+        val (rect, shown) = BubbleCardGeometry.withTail(bodyCard, body, whole, 2f, 1000f, 1000f, 1080f, 2400f)
+
+        assertEquals(bodyCard.left, rect.left)
+        assertEquals(bodyCard.top, rect.top)
+        assertEquals(bodyCard.right, rect.right)
+        assertEquals(820f, rect.bottom, 1e-2f)
+        assertEquals(whole.bottom, shown.bottom, 1e-5f)
+        assertEquals(body.y, shown.y, 1e-5f)
+    }
+
+    @Test
+    fun `the screen cuts off tail, never body`() {
+        val whole = BubbleBox(0.4f, 0.24f, 0.2f, 0.36f)
+
+        val (rect, shown) = BubbleCardGeometry.withTail(bodyCard, body, whole, 2f, 1000f, 1000f, 1080f, 600f)
+
+        assertEquals(600f, rect.bottom, "held to the screen")
+        assertEquals(340f, bodyCard.bottom, "and the body is untouched above it")
+        assertEquals(0.24f + 0.25f, shown.bottom, 1e-5f)
+    }
+
+    @Test
+    fun `a whole a pixel smaller than the body never shrinks the card`() {
+        // Two traces of one balloon at different sizes can disagree by a pixel of rounding.
+        val whole = BubbleBox(0.401f, 0.2401f, 0.198f, 0.3f)
+
+        val (rect, _) = BubbleCardGeometry.withTail(bodyCard, body, whole, 2f, 1000f, 1000f, 1080f, 2400f)
+
+        assertEquals(bodyCard.left, rect.left)
+        assertEquals(bodyCard.top, rect.top)
+        assertEquals(bodyCard.right, rect.right)
+    }
+
+    @Test
+    fun `the stencil is cut where the tail was`() {
+        // The lower half of a region shown by a 100 x 300 stencil is its lower 150 rows.
+        val whole = BubbleBox(0.4f, 0.2f, 0.2f, 0.6f)
+        val upper = BubbleBox(0.4f, 0.2f, 0.2f, 0.3f)
+
+        assertEquals(SourceRegion(0, 0, 100, 150), BubbleCardGeometry.regionWithin(upper, whole, 100, 300))
+    }
 }

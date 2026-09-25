@@ -74,6 +74,45 @@ object BubbleCardGeometry {
         return CardRect(left, top, left + cardWidthPx, top + cardHeightPx)
     }
 
+    /**
+     * The card grown by the balloon's tail. Amendment E18.
+     *
+     * The balloon's [body] is sized and placed as it always was, into [bodyCard]; the tail only
+     * adds to it, at the same scale, so a long tail never shrinks the lettering or moves it. What
+     * would fall off the screen is cut off, which only ever cuts tail: the body is inside the
+     * viewport by construction, and [whole] holds it. Returns the card's rectangle on screen and
+     * the region of the page it shows.
+     */
+    fun withTail(
+        bodyCard: CardRect,
+        body: BubbleBox,
+        whole: BubbleBox,
+        scale: Float,
+        sourceWidthPx: Float,
+        sourceHeightPx: Float,
+        viewportWidthPx: Float,
+        viewportHeightPx: Float,
+    ): Pair<CardRect, BubbleBox> {
+        if (whole == body || scale <= 0f) return bodyCard to body
+        val across = sourceWidthPx * scale
+        val down = sourceHeightPx * scale
+        // Where the whole silhouette would sit, measured out from the body, then held to the
+        // screen — and never inside the body, whatever rounding the two traces disagree by.
+        val left = maxOf(bodyCard.left - (body.x - whole.x) * across, 0f).coerceAtMost(bodyCard.left)
+        val top = maxOf(bodyCard.top - (body.y - whole.y) * down, 0f).coerceAtMost(bodyCard.top)
+        val right = minOf(bodyCard.right + (whole.right - body.right) * across, viewportWidthPx)
+            .coerceAtLeast(bodyCard.right)
+        val bottom = minOf(bodyCard.bottom + (whole.bottom - body.bottom) * down, viewportHeightPx)
+            .coerceAtLeast(bodyCard.bottom)
+        val shown = BubbleBox.clampedOrNull(
+            x = body.x - (bodyCard.left - left) / across,
+            y = body.y - (bodyCard.top - top) / down,
+            width = (right - left) / across,
+            height = (bottom - top) / down,
+        ) ?: return bodyCard to body
+        return CardRect(left, top, right, bottom) to shown
+    }
+
     private fun axis(cardSize: Float, centre: Float, viewport: Float, margin: Float): Float {
         val ideal = centre - cardSize / 2f
         val room = viewport - cardSize - 2 * margin
@@ -206,6 +245,21 @@ object BubbleCardGeometry {
         val right = (padded.right * sourceWidth).roundToInt().coerceIn(left + 1, sourceWidth)
         val bottom = (padded.bottom * sourceHeight).roundToInt().coerceIn(top + 1, sourceHeight)
         return SourceRegion(left, top, right, bottom)
+    }
+
+    /**
+     * Where [part] of the page lies in an image of [width] x [height] that shows [whole] of it:
+     * the stencil of a balloon whose tail the screen cut short. Amendment E18.
+     */
+    fun regionWithin(part: BubbleBox, whole: BubbleBox, width: Int, height: Int): SourceRegion? {
+        if (whole.width <= 0f || whole.height <= 0f) return null
+        val relative = BubbleBox.clampedOrNull(
+            x = (part.x - whole.x) / whole.width,
+            y = (part.y - whole.y) / whole.height,
+            width = part.width / whole.width,
+            height = part.height / whole.height,
+        ) ?: return null
+        return regionOf(relative, width, height)
     }
 
     /**

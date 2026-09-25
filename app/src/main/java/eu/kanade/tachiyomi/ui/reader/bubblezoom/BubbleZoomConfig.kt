@@ -242,6 +242,44 @@ object BubbleZoomConfig {
      */
     const val MASK_SEARCH_PADDING = 0.25f
 
+    /*
+     * Following a filled tail out of that region. Amendment E18, measured over the 263 balloons
+     * of a whole issue. See [BubbleTail].
+     */
+
+    /**
+     * The widest a silhouette may leave the capture and still be a tail, as a fraction of the
+     * balloon's shorter side. A tail narrows to a point; a balloon cut by a panel's border or a
+     * caption running on leaves across most of its side.
+     */
+    const val TAIL_NECK = 0.35f
+
+    /** How far each extension widens the capture, as a fraction of the balloon's longer side. */
+    const val TAIL_REACH = 1.0f
+
+    /** How many times the capture is widened before the tail is given up on. */
+    const val TAIL_MAX_EXTENSIONS = 3
+
+    /**
+     * How much a followed tail may add to the balloon's area. Every real tail measured added
+     * 0.20 at most; one that ran into a neighbouring balloon or out into paper, 0.42 or more.
+     */
+    const val TAIL_MAX_GROWTH = 0.35f
+
+    /**
+     * How far a followed tail's hue may be from its balloon's, per channel, with each colour's
+     * grey taken out. Real tails measured at 0.061 at most, darkened by their outline but the
+     * same colour; tails that were snow under a pale green caption, a beige wall beside a white
+     * balloon, or fire, at 0.133 and more.
+     */
+    const val TAIL_MAX_HUE_SHIFT = 0.10f
+
+    /**
+     * Longest side, in pixels, of a widened capture. It is traced at the first capture's own
+     * density, which a long tail would otherwise take past what a card needs.
+     */
+    const val TAIL_MASK_MAX_LONG_SIDE_PX = 512
+
     /**
      * How much of itself the fill may leave outside the balloon's own box. Amendment E10.
      *

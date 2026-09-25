@@ -63,6 +63,26 @@ object BubbleMask {
         box: MaskRect,
         growPasses: Int,
     ): BooleanArray? {
+        val filled = surface(pixels, width, height, box) ?: return null
+        return outline(filled, width, height, growPasses)
+    }
+
+    /**
+     * The balloon's surface: [extract] before the outline is added, which is the shape
+     * [BubbleTail] reads a tail's way out of the capture from. Amendment E18.
+     *
+     * [aroundBox] is for a capture that is not centred on the balloon, which is what following a
+     * tail makes: the fill starts from the middle of [box] rather than of the capture, and the
+     * escape guard is not asked, because a tail is exactly the part of a balloon that lies
+     * outside its box. [BubbleTail] guards that case by growth instead.
+     */
+    fun surface(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        box: MaskRect,
+        aroundBox: Boolean = false,
+    ): BooleanArray? {
         if (width < MIN_SIDE || height < MIN_SIDE) return null
         val size = width * height
         if (pixels.size < size) return null
@@ -70,15 +90,18 @@ object BubbleMask {
         val luma = FloatArray(size) { lumaOf(pixels[it]) }
         val surface = surfaceTone(luma, width, box)
 
-        val filled = fillFromCentre(luma, width, height, surface, box) ?: return null
+        val filled = fillFromCentre(luma, width, height, surface, box, aroundBox) ?: return null
         fillEnclosedHoles(filled, width, height)
 
         // Asked before the silhouette is grown: growing would drag it over the box from the
         // outside, and a shape that merely surrounds the balloon would pass for one that is it.
         if (!covers(filled, width, height, box)) return null
-
-        return grow(filled, width, height, growPasses)
+        return filled
     }
+
+    /** [surface] grown by [growPasses] to take in the balloon's own line. */
+    fun outline(surface: BooleanArray, width: Int, height: Int, growPasses: Int): BooleanArray =
+        grow(surface, width, height, growPasses)
 
     /**
      * The rectangle [shape] occupies, or null when it occupies nothing.
@@ -170,6 +193,7 @@ object BubbleMask {
         height: Int,
         surface: Float,
         box: MaskRect,
+        aroundBox: Boolean,
     ): BooleanArray? {
         val size = width * height
         val filled = BooleanArray(size)
@@ -183,10 +207,12 @@ object BubbleMask {
         // every balloon, but on one whose words fill it the patch is all lettering, and the
         // nearest surface is a few pixels further out — still inside the balloon, which is what
         // starting at the middle and growing guarantees and scanning the box would not.
-        var half = seedHalf(width, height)
+        var half = if (aroundBox) seedHalf(box.width, box.height) else seedHalf(width, height)
+        val centreX = if (aroundBox) (box.left + box.right) / 2 else width / 2
+        val centreY = if (aroundBox) (box.top + box.bottom) / 2 else height / 2
         val limit = maxOf(box.width, box.height)
         while (top == 0 && half <= limit) {
-            forEachSeed(width, height, half) { index ->
+            forEachSeed(width, height, centreX, centreY, half) { index ->
                 if (!filled[index] && sameSurface(luma[index], surface)) {
                     filled[index] = true
                     stack[top++] = index
@@ -242,7 +268,7 @@ object BubbleMask {
         // got out is the panel behind it, which is mostly elsewhere. Measured over 106 balloons
         // of a real comic: every right one left 0 to 22 percent of itself outside the box, and
         // the first flooded one 30.
-        if (outside.toFloat() / area > BubbleZoomConfig.MASK_MAX_ESCAPE_FRACTION) return null
+        if (!aroundBox && outside.toFloat() / area > BubbleZoomConfig.MASK_MAX_ESCAPE_FRACTION) return null
         return filled
     }
 
@@ -330,14 +356,21 @@ object BubbleMask {
         (minOf(width, height) * BubbleZoomConfig.MASK_SEED_PATCH_FRACTION).toInt().coerceAtLeast(1)
 
     /**
-     * Visits a patch of [half] at the middle of the mask, where the balloon certainly is.
+     * Visits a patch of [half] around ([centreX], [centreY]) — the middle of the mask, where the
+     * balloon certainly is, or the middle of the balloon's box when the capture is not centred
+     * on it.
      *
      * Only the fill starts here. Where the SURFACE's tone comes from is another question, and
      * since amendment E10 the answer is the whole box — see [surfaceTone].
      */
-    private inline fun forEachSeed(width: Int, height: Int, half: Int, visit: (Int) -> Unit) {
-        val centreX = width / 2
-        val centreY = height / 2
+    private inline fun forEachSeed(
+        width: Int,
+        height: Int,
+        centreX: Int,
+        centreY: Int,
+        half: Int,
+        visit: (Int) -> Unit,
+    ) {
         for (y in (centreY - half).coerceAtLeast(0)..(centreY + half).coerceAtMost(height - 1)) {
             for (x in (centreX - half).coerceAtLeast(0)..(centreX + half).coerceAtMost(width - 1)) {
                 visit(y * width + x)
