@@ -12,6 +12,7 @@ import tachiyomi.domain.readingstats.model.ReadingDayEntry
 import tachiyomi.domain.readingstats.model.ReadingDayStats
 import tachiyomi.domain.readingstats.model.SessionSnapshot
 import tachiyomi.domain.readingstats.model.SessionWrite
+import tachiyomi.domain.start.IssueTime
 
 interface ReadingStatsRepository {
 
@@ -64,6 +65,12 @@ interface ReadingStatsRepository {
 
     /** Active time per chapter on the days from [from] to [to]. */
     suspend fun getReadingByChapter(from: LocalDate, to: LocalDate): List<ChapterReading>
+
+    /**
+     * Issues first finished in the reader from [from] to [to], each with the active time of every
+     * session of it up to the one that finished it. Marked read by hand has no time and is not here.
+     */
+    suspend fun getReaderCompletionTimes(from: LocalDate, to: LocalDate): List<IssueTime>
 
     /** Chapters first completed in the reader, or marked read by hand, from [from] to [to]. */
     suspend fun getCompletedChapters(from: LocalDate, to: LocalDate): List<CompletedChapter>

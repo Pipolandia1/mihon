@@ -527,7 +527,9 @@ ficam intactos. O cartão "Continuar lendo" do Stats está no pacote da feature.
 
 - [x] H1 navegação — `StartTab`, `StartNavigation`, `StartRoutes`, `MoreUpdatesScreen`/`MoreBrowseScreen`,
   `ContinueReadingSource` (Continuar lendo compartilhado com a aba Stats)
-- [ ] H2 esqueleto do Início (continuar, quase terminando, backlog, tempo) + seletor de blocos
+- [x] H2 esqueleto do Início — `StartFeed`, `ContinueRules`, `ReadingTime` (domínio), `StartFeedSource`,
+  blocos Quase terminando, Escolha pelo tempo e Do seu backlog; Continuar lendo esconde o que foi lido
+  até o fim e volta com edição nova; Continuar lendo e Perto de terminar saíram da aba Stats
 - [ ] H3 motor de afinidade, "Leia isso agora", "Por quê?", feedback
 - [ ] H4 fonte principal e busca nas fontes
 - [ ] H5 descoberta pelo catálogo (Metron): "Porque você gostou de X", autores e personagens
@@ -569,3 +571,60 @@ atalho de fontes, abas que ficaram, obra e fila de downloads); 347 testes do app
 **Não verificado:** badge de capítulos novos com número (não havia capítulos novos no emulador; o
 caminho é o mesmo do badge de extensões, coberto pela mesma soma); atalhos do launcher (mesmos intents
 das notificações); tablet (trilho lateral: a mesma lista de abas); tema claro; TalkBack.
+
+### Verificação do H2 (25/09/2026)
+
+**Pedido do usuário no meio do passo:** "o Continuar lendo tem que sumir uma HQ que já li tudo e ela
+deve voltar quando lançar novos issues". A causa era o próprio Mihon: o "próximo capítulo" dele é o que
+vem depois do último aberto, lido ou não — uma série relida ou marcada à mão ficava na lista com uma
+edição já lida como "próximo". `ContinueRules` (domínio, puro): abre o capítulo deixado pela metade ou
+o primeiro **não lido** depois dele; sem nenhum, a obra sai da lista; um capítulo que chega depois da
+última leitura a traz de volta **no topo**, com "Nova edição: cap. N". Vale também para a aba Stats,
+que usa a mesma fonte. Olha as 40 obras lidas mais recentemente (`CONTINUE_READING_SCAN`) e, além
+delas, qualquer obra da biblioteca que recebeu capítulo depois de lida, por mais antiga que seja.
+
+**Como ficou (e o que mudou em relação ao §6 e §9.1):**
+- Blocos na ordem fixa, no máximo 7, sem bloco vazio; uma obra aparece uma vez (Quase terminando e o
+  backlog não repetem o que está acima). **Exceção:** as listas da Escolha pelo tempo, que só aparecem
+  ao tocar num chip e respondem "o que cabe em 10 minutos?" — a obra em leitura pode ser a resposta.
+- "Estável na sessão" virou **determinístico**: o mesmo dado no mesmo dia dá a mesma tela; só o dia
+  muda o sorteio do backlog. Ler algo atualiza o Início na hora, sem "puxar para atualizar".
+- Tempo por edição **medido**: mediana das edições terminadas no leitor nos últimos 90 dias, somando
+  todas as sessões até a que terminou (consulta `readerCompletionTimes`); marcadas à mão não têm
+  tempo e não entram. Abaixo de 3 edições não há número: os chips de 10 e 30 min não aparecem e o
+  bloco diz o que os traz. A estimativa "pelas páginas" do §9.1 não foi feita: seria um segundo
+  ritmo, e o medido por edição já cobre os blocos.
+- Backlog: **histórias curtas primeiro** (total conhecido ≤ 6), depois "nunca começou" (sorteio do
+  dia, 8 por vez), depois paradas (respeita "esconder lembretes" do Stats). Tocar numa capa do backlog
+  abre a página da obra; nos outros blocos, o toque abre o leitor no capítulo.
+- O destaque do Continuar lendo mostra "faltam N" (e o tempo, se medido) quando o total é conhecido,
+  já que a obra não se repete no Quase terminando.
+- "Continuar lendo" e "Perto de terminar" saíram da aba Stats (decisão 6); "Paradas" ficou lá.
+
+**Testes na JVM:** `ContinueRulesTest` (10), `ReadingTimeTest` (4), `StartFeedTest` (12),
+`ReadingAnalysisQueriesTest` +1 (SQLite real: sessões até a conclusão, releitura fora, marcado à mão
+fora, fora do período fora). Domínio 194, dados 35, app 347, todos passando; spotless limpo.
+
+**Emulador** (`tools/shots/home-h2-*.png`), com a biblioteca sintética `tools/make-start-test-library.py`
+(16 séries, páginas e ComicInfo inventados):
+- abertura a frio: Continuar lendo em **886 ms**, os outros blocos em **1236 ms** (logcat
+  `StartFeed`); numa reabertura, 369 ms e 861 ms;
+- Batman (2025-) passou de "Próximo: cap. 2" (já lido) para "Próximo: cap. 3" — o erro que o usuário
+  relatou, corrigido sem mexer em nada;
+- Filha do Amanha com #1–#6 marcados à mão: "Quase terminando · 6 de 8 · faltam 2 · ~1m no seu
+  ritmo · próximo: #7" (o ritmo veio de 6 edições sintéticas lidas no leitor, 3 páginas cada: por isso
+  "~1m");
+- Escolha pelo tempo: sem ritmo, só "Mergulhar" + o aviso dos 3 edições; com ritmo, 10 min (1 edição
+  de cada), 30 min ("2 edições" no Coração de Vidro, que só tem 2 não lidas), Mergulhar (coleção Night
+  Lanterns, "3 não lidos") e Terminar algo;
+- backlog: "Histórias curtas" (3, 4 e 6 edições) e "Você adicionou e nunca começou" sem repetir;
+- **some e volta:** Rastro lido até o fim saiu do Continuar lendo; com a edição #4 enviada e a página
+  atualizada, voltou **no topo** com "Nova edição: cap. 4";
+- aba Stats sem Continuar lendo e sem Perto de terminar; nenhum crash.
+
+**Observado, não é do Início:** a atualização da biblioteca pulou o Rastro com "nenhum lançamento era
+esperado hoje" (a previsão de lançamentos do próprio Mihon); a edição nova foi trazida atualizando a
+página da obra. No uso real, a atualização a traz quando o Mihon a espera.
+
+**Não verificado no aparelho:** séries paradas (precisam de 30 dias sem leitura; cobertas por teste);
+tema claro; TalkBack; tablet.

@@ -1300,4 +1300,18 @@
     <string name="start_continue">Continuar</string>
     <string name="start_nothing_in_progress">Nada em andamento ainda. O que você começar a ler aparece aqui.</string>
     <string name="start_open_library">Abrir a biblioteca</string>
+    <string name="start_new_chapter">Nova edição: cap. %s</string>
+    <string name="start_at_your_pace">~%s no seu ritmo</string>
+    <string name="start_near_finish">Quase terminando</string>
+    <string name="start_by_time">Escolha pelo tempo disponível</string>
+    <string name="start_by_time_prompt">Quanto tempo você tem?</string>
+    <string name="start_time_ten">⚡ 10 min</string>
+    <string name="start_time_thirty">☕ 30 min</string>
+    <string name="start_time_dive">🌙 Mergulhar</string>
+    <string name="start_time_finish">✅ Terminar algo</string>
+    <string name="start_time_needs_pace">10 e 30 min aparecem depois de %d edições lidas no leitor.</string>
+    <string name="start_backlog">Do seu backlog</string>
+    <string name="start_shelf_short">Histórias curtas que você já tem</string>
+    <string name="start_shelf_never">Você adicionou e nunca começou</string>
+    <string name="start_shelf_stalled">Volte para uma série parada</string>
 </resources>

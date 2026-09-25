@@ -29,6 +29,7 @@ import tachiyomi.domain.readingstats.model.ReadingDayStats
 import tachiyomi.domain.readingstats.model.SessionSnapshot
 import tachiyomi.domain.readingstats.model.SessionWrite
 import tachiyomi.domain.readingstats.repository.ReadingStatsRepository
+import tachiyomi.domain.start.IssueTime
 import java.util.Date
 
 @Inject
@@ -225,6 +226,11 @@ class ReadingStatsRepositoryImpl(
     override suspend fun getReadingByChapter(from: LocalDate, to: LocalDate): List<ChapterReading> =
         queries.readingByChapter(from.toString(), to.toString()).awaitAsList().map {
             ChapterReading(it.manga_id, it.chapter_id, it.manga_title, it.active_ms ?: 0)
+        }
+
+    override suspend fun getReaderCompletionTimes(from: LocalDate, to: LocalDate): List<IssueTime> =
+        queries.readerCompletionTimes(from.toString(), to.toString()).awaitAsList().mapNotNull { row ->
+            row.chapter_id?.let { IssueTime(it, row.manga_id, row.active_ms ?: 0) }
         }
 
     override suspend fun getCompletedChapters(from: LocalDate, to: LocalDate): List<CompletedChapter> =

@@ -359,6 +359,16 @@ WHERE D.local_date BETWEEN :from AND :to
 GROUP BY S.manga_id, S.chapter_id, S.manga_title;
 
 -- Chapters first completed in the reader, or marked read by hand, on the days from :from to :to.
+-- Issues first finished in the reader from :from to :to, each with the active time of every session
+-- of it up to the one that finished it: how long an issue takes (Início, amendment H2).
+readerCompletionTimes:
+SELECT done.chapter_id, done.manga_id, sum(S.active_ms) AS active_ms
+FROM reading_sessions done
+JOIN reading_sessions S ON S.chapter_id = done.chapter_id AND S.started_at <= done.ended_at
+WHERE done.first_completion = 1 AND done.origin = 0 AND done.chapter_id IS NOT NULL
+    AND done.completed_on BETWEEN :from AND :to
+GROUP BY done._id;
+
 completedChaptersInPeriod:
 SELECT S.chapter_id, C.manga_id
 FROM reading_sessions S

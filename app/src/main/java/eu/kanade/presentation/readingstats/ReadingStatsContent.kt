@@ -31,11 +31,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import eu.kanade.presentation.manga.components.MangaCover
-import eu.kanade.presentation.util.formatChapterNumber
-import eu.kanade.tachiyomi.readingstats.ContinueItem
 import eu.kanade.tachiyomi.ui.readingstats.ReadingStatsViewModel
 import kotlinx.datetime.LocalDate
 import mihon.icons.materialsymbols.MaterialSymbols
@@ -53,7 +49,6 @@ import tachiyomi.presentation.core.screens.LoadingScreen
 
 private val DayBarsHeight = 56.dp
 private val FigureMinWidth = 72.dp
-private val ContinueCoverHeight = 64.dp
 
 @Composable
 fun ReadingStatsContent(
@@ -96,13 +91,6 @@ fun ReadingStatsContent(
                 )
             }
         }
-        if (state.continueReading.isNotEmpty()) {
-            item {
-                SectionCard(MR.strings.reading_stats_continue_reading) {
-                    state.continueReading.forEach { ContinueRow(it, onClickContinue) }
-                }
-            }
-        }
         state.objectives?.let { objectives ->
             item {
                 SectionCard(MR.strings.reading_stats_objectives) {
@@ -110,14 +98,8 @@ fun ReadingStatsContent(
                 }
             }
         }
+        // "Continuar lendo" and "Perto de terminar" moved to the Início (docs/HOME_PLAN.md, H2).
         state.library?.let { library ->
-            if (library.nearFinish.isNotEmpty()) {
-                item {
-                    SectionCard(MR.strings.reading_stats_near_finish) {
-                        NearFinishCard(library.nearFinish, onClickContinue)
-                    }
-                }
-            }
             if (library.stalled.isNotEmpty() && !library.hideStalled) {
                 item {
                     SectionCard(MR.strings.reading_stats_stalled) {
@@ -310,51 +292,6 @@ private fun RowScope.WeekFigure(figure: Figure) {
         )
         Spacer(modifier = Modifier.weight(1f))
         Icon(imageVector = figure.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-    }
-}
-
-@Composable
-private fun ContinueRow(
-    item: ContinueItem,
-    onClick: (mangaId: Long, chapterId: Long) -> Unit,
-) {
-    val chapter = formatChapterNumber(item.chapterNumber)
-    val detail = when {
-        item.resumePage != null && item.totalPages != null ->
-            stringResource(MR.strings.reading_stats_continue_page, chapter, item.resumePage, item.totalPages)
-        item.resumePage != null ->
-            stringResource(MR.strings.reading_stats_continue_page_unknown_total, chapter, item.resumePage)
-        else -> stringResource(MR.strings.reading_stats_continue_next, chapter)
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick(item.mangaId, item.chapterId) }
-            .padding(vertical = MaterialTheme.padding.small),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        MangaCover.Book(
-            modifier = Modifier.height(ContinueCoverHeight),
-            data = item.cover,
-        )
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = MaterialTheme.padding.medium),
-        ) {
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = detail,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = SECONDARY_ALPHA),
-            )
-        }
     }
 }
 

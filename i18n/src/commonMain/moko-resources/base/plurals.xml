@@ -192,4 +192,12 @@
         <item quantity="one">%d new in Updates and Browse</item>
         <item quantity="other">%d new in Updates and Browse</item>
     </plurals>
+    <plurals name="start_issues">
+        <item quantity="one">%d issue</item>
+        <item quantity="other">%d issues</item>
+    </plurals>
+    <plurals name="start_unread">
+        <item quantity="one">%d unread</item>
+        <item quantity="other">%d unread</item>
+    </plurals>
 </resources>

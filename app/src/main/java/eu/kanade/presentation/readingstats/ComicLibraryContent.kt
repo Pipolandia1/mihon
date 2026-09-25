@@ -77,25 +77,6 @@ private fun ChangeLine(period: String, change: PeriodChange) {
     )
 }
 
-/** Series with a known total and only a few left; a row opens the next one. */
-@Composable
-fun NearFinishCard(entries: List<EntryProgress>, onOpen: (mangaId: Long, chapterId: Long) -> Unit) {
-    Column {
-        entries.forEach { progress ->
-            ReminderRow(
-                progress = progress,
-                detail = stringResource(
-                    MR.strings.reading_stats_near_finish_detail,
-                    progress.done,
-                    progress.total ?: 0,
-                    (progress.remaining ?: 0).let { pluralStringResource(MR.plurals.reading_stats_left, it, it) },
-                ),
-                onOpen = onOpen,
-            )
-        }
-    }
-}
-
 /** Series in progress and untouched for a while; the reminders can be hidden. */
 @Composable
 fun StalledCard(

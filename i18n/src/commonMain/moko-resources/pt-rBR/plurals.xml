@@ -194,4 +194,14 @@
         <item quantity="many">%d novidades em Atualizações e Navegar</item>
         <item quantity="other">%d novidades em Atualizações e Navegar</item>
     </plurals>
+    <plurals name="start_issues">
+        <item quantity="one">%d edição</item>
+        <item quantity="many">%d edições</item>
+        <item quantity="other">%d edições</item>
+    </plurals>
+    <plurals name="start_unread">
+        <item quantity="one">%d não lido</item>
+        <item quantity="many">%d não lidos</item>
+        <item quantity="other">%d não lidos</item>
+    </plurals>
 </resources>

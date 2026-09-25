@@ -11,6 +11,7 @@ import tachiyomi.domain.readingstats.analysis.CompletedChapter
 import tachiyomi.domain.readingstats.comics.ComicField
 import tachiyomi.domain.readingstats.comics.MetadataOrigin
 import tachiyomi.domain.readingstats.comics.MetadataValue
+import tachiyomi.domain.start.IssueTime
 
 class ReadingAnalysisQueriesTest {
 
@@ -56,6 +57,28 @@ class ReadingAnalysisQueriesTest {
 
         stats.getCompletedChapters(monday, tuesday).sortedBy { it.chapterId } shouldBe
             listOf(CompletedChapter(10, 1), CompletedChapter(11, 1))
+    }
+
+    @Test
+    fun `time per issue counts every session up to the one that finished it, reader only`() = runTest {
+        db.insertManga(1)
+        db.insertChapter(10, mangaId = 1)
+        db.insertChapter(11, mangaId = 1)
+        db.insertChapter(12, mangaId = 1)
+        // #10 read over two sittings, finished in the second; then reread later.
+        stats.saveSession(session("a", chapterId = 10, activeMs = 60_000, endedAt = 100_000, day = monday))
+        stats.saveSession(
+            session("b", chapterId = 10, activeMs = 90_000, endedAt = 300_000, completedOn = tuesday, day = tuesday),
+        )
+        stats.saveSession(session("c", chapterId = 10, activeMs = 45_000, endedAt = 900_000, day = tuesday))
+        // #11 marked read by hand: no time, not a measured issue.
+        stats.markCompletedManually(listOf(11L), at = 5, on = tuesday)
+        // #12 finished in the reader before the period.
+        stats.saveSession(
+            session("d", chapterId = 12, activeMs = 30_000, completedOn = LocalDate(2026, 8, 1), day = monday),
+        )
+
+        stats.getReaderCompletionTimes(monday, tuesday) shouldBe listOf(IssueTime(10, 1, 150_000))
     }
 
     @Test

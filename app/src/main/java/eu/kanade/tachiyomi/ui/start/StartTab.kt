@@ -17,6 +17,7 @@ import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
 import eu.kanade.tachiyomi.ui.library.LibraryTab
 import eu.kanade.tachiyomi.ui.main.MainActivity
+import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.rounded.Home
@@ -60,9 +61,10 @@ data object StartTab : Tab {
         StartScreen(
             state = state,
             onClickSearch = { navigator.push(GlobalSearchScreen()) },
-            onContinue = { mangaId, chapterId ->
+            onOpenChapter = { mangaId, chapterId ->
                 context.startActivity(ReaderActivity.newIntent(context, mangaId, chapterId))
             },
+            onOpenManga = { navigator.push(MangaScreen(it)) },
             onOpenLibrary = { tabNavigator.current = LibraryTab },
         )
 

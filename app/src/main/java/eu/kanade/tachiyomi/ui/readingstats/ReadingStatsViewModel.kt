@@ -8,8 +8,6 @@ import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
-import eu.kanade.tachiyomi.readingstats.ContinueItem
-import eu.kanade.tachiyomi.readingstats.ContinueReadingSource
 import eu.kanade.tachiyomi.readingstats.PlanProgressSource
 import eu.kanade.tachiyomi.readingstats.ReadingAnalysisSource
 import eu.kanade.tachiyomi.readingstats.ReadingDays
@@ -80,7 +78,6 @@ class ReadingStatsViewModel(
     librarySummary: LibrarySummarySource,
     analysis: ReadingAnalysisSource,
     private val preferences: ReadingStatsPreferences,
-    continueReadingSource: ContinueReadingSource,
 ) : ViewModel() {
 
     private val events = Channel<Event>(Channel.UNLIMITED)
@@ -156,9 +153,6 @@ class ReadingStatsViewModel(
         .catch { logcat(LogPriority.ERROR, it) }
         .flowOn(Dispatchers.IO)
 
-    private val continueReading: Flow<List<ContinueItem>> =
-        continueReadingSource.subscribe(ReadingStatsConfig.CONTINUE_READING_COUNT)
-
     private val dayEntries: Flow<List<ReadingDayEntry>?> = selectedDay
         .flatMapLatest { date ->
             if (date == null) {
@@ -177,11 +171,10 @@ class ReadingStatsViewModel(
 
     private val summaries = combine(
         combine(week, objectives, activity, ::Triple),
-        continueReading,
         library.onStart { emit(null) },
         insights.onStart { emit(emptyList()) },
-    ) { (week, objectives, activity), continueReading, library, insights ->
-        Summaries(week, objectives, activity, continueReading, library, insights)
+    ) { (week, objectives, activity), library, insights ->
+        Summaries(week, objectives, activity, library, insights)
     }
 
     val state: StateFlow<State> = combine(
@@ -194,7 +187,6 @@ class ReadingStatsViewModel(
             week = summaries.week,
             objectives = summaries.objectives,
             activity = summaries.activity,
-            continueReading = summaries.continueReading,
             library = summaries.library,
             insights = summaries.insights,
             selectedDay = day,
@@ -265,7 +257,6 @@ class ReadingStatsViewModel(
         val week: WeekState,
         val objectives: ObjectivesState,
         val activity: ActivityState,
-        val continueReading: List<ContinueItem>,
         val library: LibrarySummary?,
         val insights: List<Insight>,
     )
@@ -275,7 +266,6 @@ class ReadingStatsViewModel(
         val week: WeekState? = null,
         val objectives: ObjectivesState? = null,
         val activity: ActivityState? = null,
-        val continueReading: List<ContinueItem> = emptyList(),
         /** Null while loading. */
         val library: LibrarySummary? = null,
         val insights: List<Insight> = emptyList(),

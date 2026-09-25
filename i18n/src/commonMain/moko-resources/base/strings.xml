@@ -1454,4 +1454,18 @@
     <string name="start_continue">Continue</string>
     <string name="start_nothing_in_progress">Nothing in progress yet. What you start reading shows up here.</string>
     <string name="start_open_library">Open library</string>
+    <string name="start_new_chapter">New issue: ch. %s</string>
+    <string name="start_at_your_pace">~%s at your pace</string>
+    <string name="start_near_finish">Almost done</string>
+    <string name="start_by_time">Pick by the time you have</string>
+    <string name="start_by_time_prompt">How much time do you have?</string>
+    <string name="start_time_ten">⚡ 10 min</string>
+    <string name="start_time_thirty">☕ 30 min</string>
+    <string name="start_time_dive">🌙 Dive in</string>
+    <string name="start_time_finish">✅ Finish something</string>
+    <string name="start_time_needs_pace">10 and 30 minutes show up once %d issues were read in the reader.</string>
+    <string name="start_backlog">From your backlog</string>
+    <string name="start_shelf_short">Short stories you already have</string>
+    <string name="start_shelf_never">You added and never started</string>
+    <string name="start_shelf_stalled">Back to a series you paused</string>
 </resources>
