@@ -9,6 +9,9 @@ object StartConfig {
     /** How many works "Continuar lendo" shows: the one to continue and three more. */
     const val CONTINUE_READING_COUNT = 4
 
+    /** How long "Agora não" keeps a recommendation away. */
+    const val LATER_DAYS = 30L
+
     /** How long the tab's state outlives its last collector, so a quick tab switch keeps it. */
     const val STOP_TIMEOUT_MS = 5_000L
 }

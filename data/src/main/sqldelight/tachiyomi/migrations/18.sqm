@@ -1,0 +1,10 @@
+-- What the reader said of the Início's recommendations (docs/HOME_PLAN.md, H3).
+
+CREATE TABLE start_feedback(
+    subject_kind INTEGER NOT NULL,
+    subject_key TEXT NOT NULL,
+    verdict INTEGER NOT NULL,
+    until_at INTEGER,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY(subject_kind, subject_key)
+);

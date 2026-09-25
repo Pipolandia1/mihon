@@ -1,0 +1,64 @@
+-- The Início tab (docs/HOME_PLAN.md).
+
+-- What the reader said of a recommendation (amendment H3): a work by its manga id, or a creator or
+-- a character by normalized name. "Later" carries the time it comes back.
+CREATE TABLE start_feedback(
+    subject_kind INTEGER NOT NULL,
+    subject_key TEXT NOT NULL,
+    verdict INTEGER NOT NULL,
+    until_at INTEGER,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY(subject_kind, subject_key)
+);
+
+allFeedback:
+SELECT *
+FROM start_feedback;
+
+upsertFeedback:
+INSERT OR REPLACE INTO start_feedback(subject_kind, subject_key, verdict, until_at, created_at)
+VALUES (:subjectKind, :subjectKey, :verdict, :untilAt, :createdAt);
+
+deleteFeedback:
+DELETE FROM start_feedback
+WHERE subject_kind = :subjectKind AND subject_key = :subjectKey;
+
+-- Feedback on works, with each work's source and URL, for the backup.
+workFeedbackWithUrls:
+SELECT M.source, M.url, F.subject_key, F.verdict, F.until_at, F.created_at
+FROM start_feedback F
+JOIN mangas M ON M._id = CAST(F.subject_key AS INTEGER)
+WHERE F.subject_kind = 0;
+
+nameFeedback:
+SELECT *
+FROM start_feedback
+WHERE subject_kind != 0;
+
+mangaIdByUrl:
+SELECT _id
+FROM mangas
+WHERE source = :source AND url = :url;
+
+-- Every work in the library or with anything read: what affinity is counted over.
+works:
+SELECT M._id, M.title, M.author, M.artist, M.genre, M.status, M.favorite, M.date_added,
+    (SELECT count(*) FROM chapters C WHERE C.manga_id = M._id) AS chapter_count,
+    (SELECT count(*) FROM chapters C WHERE C.manga_id = M._id AND C.read = 1) AS read_count
+FROM mangas M
+WHERE M.favorite = 1
+    OR EXISTS (SELECT 1 FROM chapters C WHERE C.manga_id = M._id AND C.read = 1)
+    OR EXISTS (SELECT 1 FROM reading_sessions S WHERE S.manga_id = M._id);
+
+sessionsByManga:
+SELECT manga_id, count(*) AS sessions, sum(active_ms) AS active_ms
+FROM reading_sessions
+WHERE manga_id IS NOT NULL
+GROUP BY manga_id;
+
+-- The fields affinity reads: publisher, imprint, universe, genre, issue total, writer, artist,
+-- character and team, confirmed or suggested, on the series or on any chapter.
+worksMetadata:
+SELECT manga_id, field, value, origin, confirmed
+FROM comic_metadata
+WHERE field IN (5, 6, 7, 8, 9, 15, 16, 21, 22);

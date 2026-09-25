@@ -66,6 +66,8 @@ data object StartTab : Tab {
             },
             onOpenManga = { navigator.push(MangaScreen(it)) },
             onOpenLibrary = { tabNavigator.current = LibraryTab },
+            onFeedback = viewModel::setFeedback,
+            onUndoFeedback = viewModel::undoFeedback,
         )
 
         // The splash screen waits for the first tab to have something to show.

@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.minus
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
@@ -26,11 +27,21 @@ import tachiyomi.domain.readingstats.repository.ReadingPlanRepository
 import tachiyomi.domain.readingstats.repository.ReadingStatsRepository
 import tachiyomi.domain.readingstats.service.ReadingStatsPreferences
 import tachiyomi.domain.start.CollectionState
+import tachiyomi.domain.start.Feedback
 import tachiyomi.domain.start.ReadingTime
 import tachiyomi.domain.start.StartFeed
 import tachiyomi.domain.start.StartFeedResult
 import tachiyomi.domain.start.StartInput
+import tachiyomi.domain.start.StartRepository
+import tachiyomi.domain.start.WorkFacts
 import kotlin.time.Clock
+
+private data class Extras(
+    val today: LocalDate,
+    val hideStalled: Boolean,
+    val works: List<WorkFacts>,
+    val feedback: List<Feedback>,
+)
 
 /** Everything the Início's blocks are built from, kept current as reading and the library change. */
 @Inject
@@ -40,6 +51,7 @@ class StartFeedSource(
     private val plans: ReadingPlanRepository,
     private val readingDays: ReadingDays,
     private val statsPreferences: ReadingStatsPreferences,
+    private val startRepository: StartRepository,
 ) {
 
     /** The blocks for [continueReading], the works "Continuar lendo" shows. */
@@ -49,8 +61,14 @@ class StartFeedSource(
             metadata.subscribeLibrary().map { entries -> entries.map(ComicLibrary::progress) },
             collections(),
             perIssueMs(),
-            combine(readingDays.today, statsPreferences.hideStalledReminders.changes(), ::Pair),
-        ) { continueItems, progress, collections, perIssue, (today, hideStalled) ->
+            combine(
+                readingDays.today,
+                statsPreferences.hideStalledReminders.changes(),
+                startRepository.subscribeWorks(),
+                startRepository.subscribeFeedback(),
+                ::Extras,
+            ),
+        ) { continueItems, progress, collections, perIssue, (today, hideStalled, works, feedback) ->
             StartFeed.build(
                 StartInput(
                     continueIds = continueItems.map { it.mangaId },
@@ -60,6 +78,8 @@ class StartFeedSource(
                     nowMs = Clock.System.now().toEpochMilliseconds(),
                     daySeed = today.toEpochDays(),
                     hideStalled = hideStalled,
+                    works = works,
+                    feedback = feedback,
                 ),
             )
         }

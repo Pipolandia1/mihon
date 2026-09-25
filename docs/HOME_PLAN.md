@@ -530,7 +530,8 @@ ficam intactos. O cartão "Continuar lendo" do Stats está no pacote da feature.
 - [x] H2 esqueleto do Início — `StartFeed`, `ContinueRules`, `ReadingTime` (domínio), `StartFeedSource`,
   blocos Quase terminando, Escolha pelo tempo e Do seu backlog; Continuar lendo esconde o que foi lido
   até o fim e volta com edição nova; Continuar lendo e Perto de terminar saíram da aba Stats
-- [ ] H3 motor de afinidade, "Leia isso agora", "Por quê?", feedback
+- [x] H3 motor de afinidade, "Leia isso agora", "Por quê?", feedback — `Affinity`, `Recommender`,
+  `StartRepository` (domínio), `start_feedback` (migração 18) e backup do feedback (campo 9)
 - [ ] H4 fonte principal e busca nas fontes
 - [ ] H5 descoberta pelo catálogo (Metron): "Porque você gostou de X", autores e personagens
 - [ ] H6 lançamentos da semana + calendário
@@ -628,3 +629,88 @@ página da obra. No uso real, a atualização a traz quando o Mihon a espera.
 
 **Não verificado no aparelho:** séries paradas (precisam de 30 dias sem leitura; cobertas por teste);
 tema claro; TalkBack; tablet.
+
+### Verificação do H3 (25/09/2026)
+
+**Como ficou:**
+- **Obras** (`start.sq`, `works`): a biblioteca e tudo o que foi lido ou aberto no leitor, não tudo o
+  que já foi navegado. Por obra: capítulos, lidos, total (o confirmado; senão os capítulos, quando a
+  publicação terminou), sessões, tempo ativo, última leitura e créditos.
+- **Créditos com origem:** os metadados guardados (confirmado vira "seu"), mais autor, desenhista e
+  gêneros da própria fonte (`ComicInference.suggest`, só o que vem com origem fonte). Inferido não conta.
+- **Afinidade** (`Affinity`, domínio, puro): os pesos da §5.1 como estão lá — concluída 5, ≥ 10
+  edições 4, em andamento 2, aberta uma vez 0,5, só adicionada 0,1, abandonada −0,5 —, meia-vida de 180
+  dias, papel (roteiro 1,0 · personagem 0,9 · arte 0,7 · equipe 0,6 · editora/selo/universo 0,3 ·
+  gênero 0,2) e origem (confirmado 1,0 · Metron/GCD/ComicInfo 0,8 · fonte 0,5 · inferido 0).
+- **Escolha** (`Recommender`): candidatas são obras da biblioteca não iniciadas ou em andamento que
+  não estão acima na tela; a pontuação é a afinidade do que ela compartilha com o que foi lido,
+  **sem a leitura dela mesma** (uma obra nunca se recomenda), mais o hábito de formato. Sem motivo
+  dizível não há recomendação, qualquer que seja a pontuação (pontuação mínima 0,3).
+- **Hábito de formato:** "Você costuma terminar séries curtas: N de M com até 12 edições", só com 3
+  séries curtas e fechadas começadas e 60 % terminadas.
+- **Cartão:** capa, título, formato só quando conhecido ("6 edições · história fechada", "15 edições
+  disponíveis"), 2 motivos, [Começar a ler] (abre o leitor no próximo capítulo) e [Por quê?]. O menu
+  ⋮ e o toque longo abrem "Não tenho interesse · Já li · Agora não".
+- **Por quê?:** todos os motivos (até 5), cada um com as obras por trás ("De: …", 3 nomes e "e mais
+  N") e a origem do dado nesta HQ ("Nesta HQ: Fonte"), e um rodapé que diz de onde vem a conta.
+- **Feedback** (`start_feedback`, migração 18): "Agora não" some por 30 dias (`LATER_DAYS`); os outros
+  dois, até desfazer. Um snackbar diz o que aconteceu, com Desfazer (10 s). Uma obra recusada sai do
+  Leia isso agora, da Escolha pelo tempo e do backlog — **não** do Continuar lendo nem do Quase
+  terminando, que são o que o leitor já está lendo.
+- **Backup:** o feedback entra no `BackupReadingStats` como campo **9** (o 8 fica para os
+  acompanhamentos do H7); obras viajam por fonte + URL e são restauradas no id do aparelho novo, uma
+  vez só; obra que não existe no aparelho é pulada.
+
+**Mudou em relação ao plano:**
+- **Coleções não são candidatas** do Leia isso agora: o "Mergulhar" já as oferece, e um cartão com
+  uma coleção inteira não tem "próxima edição" para [Começar a ler].
+- **Empate:** só o sorteio do dia (`daySeed` × obra), sem a recência de adição da §5.2 — com a
+  afinidade, empate exato é raro, e a recência já pesa na afinidade.
+- **"Não tenho interesse"** tira a obra; não baixa a afinidade dos autores dela (§5.1 dizia
+  "negativo"). Uma recusa isolada não diz que o autor desagradou, e o leitor pode recusar o autor
+  quando houver onde (H5).
+- **"Já li"** só tira a obra: não marca capítulos como lidos nem conta como leitura.
+- **Feedback de autor e personagem:** a tabela, a regra (tira as obras com aquele nome) e o backup
+  estão prontos e testados, mas o Início ainda não tem onde recusar um autor; entra com o bloco
+  "Autores e personagens" do H5.
+- **Migração 18** tem só `start_feedback`; as tabelas de lançamentos, acompanhamentos e casamentos
+  (§4) entram nas migrações dos seus passos.
+- **Diversidade** (§5.2) não se aplica ainda: o bloco tem uma obra só.
+
+**Testes na JVM:** `RecommenderTest` (11: cada sinal, recência, origem, a mais próxima primeiro com os
+números certos, adicionar não é gostar, uma obra não se recomenda, os três feedbacks e o "agora não"
+que volta, autor recusado, hábito de formato com o mínimo de 3, o hábito como motivo, obra já na tela),
+`StartFeedTest` +1 (a escolha sai dos blocos de baixo; feedback tira do backlog),
+`StartRepositoryImplTest` (7, SQLite real: quais obras entram, créditos com origem, total, feedback
+guardado/trocado/removido, feedback por fonte + URL restaurado uma vez, obra ausente pulada,
+migração 18), `BackupReadingStatsTest` +1 (ida e volta do feedback). Domínio 206, dados 42, app 348,
+todos passando; spotless limpo.
+
+**Emulador** (`tools/shots/home-h3-*.png`), na biblioteca sintética:
+- primeira abertura (com a migração 18): Continuar lendo em 1328 ms, blocos `[CONTINUE, READ_NOW,
+  NEAR_FINISH, BY_TIME, BACKLOG]` em 2475 ms; aberturas a frio seguintes:
+  Continuar lendo em 895–1003 ms (como no H2) e os blocos em 1555–1864 ms — uns 400 ms a mais que no H2
+  (1236 ms), a consulta das obras e a afinidade. O Continuar lendo continua chegando antes e não espera
+  por eles;
+- **escolha 1** — "Teste - Mare Vermelha · 6 edições · história fechada · Você leu 1 HQ de Ana
+  Torres · Você leu 1 HQ desenhada por Davi Prado". O Por quê? mostrou 3 motivos, "De: Teste - Rastro",
+  "Nesta HQ: Fonte" e "Você leu 2 HQs de Teste" (o gênero, de Rastro e Filha do Amanha) — o que a
+  biblioteca montada dizia, com os créditos que as fontes tinham até ali;
+- **metadados mudam a escolha:** Coração de Vidro e as candidatas não tinham autor, porque as páginas
+  nunca tinham sido atualizadas (o ComicInfo só é lido ao atualizar). Atualizadas, a escolha passou a
+  "Teste - Guardioes do Norte · 15 edições disponíveis · Você leu 2 HQs de Carla Nunes · Você leu 1 HQ
+  desenhada por Ines Rocha" — a prevista para o histórico montado (Filha do Amanha concluída e Coração
+  de Vidro em andamento, ambas de Carla Nunes). É a cobertura de metadados da §5.4 na prática;
+- **feedback:** ⋮ → "Agora não" em Guardioes: snackbar "Teste - Guardioes do Norte volta em 30 dias ·
+  Desfazer" e a escolha seguinte (Mare Vermelha) na hora. "Agora não" + Desfazer em Mare Vermelha:
+  outra obra (Lanterna Noturna) e, desfeito, Mare Vermelha de volta. Guardioes, ainda recusada, não
+  aparece no backlog ("Você adicionou e nunca começou" com as outras 8);
+- **Começar a ler** abriu o leitor em Mare Vermelha #1, página 1 de 3; de volta, ela estava no topo do
+  Continuar lendo ("0 de 6 · faltam 6") e o Leia isso agora tinha passado para Lanterna Noturna;
+- nenhum crash.
+
+**Observado:** no emulador, Guardioes do Norte ficou em "Agora não" (o primeiro Desfazer foi tocado
+depois dos 10 s do snackbar): volta sozinha em 30 dias, ou limpando os dados do app.
+
+**Não verificado no aparelho:** a restauração do feedback de um backup (coberta por teste, com SQLite
+real); obra abandonada (precisa de 60 dias parada; coberta por teste); tema claro; TalkBack; tablet.

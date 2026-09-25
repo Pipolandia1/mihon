@@ -7,6 +7,7 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.readingstats.repository.ComicMetadataRepository
 import tachiyomi.domain.readingstats.repository.ReadingPlanRepository
 import tachiyomi.domain.readingstats.repository.ReadingStatsRepository
+import tachiyomi.domain.start.StartRepository
 
 /** Adds a backup's reading to this device's. Restoring the same backup again changes nothing. */
 @Inject
@@ -14,6 +15,7 @@ class ReadingStatsRestorer(
     private val repository: ReadingStatsRepository,
     private val planRepository: ReadingPlanRepository,
     private val metadataRepository: ComicMetadataRepository,
+    private val startRepository: StartRepository,
 ) {
 
     /** Returns why the restore failed, or null if it did not. */
@@ -27,6 +29,10 @@ class ReadingStatsRestorer(
             planRepository.importCollections(stats.collections.map { it.toCollection() })
             planRepository.importPlans(stats.plans.map { it.toPlan() })
             metadataRepository.import(stats.comicMetadata.mapNotNull { it.toExported() })
+            startRepository.importFeedback(
+                works = stats.startFeedback.mapNotNull { it.toExported() },
+                names = stats.startFeedback.mapNotNull { it.toNameFeedback() },
+            )
             null
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)

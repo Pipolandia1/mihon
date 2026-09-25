@@ -20,9 +20,14 @@ import tachiyomi.domain.readingstats.plans.CollectionKind
 import tachiyomi.domain.readingstats.plans.ReadingCollection
 import tachiyomi.domain.readingstats.plans.ReadingPlan
 import tachiyomi.domain.readingstats.repository.ExportedMetadata
+import tachiyomi.domain.start.ExportedFeedback
+import tachiyomi.domain.start.Feedback
+import tachiyomi.domain.start.FeedbackSubject
+import tachiyomi.domain.start.FeedbackVerdict
 
 /**
- * Reading sessions, per-chapter progress, goals, plans, collections and confirmed comic metadata.
+ * Reading sessions, per-chapter progress, goals, plans, collections, confirmed comic metadata and
+ * what the reader said of the Início's recommendations.
  * Entries and chapters are named by source and URL, not by id, so a backup restores onto any device;
  * a session whose chapter is not there is kept.
  */
@@ -35,7 +40,52 @@ class BackupReadingStats(
     @ProtoNumber(5) val plans: List<BackupReadingPlan> = emptyList(),
     @ProtoNumber(6) val comicMetadata: List<BackupComicMetadata> = emptyList(),
     @ProtoNumber(7) val collections: List<BackupReadingCollection> = emptyList(),
+    // 8 is kept for the Início's release follows (docs/HOME_PLAN.md, H7).
+    @ProtoNumber(9) val startFeedback: List<BackupStartFeedback> = emptyList(),
 )
+
+/**
+ * What the reader said of an Início recommendation (docs/HOME_PLAN.md, H3). A work is named by source
+ * and URL; a creator or a character by its [key].
+ */
+@Serializable
+class BackupStartFeedback(
+    @ProtoNumber(1) val subject: Long,
+    @ProtoNumber(2) val key: String,
+    @ProtoNumber(3) val verdict: Long,
+    @ProtoNumber(4) val untilAt: Long? = null,
+    @ProtoNumber(5) val createdAt: Long,
+    @ProtoNumber(6) val source: Long? = null,
+    @ProtoNumber(7) val mangaUrl: String? = null,
+) {
+    private fun feedback() = Feedback(
+        subject = FeedbackSubject.of(subject),
+        key = key,
+        verdict = FeedbackVerdict.of(verdict),
+        untilAt = untilAt,
+        createdAt = createdAt,
+    )
+
+    /** A work's feedback, or null for one on a name. */
+    fun toExported(): ExportedFeedback? {
+        if (source == null || mangaUrl == null) return null
+        return ExportedFeedback(source, mangaUrl, feedback())
+    }
+
+    fun toNameFeedback(): Feedback? = feedback().takeIf { source == null && it.subject != FeedbackSubject.WORK }
+
+    companion object {
+        fun of(feedback: Feedback, source: Long? = null, mangaUrl: String? = null) = BackupStartFeedback(
+            subject = feedback.subject.id,
+            key = feedback.key,
+            verdict = feedback.verdict.id,
+            untilAt = feedback.untilAt,
+            createdAt = feedback.createdAt,
+            source = source,
+            mangaUrl = mangaUrl,
+        )
+    }
+}
 
 /** A confirmed value of an entry, or of one of its chapters. Suggestions are not backed up. */
 @Serializable

@@ -200,4 +200,36 @@
         <item quantity="one">%d unread</item>
         <item quantity="other">%d unread</item>
     </plurals>
+    <plurals name="start_reason_writer_finished">
+        <item quantity="one">You finished %1$d comic by %2$s</item>
+        <item quantity="other">You finished %1$d comics by %2$s</item>
+    </plurals>
+    <plurals name="start_reason_writer_read">
+        <item quantity="one">You read %1$d comic by %2$s</item>
+        <item quantity="other">You read %1$d comics by %2$s</item>
+    </plurals>
+    <plurals name="start_reason_artist">
+        <item quantity="one">You read %1$d comic drawn by %2$s</item>
+        <item quantity="other">You read %1$d comics drawn by %2$s</item>
+    </plurals>
+    <plurals name="start_reason_character">
+        <item quantity="one">You read %1$d issue with %2$s</item>
+        <item quantity="other">You read %1$d issues with %2$s</item>
+    </plurals>
+    <plurals name="start_reason_of">
+        <item quantity="one">You read %1$d comic from %2$s</item>
+        <item quantity="other">You read %1$d comics from %2$s</item>
+    </plurals>
+    <plurals name="start_format_closed">
+        <item quantity="one">%d issue · complete story</item>
+        <item quantity="other">%d issues · complete story</item>
+    </plurals>
+    <plurals name="start_format_issues">
+        <item quantity="one">%d issue</item>
+        <item quantity="other">%d issues</item>
+    </plurals>
+    <plurals name="start_format_available">
+        <item quantity="one">%d issue available</item>
+        <item quantity="other">%d issues available</item>
+    </plurals>
 </resources>

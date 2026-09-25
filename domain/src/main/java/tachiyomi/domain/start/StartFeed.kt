@@ -27,6 +27,11 @@ data class ContinueBlock(val mangaIds: List<Long>) : StartBlock {
     override val kind get() = StartBlockKind.CONTINUE
 }
 
+/** "Leia isso agora": the one work to start now, and why. Amendment H3. */
+data class ReadNowBlock(val recommendation: Recommendation) : StartBlock {
+    override val kind get() = StartBlockKind.READ_NOW
+}
+
 data class NearFinishBlock(val items: List<Timed>) : StartBlock {
     override val kind get() = StartBlockKind.NEAR_FINISH
 }
@@ -76,6 +81,10 @@ data class StartInput(
     val daySeed: Long,
     /** The Stats setting that hides "stalled" reminders; the Início respects it too. */
     val hideStalled: Boolean,
+    /** Every work read or in the library, for affinity (amendment H3). */
+    val works: List<WorkFacts> = emptyList(),
+    /** What the reader said of recommendations. */
+    val feedback: List<Feedback> = emptyList(),
 )
 
 data class StartFeedResult(
@@ -117,6 +126,19 @@ object StartFeed {
 
         if (input.continueIds.isNotEmpty()) blocks += ContinueBlock(input.continueIds)
 
+        val readNow = Recommender.readNow(
+            candidates = input.progress,
+            works = input.works,
+            feedback = input.feedback,
+            exclude = shown,
+            nowMs = input.nowMs,
+            daySeed = input.daySeed,
+        )
+        if (readNow != null) {
+            blocks += ReadNowBlock(readNow)
+            shown += readNow.progress.entry.mangaId
+        }
+
         val near = ComicLibrary.nearFinish(input.progress)
             .filter { it.entry.mangaId !in shown }
             .take(NEAR_FINISH_SHOWN)
@@ -140,10 +162,11 @@ object StartFeed {
 
     private fun timeOptions(input: StartInput): List<TimeOption> {
         val perIssue = input.perIssueMs
+        val hidden = Recommender.hiddenWorks(input.feedback, input.nowMs)
         // Works with an issue to open: the ones in progress, most recently read first, then the ones
         // never started, most recently added first.
         val readable = input.progress
-            .filter { it.next != null && it.status in READABLE }
+            .filter { it.next != null && it.status in READABLE && it.entry.mangaId !in hidden }
             .sortedWith(
                 compareBy<EntryProgress> { if (it.status == LibraryStatus.IN_PROGRESS) 0 else 1 }
                     .thenByDescending { it.entry.lastReadAt ?: it.entry.dateAdded },
@@ -175,8 +198,11 @@ object StartFeed {
 
     private fun backlogShelves(input: StartInput, shown: MutableSet<Long>): List<BacklogShelf> {
         val shelves = mutableListOf<BacklogShelf>()
+        // "Not interested", "already read" and "not now" keep a work off every suggestion, though
+        // never off the reader's own progress (Continuar lendo, Quase terminando).
+        val hidden = Recommender.hiddenWorks(input.feedback, input.nowMs)
         fun shelf(kind: ShelfKind, entries: List<EntryProgress>) {
-            val kept = entries.filter { it.entry.mangaId !in shown }.take(SHELF_SIZE)
+            val kept = entries.filter { it.entry.mangaId !in shown && it.entry.mangaId !in hidden }.take(SHELF_SIZE)
             if (kept.isEmpty()) return
             shelves += BacklogShelf(kind, kept)
             shown += kept.map { it.entry.mangaId }

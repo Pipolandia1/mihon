@@ -8,19 +8,23 @@ import eu.kanade.tachiyomi.data.backup.models.BackupReadingGoal
 import eu.kanade.tachiyomi.data.backup.models.BackupReadingPlan
 import eu.kanade.tachiyomi.data.backup.models.BackupReadingSession
 import eu.kanade.tachiyomi.data.backup.models.BackupReadingStats
+import eu.kanade.tachiyomi.data.backup.models.BackupStartFeedback
 import kotlinx.coroutines.flow.first
 import tachiyomi.domain.readingstats.repository.ComicMetadataRepository
 import tachiyomi.domain.readingstats.repository.ReadingPlanRepository
 import tachiyomi.domain.readingstats.repository.ReadingStatsRepository
+import tachiyomi.domain.start.StartRepository
 
 @Inject
 class ReadingStatsBackupCreator(
     private val repository: ReadingStatsRepository,
     private val planRepository: ReadingPlanRepository,
     private val metadataRepository: ComicMetadataRepository,
+    private val startRepository: StartRepository,
 ) {
 
     suspend operator fun invoke(): BackupReadingStats {
+        val (workFeedback, nameFeedback) = startRepository.exportFeedback()
         return BackupReadingStats(
             recordingStartedAt = repository.getRecordingStartedAt(),
             sessions = repository.exportSessions().map(BackupReadingSession::of),
@@ -33,6 +37,8 @@ class ReadingStatsBackupCreator(
             collections = planRepository.exportCollections().map { (collection, items) ->
                 BackupReadingCollection.of(collection, items)
             },
+            startFeedback = workFeedback.map { BackupStartFeedback.of(it.feedback, it.sourceId, it.mangaUrl) } +
+                nameFeedback.map { BackupStartFeedback.of(it) },
         )
     }
 }

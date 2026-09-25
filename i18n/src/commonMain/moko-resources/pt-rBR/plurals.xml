@@ -204,4 +204,44 @@
         <item quantity="many">%d não lidos</item>
         <item quantity="other">%d não lidos</item>
     </plurals>
+    <plurals name="start_reason_writer_finished">
+        <item quantity="one">Você terminou %1$d HQ de %2$s</item>
+        <item quantity="many">Você terminou %1$d HQs de %2$s</item>
+        <item quantity="other">Você terminou %1$d HQs de %2$s</item>
+    </plurals>
+    <plurals name="start_reason_writer_read">
+        <item quantity="one">Você leu %1$d HQ de %2$s</item>
+        <item quantity="many">Você leu %1$d HQs de %2$s</item>
+        <item quantity="other">Você leu %1$d HQs de %2$s</item>
+    </plurals>
+    <plurals name="start_reason_artist">
+        <item quantity="one">Você leu %1$d HQ desenhada por %2$s</item>
+        <item quantity="many">Você leu %1$d HQs desenhadas por %2$s</item>
+        <item quantity="other">Você leu %1$d HQs desenhadas por %2$s</item>
+    </plurals>
+    <plurals name="start_reason_character">
+        <item quantity="one">Você leu %1$d edição com %2$s</item>
+        <item quantity="many">Você leu %1$d edições com %2$s</item>
+        <item quantity="other">Você leu %1$d edições com %2$s</item>
+    </plurals>
+    <plurals name="start_reason_of">
+        <item quantity="one">Você leu %1$d HQ de %2$s</item>
+        <item quantity="many">Você leu %1$d HQs de %2$s</item>
+        <item quantity="other">Você leu %1$d HQs de %2$s</item>
+    </plurals>
+    <plurals name="start_format_closed">
+        <item quantity="one">%d edição · história fechada</item>
+        <item quantity="many">%d edições · história fechada</item>
+        <item quantity="other">%d edições · história fechada</item>
+    </plurals>
+    <plurals name="start_format_issues">
+        <item quantity="one">%d edição</item>
+        <item quantity="many">%d edições</item>
+        <item quantity="other">%d edições</item>
+    </plurals>
+    <plurals name="start_format_available">
+        <item quantity="one">%d edição disponível</item>
+        <item quantity="many">%d edições disponíveis</item>
+        <item quantity="other">%d edições disponíveis</item>
+    </plurals>
 </resources>

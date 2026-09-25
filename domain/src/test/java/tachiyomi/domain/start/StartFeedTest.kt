@@ -60,7 +60,25 @@ class StartFeedTest {
         collections: List<CollectionState> = emptyList(),
         daySeed: Long = 1,
         hideStalled: Boolean = false,
-    ) = StartInput(continueIds, progress, collections, perIssueMs, now, daySeed, hideStalled)
+        works: List<WorkFacts> = emptyList(),
+        feedback: List<Feedback> = emptyList(),
+    ) = StartInput(continueIds, progress, collections, perIssueMs, now, daySeed, hideStalled, works, feedback)
+
+    /** What affinity knows of [progress]'s work, written by [writer]. */
+    private fun facts(progress: EntryProgress, writer: String) = WorkFacts(
+        mangaId = progress.entry.mangaId,
+        title = progress.entry.title,
+        inLibrary = true,
+        dateAdded = progress.entry.dateAdded,
+        chapters = progress.entry.chapters.size,
+        chaptersRead = progress.done,
+        total = progress.total,
+        finished = progress.entry.publicationFinished,
+        sessions = progress.done,
+        activeMs = 0,
+        lastReadAt = progress.entry.lastReadAt,
+        credits = listOf(Credit(EntityKind.WRITER, writer, MetadataOrigin.USER)),
+    )
 
     private inline fun <reified T : StartBlock> StartFeedResult.block(): T? = blocks.filterIsInstance<T>().firstOrNull()
 
@@ -186,6 +204,26 @@ class StartFeedTest {
         result.remaining.getValue(1).issues shouldBe 2
         result.remaining.getValue(1).estimateMs shouldBe 20 * minute
         result.block<NearFinishBlock>().shouldBeNull()
+    }
+
+    @Test
+    fun `read now takes its pick off the blocks below, and feedback keeps a work off the backlog`() {
+        val finished = series(1, issues = 5, read = 5)
+        val shortOne = series(2, issues = 6)
+        val longOne = series(3, issues = 12, total = false)
+        val library = listOf(finished, shortOne, longOne)
+        val works = listOf(facts(finished, "Ana Torres"), facts(shortOne, "Ana Torres"), facts(longOne, "Bruno Lima"))
+
+        val result = StartFeed.build(input(library, works = works))
+
+        result.block<ReadNowBlock>()!!.recommendation.progress.entry.mangaId shouldBe 2
+        result.blocks.map { it.kind }.first() shouldBe StartBlockKind.READ_NOW
+        ids(result.block(), ShelfKind.SHORT) shouldNotContain 2L
+        ids(result.block(), ShelfKind.NEVER_STARTED) shouldBe listOf(3L)
+
+        val notInterested = listOf(Feedback(FeedbackSubject.WORK, "3", FeedbackVerdict.NOT_INTERESTED, null, now))
+        val after = StartFeed.build(input(library, works = works, feedback = notInterested))
+        ids(after.block(), ShelfKind.NEVER_STARTED) shouldBe emptyList()
     }
 
     @Test

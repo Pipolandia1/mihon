@@ -1314,4 +1314,18 @@
     <string name="start_shelf_short">Histórias curtas que você já tem</string>
     <string name="start_shelf_never">Você adicionou e nunca começou</string>
     <string name="start_shelf_stalled">Volte para uma série parada</string>
+    <string name="start_read_now">Leia isso agora</string>
+    <string name="start_read_now_start">Começar a ler</string>
+    <string name="start_why">Por quê?</string>
+    <string name="start_why_title">Por que esta HQ</string>
+    <string name="start_why_from">De: %s</string>
+    <string name="start_why_and_more">%1$s e mais %2$d</string>
+    <string name="start_why_in_this_comic">Nesta HQ: %s</string>
+    <string name="start_why_footer">Calculado só neste aparelho, com o que você leu e os metadados das suas HQs.</string>
+    <string name="start_reason_format">Você costuma terminar séries curtas: %1$d de %2$d com até %3$d edições</string>
+    <string name="start_feedback_not_interested">Não tenho interesse</string>
+    <string name="start_feedback_already_read">Já li</string>
+    <string name="start_feedback_later">Agora não</string>
+    <string name="start_feedback_done">%s não será mais sugerida</string>
+    <string name="start_feedback_later_done">%1$s volta em %2$d dias</string>
 </resources>

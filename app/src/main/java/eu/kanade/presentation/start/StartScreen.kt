@@ -21,10 +21,16 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -39,16 +45,21 @@ import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.presentation.readingstats.readingTimeText
 import eu.kanade.presentation.util.formatChapterNumber
 import eu.kanade.tachiyomi.readingstats.ContinueItem
+import eu.kanade.tachiyomi.ui.start.StartConfig
 import eu.kanade.tachiyomi.ui.start.StartViewModel
+import kotlinx.coroutines.launch
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.rounded.Search
+import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.domain.readingstats.comics.ComicLibrary
 import tachiyomi.domain.readingstats.comics.EntryProgress
 import tachiyomi.domain.start.BacklogBlock
 import tachiyomi.domain.start.BacklogShelf
 import tachiyomi.domain.start.ByTimeBlock
 import tachiyomi.domain.start.ContinueBlock
+import tachiyomi.domain.start.FeedbackVerdict
 import tachiyomi.domain.start.NearFinishBlock
+import tachiyomi.domain.start.ReadNowBlock
 import tachiyomi.domain.start.ReadingTime
 import tachiyomi.domain.start.ShelfKind
 import tachiyomi.domain.start.TimeChoice
@@ -71,8 +82,32 @@ fun StartScreen(
     onOpenChapter: (mangaId: Long, chapterId: Long) -> Unit,
     onOpenManga: (mangaId: Long) -> Unit,
     onOpenLibrary: () -> Unit,
+    onFeedback: (mangaId: Long, verdict: FeedbackVerdict) -> Unit,
+    onUndoFeedback: (mangaId: Long) -> Unit,
 ) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    // Said out loud, with a way back: a recommendation turned down by mistake is otherwise lost.
+    val giveFeedback: (Long, String, FeedbackVerdict) -> Unit = { mangaId, title, verdict ->
+        onFeedback(mangaId, verdict)
+        scope.launch {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            val message = if (verdict == FeedbackVerdict.LATER) {
+                context.stringResource(MR.strings.start_feedback_later_done, title, StartConfig.LATER_DAYS)
+            } else {
+                context.stringResource(MR.strings.start_feedback_done, title)
+            }
+            val result = snackbarHostState.showSnackbar(
+                message = message,
+                actionLabel = context.stringResource(MR.strings.action_undo),
+                duration = SnackbarDuration.Long,
+            )
+            if (result == SnackbarResult.ActionPerformed) onUndoFeedback(mangaId)
+        }
+    }
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = { scrollBehavior ->
             AppBar(
                 title = stringResource(MR.strings.label_start),
@@ -106,6 +141,19 @@ fun StartScreen(
             blocks.forEach { block ->
                 when (block) {
                     is ContinueBlock -> continueSection(state, onOpenChapter, onOpenLibrary)
+                    is ReadNowBlock -> {
+                        item(key = "read-now-title") { SectionTitle(stringResource(MR.strings.start_read_now)) }
+                        item(key = "read-now") {
+                            val recommendation = block.recommendation
+                            ReadNowCard(
+                                recommendation = recommendation,
+                                onStart = onOpenChapter,
+                                onFeedback = { mangaId, verdict ->
+                                    giveFeedback(mangaId, recommendation.progress.entry.title, verdict)
+                                },
+                            )
+                        }
+                    }
                     is NearFinishBlock -> nearFinishSection(block, onOpenChapter)
                     is ByTimeBlock -> item(key = "by-time") {
                         ByTimeSection(block, feed?.perIssueMs, onOpenChapter)

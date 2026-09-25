@@ -20,8 +20,14 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import logcat.LogPriority
+import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.start.Feedback
+import tachiyomi.domain.start.FeedbackSubject
+import tachiyomi.domain.start.FeedbackVerdict
 import tachiyomi.domain.start.StartFeedResult
+import tachiyomi.domain.start.StartRepository
+import kotlin.time.Clock
 
 @Inject
 @ViewModelKey
@@ -29,6 +35,7 @@ import tachiyomi.domain.start.StartFeedResult
 class StartViewModel(
     continueReadingSource: ContinueReadingSource,
     feedSource: StartFeedSource,
+    private val startRepository: StartRepository,
 ) : ViewModel() {
 
     // When each part first arrived, for the timing the plan asks to be measured, not guessed.
@@ -61,8 +68,28 @@ class StartViewModel(
         State(loading = false, continueReading = continueItems, feed = feed)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(StartConfig.STOP_TIMEOUT_MS), State())
 
+    /**
+     * What the reader said of a recommendation. "Agora não" lasts [StartConfig.LATER_DAYS]; the
+     * others until undone. The Início recomputes from the stored feedback, so the next pick follows.
+     */
+    fun setFeedback(mangaId: Long, verdict: FeedbackVerdict) {
+        val now = Clock.System.now().toEpochMilliseconds()
+        val until = if (verdict == FeedbackVerdict.LATER) now + StartConfig.LATER_DAYS * DAY_MS else null
+        viewModelScope.launchIO {
+            startRepository.setFeedback(Feedback(FeedbackSubject.WORK, mangaId.toString(), verdict, until, now))
+        }
+    }
+
+    fun undoFeedback(mangaId: Long) {
+        viewModelScope.launchIO { startRepository.removeFeedback(FeedbackSubject.WORK, mangaId.toString()) }
+    }
+
     private fun logElapsed(what: String) {
         logcat(LogPriority.INFO) { "StartFeed $what in ${SystemClock.elapsedRealtime() - created}ms" }
+    }
+
+    private companion object {
+        const val DAY_MS = 24L * 60 * 60 * 1000
     }
 
     @Immutable

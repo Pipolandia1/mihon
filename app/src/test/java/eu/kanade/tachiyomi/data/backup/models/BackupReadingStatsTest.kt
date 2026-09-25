@@ -25,6 +25,10 @@ import tachiyomi.domain.readingstats.plans.CollectionKind
 import tachiyomi.domain.readingstats.plans.ReadingCollection
 import tachiyomi.domain.readingstats.plans.ReadingPlan
 import tachiyomi.domain.readingstats.repository.ExportedMetadata
+import tachiyomi.domain.start.ExportedFeedback
+import tachiyomi.domain.start.Feedback
+import tachiyomi.domain.start.FeedbackSubject
+import tachiyomi.domain.start.FeedbackVerdict
 
 class BackupReadingStatsTest {
 
@@ -139,6 +143,31 @@ class BackupReadingStatsTest {
 
         decoded.comicMetadata shouldBe emptyList()
         decoded.collections shouldBe emptyList()
+    }
+
+    @Test
+    fun `what the reader said of recommendations survives a round trip`() {
+        val work = Feedback(FeedbackSubject.WORK, "12", FeedbackVerdict.LATER, untilAt = 99, createdAt = 5)
+        val name = Feedback(FeedbackSubject.CREATOR, "tom king", FeedbackVerdict.NOT_INTERESTED, null, 6)
+        val stats = BackupReadingStats(
+            startFeedback = listOf(
+                BackupStartFeedback.of(work, source = 1, mangaUrl = "/series/a"),
+                BackupStartFeedback.of(name),
+            ),
+        )
+
+        val decoded = ProtoBuf.decodeFromByteArray(
+            BackupReadingStats.serializer(),
+            ProtoBuf.encodeToByteArray(BackupReadingStats.serializer(), stats),
+        )
+
+        decoded.startFeedback.mapNotNull { it.toExported() } shouldBe listOf(ExportedFeedback(1, "/series/a", work))
+        decoded.startFeedback.mapNotNull { it.toNameFeedback() } shouldBe listOf(name)
+        // A backup from before the Início has none.
+        ProtoBuf.decodeFromByteArray(
+            BackupReadingStats.serializer(),
+            ProtoBuf.encodeToByteArray(BackupReadingStats.serializer(), BackupReadingStats()),
+        ).startFeedback shouldBe emptyList()
     }
 
     @Test

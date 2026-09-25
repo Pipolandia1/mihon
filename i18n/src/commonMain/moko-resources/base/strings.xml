@@ -1468,4 +1468,18 @@
     <string name="start_shelf_short">Short stories you already have</string>
     <string name="start_shelf_never">You added and never started</string>
     <string name="start_shelf_stalled">Back to a series you paused</string>
+    <string name="start_read_now">Read this now</string>
+    <string name="start_read_now_start">Start reading</string>
+    <string name="start_why">Why?</string>
+    <string name="start_why_title">Why this comic</string>
+    <string name="start_why_from">From: %s</string>
+    <string name="start_why_and_more">%1$s and %2$d more</string>
+    <string name="start_why_in_this_comic">In this comic: %s</string>
+    <string name="start_why_footer">Worked out on this device only, from what you read and the metadata of your comics.</string>
+    <string name="start_reason_format">You tend to finish short series: %1$d of %2$d with up to %3$d issues</string>
+    <string name="start_feedback_not_interested">Not interested</string>
+    <string name="start_feedback_already_read">Already read</string>
+    <string name="start_feedback_later">Not now</string>
+    <string name="start_feedback_done">%s won't be suggested again</string>
+    <string name="start_feedback_later_done">%1$s is back in %2$d days</string>
 </resources>
