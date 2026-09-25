@@ -8,6 +8,8 @@ import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
+import eu.kanade.tachiyomi.readingstats.ContinueItem
+import eu.kanade.tachiyomi.readingstats.ContinueReadingSource
 import eu.kanade.tachiyomi.readingstats.PlanProgressSource
 import eu.kanade.tachiyomi.readingstats.ReadingAnalysisSource
 import eu.kanade.tachiyomi.readingstats.ReadingDays
@@ -42,9 +44,6 @@ import kotlinx.datetime.plus
 import logcat.LogPriority
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
-import tachiyomi.domain.history.interactor.GetHistory
-import tachiyomi.domain.history.interactor.GetNextChapters
-import tachiyomi.domain.manga.model.MangaCover
 import tachiyomi.domain.readingstats.analysis.Insight
 import tachiyomi.domain.readingstats.goals.GoalProgress
 import tachiyomi.domain.readingstats.goals.GoalRules
@@ -81,8 +80,7 @@ class ReadingStatsViewModel(
     librarySummary: LibrarySummarySource,
     analysis: ReadingAnalysisSource,
     private val preferences: ReadingStatsPreferences,
-    private val getHistory: GetHistory,
-    private val getNextChapters: GetNextChapters,
+    continueReadingSource: ContinueReadingSource,
 ) : ViewModel() {
 
     private val events = Channel<Event>(Channel.UNLIMITED)
@@ -158,19 +156,8 @@ class ReadingStatsViewModel(
         .catch { logcat(LogPriority.ERROR, it) }
         .flowOn(Dispatchers.IO)
 
-    private val continueReading: Flow<List<ContinueItem>> = getHistory.subscribe("")
-        .distinctUntilChanged()
-        .mapLatest { history ->
-            // Entries with nothing left to read are skipped, so look further than the first few.
-            buildList {
-                for (entry in history) {
-                    if (size == ReadingStatsConfig.CONTINUE_READING_COUNT) break
-                    continueItem(entry.mangaId, entry.chapterId, entry.title, entry.coverData)?.let(::add)
-                }
-            }
-        }
-        .catch { logcat(LogPriority.ERROR, it) }
-        .flowOn(Dispatchers.IO)
+    private val continueReading: Flow<List<ContinueItem>> =
+        continueReadingSource.subscribe(ReadingStatsConfig.CONTINUE_READING_COUNT)
 
     private val dayEntries: Flow<List<ReadingDayEntry>?> = selectedDay
         .flatMapLatest { date ->
@@ -272,22 +259,6 @@ class ReadingStatsViewModel(
         )
     }
 
-    private suspend fun continueItem(mangaId: Long, chapterId: Long, title: String, cover: MangaCover): ContinueItem? {
-        val next = getNextChapters.await(mangaId, chapterId, onlyUnread = false).firstOrNull() ?: return null
-        // The chapter last opened and not finished is resumed where it was left, even on page one.
-        val resuming = next.id == chapterId && !next.read
-        return ContinueItem(
-            mangaId = mangaId,
-            chapterId = next.id,
-            title = title,
-            cover = cover,
-            chapterNumber = next.chapterNumber,
-            chapterName = next.name,
-            resumePage = if (resuming) next.lastPageRead.toInt() + 1 else null,
-            totalPages = if (resuming) repository.getChapterProgress(next.id)?.totalPages else null,
-        )
-    }
-
     private data class Calendar(val today: LocalDate, val recordingStartedOn: LocalDate, val week: ReadingPeriod)
 
     private data class Summaries(
@@ -348,19 +319,6 @@ class ReadingStatsViewModel(
         val streaks: Streaks,
         val frequency: Frequency?,
         val records: ReadingRecords,
-    )
-
-    @Immutable
-    data class ContinueItem(
-        val mangaId: Long,
-        val chapterId: Long,
-        val title: String,
-        val cover: MangaCover,
-        val chapterNumber: Double,
-        val chapterName: String,
-        /** The 1-based page to resume on, when the chapter was left part way. */
-        val resumePage: Int?,
-        val totalPages: Int?,
     )
 
     sealed interface Dialog {

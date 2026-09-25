@@ -189,4 +189,9 @@
         <item quantity="one">Maior sequência: %d dia</item>
         <item quantity="other">Maior sequência: %d dias</item>
     </plurals>
+    <plurals name="start_more_badge">
+        <item quantity="one">%d novidade em Atualizações e Navegar</item>
+        <item quantity="many">%d novidades em Atualizações e Navegar</item>
+        <item quantity="other">%d novidades em Atualizações e Navegar</item>
+    </plurals>
 </resources>

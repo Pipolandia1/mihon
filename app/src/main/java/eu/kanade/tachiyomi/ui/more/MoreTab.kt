@@ -28,6 +28,9 @@ import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.download.DownloadQueueScreen
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
+import eu.kanade.tachiyomi.ui.start.MoreBrowseScreen
+import eu.kanade.tachiyomi.ui.start.MoreUpdatesScreen
+import eu.kanade.tachiyomi.ui.start.StartNavigation
 import eu.kanade.tachiyomi.ui.stats.StatsScreen
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -62,7 +65,12 @@ data object MoreTab : Tab {
         val navigator = LocalNavigator.currentOrThrow
         val viewModel = metroViewModel<MoreViewModel>()
         val downloadQueueState by viewModel.downloadQueueState.collectAsState()
+        val badges = StartNavigation.rememberMoreBadges()
         MoreScreen(
+            newUpdates = badges.updates,
+            extensionUpdates = badges.extensions,
+            onClickUpdates = { navigator.push(MoreUpdatesScreen()) },
+            onClickBrowse = { navigator.push(MoreBrowseScreen()) },
             downloadQueueStateProvider = { downloadQueueState },
             downloadedOnly = viewModel.downloadedOnly,
             onDownloadedOnlyChange = { viewModel.downloadedOnly = it },

@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.presentation.util.formatChapterNumber
+import eu.kanade.tachiyomi.readingstats.ContinueItem
 import eu.kanade.tachiyomi.ui.readingstats.ReadingStatsViewModel
 import kotlinx.datetime.LocalDate
 import mihon.icons.materialsymbols.MaterialSymbols
@@ -314,7 +315,7 @@ private fun RowScope.WeekFigure(figure: Figure) {
 
 @Composable
 private fun ContinueRow(
-    item: ReadingStatsViewModel.ContinueItem,
+    item: ContinueItem,
     onClick: (mangaId: Long, chapterId: Long) -> Unit,
 ) {
     val chapter = formatChapterNumber(item.chapterNumber)

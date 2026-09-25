@@ -34,11 +34,10 @@ import cafe.adriel.voyager.navigator.tab.TabNavigator
 import eu.kanade.presentation.util.Screen
 import eu.kanade.presentation.util.isTabletUi
 import eu.kanade.tachiyomi.ui.browse.BrowseTab
-import eu.kanade.tachiyomi.ui.download.DownloadQueueScreen
-import eu.kanade.tachiyomi.ui.history.HistoryTab
 import eu.kanade.tachiyomi.ui.library.LibraryTab
-import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.more.MoreTab
+import eu.kanade.tachiyomi.ui.start.StartNavigation
+import eu.kanade.tachiyomi.ui.start.StartTab
 import eu.kanade.tachiyomi.ui.updates.UpdatesTab
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
@@ -63,19 +62,14 @@ object HomeScreen : Screen() {
     @Suppress("ConstPropertyName")
     private const val TabNavigatorKey = "HomeTabs"
 
-    private val TABS = listOf(
-        LibraryTab,
-        UpdatesTab,
-        HistoryTab,
-        BrowseTab,
-        MoreTab,
-    )
+    // Início, Biblioteca, Histórico, Mais: Updates and Browse moved into Mais (docs/HOME_PLAN.md).
+    private val TABS = StartNavigation.TABS
 
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         TabNavigator(
-            tab = LibraryTab,
+            tab = StartTab,
             key = TabNavigatorKey,
         ) { tabNavigator ->
             // Provide usable navigator to content screen
@@ -129,7 +123,7 @@ object HomeScreen : Screen() {
 
             val goToLibraryTab = { tabNavigator.current = LibraryTab }
 
-            BackHandler(enabled = tabNavigator.current != LibraryTab, onBack = goToLibraryTab)
+            BackHandler(enabled = tabNavigator.current != StartTab, onBack = { tabNavigator.current = StartTab })
 
             LaunchedEffect(Unit) {
                 launch {
@@ -140,25 +134,9 @@ object HomeScreen : Screen() {
                 }
                 launch {
                     openTabEvent.receiveAsFlow().collectLatest {
-                        tabNavigator.current = when (it) {
-                            is Tab.Library -> LibraryTab
-                            Tab.Updates -> UpdatesTab
-                            Tab.History -> HistoryTab
-                            is Tab.Browse -> {
-                                if (it.toExtensions) {
-                                    BrowseTab.showExtension()
-                                }
-                                BrowseTab
-                            }
-                            is Tab.More -> MoreTab
-                        }
-
-                        if (it is Tab.Library && it.mangaIdToOpen != null) {
-                            navigator.push(MangaScreen(it.mangaIdToOpen))
-                        }
-                        if (it is Tab.More && it.toDownloads) {
-                            navigator.push(DownloadQueueScreen)
-                        }
+                        val destination = StartNavigation.destinationOf(it)
+                        tabNavigator.current = destination.tab
+                        destination.screen?.let(navigator::push)
                     }
                 }
             }
@@ -223,6 +201,8 @@ object HomeScreen : Screen() {
                         .collectLatest { value = it }
                 }
 
+                is MoreTab -> StartNavigation.moreBadges(graph).collectLatest { value = it.total }
+
                 else -> value = 0
             }
         }
@@ -241,6 +221,8 @@ object HomeScreen : Screen() {
                         count = count,
                         count,
                     )
+
+                    is MoreTab -> pluralStringResource(MR.plurals.start_more_badge, count = count, count)
 
                     else -> null
                 }

@@ -51,7 +51,11 @@ data object UpdatesTab : Tab {
     }
 
     @Composable
-    override fun Content() {
+    override fun Content() = Content(navigateUp = null)
+
+    /** [navigateUp] is set when opened from Mais rather than as a tab (docs/HOME_PLAN.md). */
+    @Composable
+    fun Content(navigateUp: (() -> Unit)?) {
         val context = LocalContext.current
         val navigator = LocalNavigator.currentOrThrow
         val viewModel = metroViewModel<UpdatesViewModel>()
@@ -78,6 +82,7 @@ data object UpdatesTab : Tab {
             onCalendarClicked = { navigator.push(UpcomingScreen()) },
             onFilterClicked = viewModel::showFilterDialog,
             hasActiveFilters = state.hasActiveFilters,
+            navigateUp = navigateUp,
         )
 
         val onDismissDialog = { viewModel.setDialog(null) }

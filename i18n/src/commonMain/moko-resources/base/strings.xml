@@ -1450,4 +1450,8 @@
     <string name="reading_stats_def_insights">Each insight follows one rule and shows its numbers under “Why?”. Streak: %1$d days or more. Week change: at least %2$d%% against the same days of a fully recorded last week with %3$d new pages or more. Best week: beats every earlier week, with %4$d or more of them. Favourite weekday: %5$d%% of the time of 4 fully recorded weeks. Part of the day: %6$d sessions and %7$d%% of the time. Top series: %8$d%% of the time among several. Recent means the last %9$d days.</string>
     <string name="reading_stats_def_title_privacy">Privacy</string>
     <string name="reading_stats_def_privacy">All of this is worked out on this device from what it recorded. Nothing is sent anywhere; sharing a summary happens only when you ask, through the system’s share sheet.</string>
+    <string name="label_start">Home</string>
+    <string name="start_continue">Continue</string>
+    <string name="start_nothing_in_progress">Nothing in progress yet. What you start reading shows up here.</string>
+    <string name="start_open_library">Open library</string>
 </resources>

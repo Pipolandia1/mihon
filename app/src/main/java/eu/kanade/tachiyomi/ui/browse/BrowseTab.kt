@@ -54,7 +54,11 @@ data object BrowseTab : Tab {
     }
 
     @Composable
-    override fun Content() {
+    override fun Content() = Content(navigateUp = null)
+
+    /** [navigateUp] is set when opened from Mais rather than as a tab (docs/HOME_PLAN.md). */
+    @Composable
+    fun Content(navigateUp: (() -> Unit)?) {
         val context = LocalContext.current
 
         // Hoisted for extensions tab's search bar
@@ -75,6 +79,7 @@ data object BrowseTab : Tab {
             state = state,
             searchQuery = extensionsSearchQuery,
             onChangeSearchQuery = extensionsViewModel::search,
+            navigateUp = navigateUp,
         )
         LaunchedEffect(Unit) {
             switchToExtensionTabChannel.receiveAsFlow()

@@ -188,4 +188,8 @@
         <item quantity="one">Longest streak: %d day</item>
         <item quantity="other">Longest streak: %d days</item>
     </plurals>
+    <plurals name="start_more_badge">
+        <item quantity="one">%d new in Updates and Browse</item>
+        <item quantity="other">%d new in Updates and Browse</item>
+    </plurals>
 </resources>

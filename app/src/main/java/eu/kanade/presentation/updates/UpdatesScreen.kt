@@ -61,6 +61,7 @@ fun UpdateScreen(
     onOpenChapter: (UpdatesItem) -> Unit,
     onFilterClicked: () -> Unit,
     hasActiveFilters: Boolean,
+    navigateUp: (() -> Unit)? = null,
 ) {
     BackHandler(enabled = state.selectionMode) {
         onSelectAll(false)
@@ -78,6 +79,7 @@ fun UpdateScreen(
                 onInvertSelection = { onInvertSelection() },
                 onCancelActionMode = { onSelectAll(false) },
                 scrollBehavior = scrollBehavior,
+                navigateUp = navigateUp,
             )
         },
         bottomBar = {
@@ -148,11 +150,13 @@ private fun UpdatesAppBar(
     onInvertSelection: () -> Unit,
     onCancelActionMode: () -> Unit,
     scrollBehavior: TopAppBarScrollBehavior,
+    navigateUp: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     AppBar(
         modifier = modifier,
         title = stringResource(MR.strings.label_recent_updates),
+        navigateUp = navigateUp,
         actions = {
             AppBarActions(
                 listOf(

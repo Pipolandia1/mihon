@@ -16,7 +16,9 @@ import mihon.icons.materialsymbols.automirroredrounded.Help
 import mihon.icons.materialsymbols.automirroredrounded.Label
 import mihon.icons.materialsymbols.rounded.CloudOff
 import mihon.icons.materialsymbols.rounded.Download
+import mihon.icons.materialsymbols.rounded.Explore
 import mihon.icons.materialsymbols.rounded.Info
+import mihon.icons.materialsymbols.rounded.NewReleases
 import mihon.icons.materialsymbols.rounded.QueryStats
 import mihon.icons.materialsymbols.rounded.Settings
 import mihon.icons.materialsymbols.rounded.Storage
@@ -30,6 +32,10 @@ import tachiyomi.presentation.core.i18n.stringResource
 
 @Composable
 fun MoreScreen(
+    newUpdates: Int,
+    extensionUpdates: Int,
+    onClickUpdates: () -> Unit,
+    onClickBrowse: () -> Unit,
     downloadQueueStateProvider: () -> DownloadQueueState,
     downloadedOnly: Boolean,
     onDownloadedOnlyChange: (Boolean) -> Unit,
@@ -52,6 +58,28 @@ fun MoreScreen(
                     iconPadding = PaddingValues(vertical = 32.dp),
                 )
             }
+            // Out of the bottom bar since the Início tab (docs/HOME_PLAN.md), with their counts.
+            item {
+                TextPreferenceWidget(
+                    title = stringResource(MR.strings.label_recent_updates),
+                    subtitle = newUpdates.takeIf { it > 0 }
+                        ?.let { pluralStringResource(MR.plurals.notification_chapters_generic, count = it, it) },
+                    icon = MaterialSymbols.Rounded.NewReleases,
+                    onPreferenceClick = onClickUpdates,
+                )
+            }
+            item {
+                TextPreferenceWidget(
+                    title = stringResource(MR.strings.browse),
+                    subtitle = extensionUpdates.takeIf { it > 0 }
+                        ?.let {
+                            pluralStringResource(MR.plurals.update_check_notification_ext_updates, count = it, it)
+                        },
+                    icon = MaterialSymbols.Rounded.Explore,
+                    onPreferenceClick = onClickBrowse,
+                )
+            }
+            item { HorizontalDivider() }
             item {
                 SwitchPreferenceWidget(
                     title = stringResource(MR.strings.label_downloaded_only),
