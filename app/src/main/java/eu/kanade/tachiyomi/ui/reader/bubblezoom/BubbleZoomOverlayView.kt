@@ -65,6 +65,8 @@ interface CardToken {
 class BubbleZoomOverlayView(
     context: Context,
     private val imageView: SubsamplingScaleImageView,
+    /** The reader's chosen card size, read as each card is lifted. */
+    private val cardSize: () -> BubbleCardSize = { BubbleCardSize.DEFAULT },
 ) : View(context) {
 
     /**
@@ -207,12 +209,16 @@ class BubbleZoomOverlayView(
         }
         val onScreen = CardRect(topLeft.x, topLeft.y, bottomRight.x, bottomRight.y)
 
+        val size = cardSize()
         val scale = BubbleCardGeometry.cardScale(
             paddedWidthSourcePx = shown.width * sourceWidth,
             paddedHeightSourcePx = shown.height * sourceHeight,
             viewportWidthPx = viewportWidth,
             viewportHeightPx = viewportHeight,
             currentViewScale = imageView.scale,
+            magnification = size.magnification,
+            widthFraction = size.widthFraction,
+            heightFraction = size.heightFraction,
         )
         val cardWidth = shown.width * sourceWidth * scale
         val cardHeight = shown.height * sourceHeight * scale

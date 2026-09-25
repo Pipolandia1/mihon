@@ -41,6 +41,13 @@ object BubbleZoomConfig {
     const val TARGET_HEIGHT_FRACTION = 0.65f
 
     /**
+     * The most of the screen a card may take whatever size the reader picked
+     * ([BubbleCardSize]): the full-screen 0.92 that E14 measured as too much at the default,
+     * kept as the limit for the larger sizes so a card never runs into the screen's edge.
+     */
+    const val CARD_MAX_SCREEN_FRACTION = 0.92f
+
+    /**
      * How much larger than on screen the card shows the balloon, against the scale the page is
      * drawn at right now.
      *
@@ -119,8 +126,13 @@ object BubbleZoomConfig {
      * of three rows leaves far more than a fiftieth of its height between them — and large
      * enough that two balloons stacked inside one panel, which nearly touch, are not read as
      * two separate rows and therefore ordered the same way either way.
+     *
+     * Halved in amendment E17, on a whole issue measured balloon by balloon. The balloons of two
+     * rows of panels came 0.014 apart, and at 0.02 were not cut: the group then split into
+     * columns, and a balloon from the lower row was read before the upper row's last two. The
+     * closest a stack inside one panel came was 0.006, which 0.005 split and read out of order.
      */
-    const val ORDER_ROW_GAP = 0.02f
+    const val ORDER_ROW_GAP = 0.01f
 
     /**
      * The same across the page, as a fraction of its width, for panels side by side.

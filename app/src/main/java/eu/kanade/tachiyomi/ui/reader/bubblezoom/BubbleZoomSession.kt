@@ -60,6 +60,8 @@ class BubbleZoomSession(
      * would line up; the feature simply does not look at those pages.
      */
     private val cropBorders: () -> Boolean = { false },
+    /** How large the lifted card is; read for each card, so a change applies to the next one. */
+    internal val cardSize: () -> BubbleCardSize = { BubbleCardSize.DEFAULT },
     /**
      * Whether the reader reads right to left, which is the only thing reading order needs from
      * the viewer. Down the page is down the page either way; it decides how two panels side by
@@ -445,7 +447,8 @@ class BubbleZoomSession(
         // Ordered here rather than in the controller, which is kept free of the reader's
         // direction on purpose: it is the one fact about the viewer that the state machine
         // would otherwise have to hold, and it is the session's job to know the reader.
-        entry.bubbles?.let { controller.onBubblesReady(page, BubbleOrderResolver.order(it, rightToLeft())) }
+        val ordered = entry.bubbles?.let { BubbleOrderResolver.order(it, rightToLeft()) }
+        ordered?.let { controller.onBubblesReady(page, it) }
         entry.failure?.let { controller.onDetectionFailed(page, it) }
         // The one moment the reader can see: this page now has its balloons. Timed against the
         // reader's own "page selected" line, it says whether the answer was waiting when they
@@ -454,6 +457,12 @@ class BubbleZoomSession(
         val after = controller.state.value
         if (after !== before && after is BubbleZoomState.Ready && after.page == page) {
             logcat(LogPriority.INFO) { "BubbleZoom page ready with ${after.bubbles.size} bubbles" }
+            // With the regions drawn, what they were drawn from: every box the resolver was
+            // given and the walk it made of them, so an order the reader reports as wrong can be
+            // replayed in a test instead of guessed at from a screenshot.
+            if (presentation.value.showBoxes && ordered != null) {
+                logcat(LogPriority.INFO) { "BubbleZoom order " + BubbleOrderDump.of(entry.bubbles.orEmpty(), ordered) }
+            }
         }
     }
 
@@ -504,6 +513,7 @@ fun BubbleZoomSession(
         real = RtDetrBubbleDetector(context.applicationContext),
     ),
     cropBorders = { preferences.cropBorders.get() },
+    cardSize = { BubbleCardSize.of(preferences.bubbleZoomCardSize.get()) },
     rightToLeft = rightToLeft,
     currentPage = currentPage,
     store = BubbleZoomStore.of(owner),

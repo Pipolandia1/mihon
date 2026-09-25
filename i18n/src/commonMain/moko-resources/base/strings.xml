@@ -406,6 +406,11 @@
     <string name="pref_bubble_zoom_debug">Show detected regions</string>
     <string name="pref_bubble_zoom_fake_detector">Use fixed test boxes instead of the detector</string>
     <string name="pref_bubble_zoom_debug_summary">Draws a box over every region Bubble Zoom found, for checking alignment</string>
+    <string name="pref_bubble_zoom_card_size">Zoomed balloon size</string>
+    <string name="pref_bubble_zoom_card_size_small">Small</string>
+    <string name="pref_bubble_zoom_card_size_default">Default</string>
+    <string name="pref_bubble_zoom_card_size_large">Large</string>
+    <string name="pref_bubble_zoom_card_size_extra_large">Extra large</string>
     <string name="pref_page_rotate_invert">Flip orientation of rotated wide pages</string>
     <string name="pref_double_tap_zoom">Double tap to zoom</string>
     <string name="pref_cutout_short">Show content in cutout area</string>

@@ -11,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import eu.kanade.domain.manga.model.readerOrientation
 import eu.kanade.domain.manga.model.readingMode
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleCardSize
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderSettingsViewModel
@@ -175,6 +176,16 @@ private fun ColumnScope.PagerViewerSettings(viewModel: ReaderSettingsViewModel) 
     )
 
     if (bubbleZoom) {
+        val cardSize by viewModel.preferences.bubbleZoomCardSize.collectAsState()
+        SettingsChipRow(MR.strings.pref_bubble_zoom_card_size) {
+            BubbleCardSize.entries.map { size ->
+                FilterChip(
+                    selected = cardSize == size.percent,
+                    onClick = { viewModel.preferences.bubbleZoomCardSize.set(size.percent) },
+                    label = { Text(stringResource(size.label)) },
+                )
+            }
+        }
         CheckboxItem(
             label = stringResource(MR.strings.pref_bubble_zoom_debug),
             pref = viewModel.preferences.bubbleZoomDebug,

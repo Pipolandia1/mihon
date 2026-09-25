@@ -238,7 +238,7 @@ class BubbleZoomPagePresenter(private val session: BubbleZoomSession) {
 
     private fun ensureCard(host: ViewGroup, imageView: SubsamplingScaleImageView) {
         if (card != null) return
-        card = BubbleZoomOverlayView(host.context, imageView).also {
+        card = BubbleZoomOverlayView(host.context, imageView, session.cardSize).also {
             host.addView(it, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
     }

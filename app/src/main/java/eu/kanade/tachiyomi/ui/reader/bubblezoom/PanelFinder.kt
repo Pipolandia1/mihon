@@ -60,7 +60,12 @@ object PanelFinder {
         val drawn = leaves.filter { ink(page, it) >= BubbleDetectionConfig.PANEL_MIN_INK }
         // One leaf is the page itself: nothing was found, and saying so is not the same as
         // saying "the whole page is one panel", which would make every caller special-case it.
-        return if (drawn.size < 2) emptyList() else drawn.mapNotNull { box(page, it) }
+        val straight = if (drawn.size < 2) emptyList() else drawn.mapNotNull { box(page, it) }
+        // Gutters drawn at an angle cross the page without any one line of pixels lying inside
+        // them, so the regions they enclose are looked for as well, and the finer division wins.
+        // Amendment E17. A tie keeps the straight cut, which is the one this was calibrated on.
+        val enclosed = GutterRegions.find(luma, width, height, page.tone, minPanel)
+        return if (enclosed.size > straight.size) enclosed else straight
     }
 
     /** A leaf, in the reduction's own pixels, before it becomes a fraction of the page. */

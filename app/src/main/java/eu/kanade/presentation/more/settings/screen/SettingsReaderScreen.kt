@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import eu.kanade.presentation.more.settings.Preference
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleCardSize
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
@@ -282,6 +283,12 @@ object SettingsReaderScreen : SearchableSettings {
                     preference = readerPreferences.bubbleZoom,
                     title = stringResource(MR.strings.pref_bubble_zoom),
                     subtitle = stringResource(MR.strings.pref_bubble_zoom_summary),
+                ),
+                Preference.PreferenceItem.ListPreference(
+                    preference = readerPreferences.bubbleZoomCardSize,
+                    entries = BubbleCardSize.entries.associate { it.percent to stringResource(it.label) },
+                    title = stringResource(MR.strings.pref_bubble_zoom_card_size),
+                    enabled = bubbleZoom,
                 ),
                 Preference.PreferenceItem.SwitchPreference(
                     preference = readerPreferences.bubbleZoomDebug,

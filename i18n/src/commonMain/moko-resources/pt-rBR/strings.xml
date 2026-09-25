@@ -1291,4 +1291,9 @@
     <string name="reading_stats_def_insights">Cada insight segue uma regra e mostra os números em “Por quê?”. Sequência: %1$d dias ou mais. Variação da semana: pelo menos %2$d%% em relação aos mesmos dias de uma semana passada registrada inteira e com %3$d páginas novas ou mais. Melhor semana: supera todas as anteriores, havendo %4$d ou mais. Dia da semana: %5$d%% do tempo de 4 semanas registradas inteiras. Parte do dia: %6$d sessões e %7$d%% do tempo. Obra em destaque: %8$d%% do tempo entre várias. Recente quer dizer os últimos %9$d dias.</string>
     <string name="reading_stats_def_title_privacy">Privacidade</string>
     <string name="reading_stats_def_privacy">Tudo isto é calculado no aparelho a partir do que ele registrou. Nada é enviado; compartilhar um resumo só acontece quando você pede, pela folha de compartilhamento do sistema.</string>
+    <string name="pref_bubble_zoom_card_size">Tamanho do balão ampliado</string>
+    <string name="pref_bubble_zoom_card_size_small">Pequeno</string>
+    <string name="pref_bubble_zoom_card_size_default">Padrão</string>
+    <string name="pref_bubble_zoom_card_size_large">Grande</string>
+    <string name="pref_bubble_zoom_card_size_extra_large">Muito grande</string>
 </resources>

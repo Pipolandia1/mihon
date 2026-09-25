@@ -204,12 +204,11 @@ class BubbleOrderResolverTest {
                 listOf("right-1", "right-2", "right-3"),
             BubbleOrderResolver.order(page + insets, rightToLeft = false).names(),
         )
-        assertEquals(
-            listOf("1", "2", "3", "4", "5", "6", "middle-1", "right-1", "middle-2", "right-2", "left-1") +
-                listOf("left-2", "middle-3", "right-3"),
-            BubbleOrderResolver.order(page, rightToLeft = false).names(),
-            "without them, across the row: what the reader saw",
-        )
+        // Without them the row is read across the insets, as the reader saw. Exactly which wrong
+        // order depends on the balloons-only thresholds, which amendment E17 moved; that the
+        // middle inset is started before the left one does not.
+        val alone = BubbleOrderResolver.order(page, rightToLeft = false).names()
+        assertTrue(alone.indexOf("middle-1") < alone.indexOf("left-1"), "without them, across the row: $alone")
     }
 
     @Test
@@ -333,5 +332,42 @@ class BubbleOrderResolverTest {
             assertEquals(page.size, order.size, "size changed")
             assertEquals(page.toSet(), order.toSet(), "a balloon was lost or duplicated")
         }
+    }
+
+    /**
+     * A page's input exactly as the debug log wrote it ([BubbleOrderDump]), and the walk made
+     * of it as indices into that input. Amendment E17: the figures below are real pages'.
+     */
+    private fun walk(line: String): List<Int> {
+        val input = BubbleOrderDump.parse(line)
+        return BubbleOrderResolver.order(input, rightToLeft = false).map { stop -> input.indexOfFirst { it === stop } }
+    }
+
+    @Test
+    fun `two rows of panels a hundredth of a page apart are read row by row`() {
+        // A splash, an inset strip under it and a close-up under that, with no gutter found.
+        // The strip's last balloon ends 0.014 above the close-up's first. At a 0.02 gap they
+        // were one row, the row split into columns, and the close-up's "English, Pennyworth"
+        // (3) was read before the strip's "What?" (4) and "Apparently..." (2).
+        val page = "[B 0.1444,0.7000 0.2275x0.1043 ; B 0.6763,0.8492 0.2516x0.1254 ; " +
+            "B 0.7879,0.7460 0.1392x0.0733 ; B 0.3266,0.8326 0.1195x0.0499 ; " +
+            "B 0.5375,0.6986 0.0781x0.0450 ; B 0.1248,0.0221 0.1175x0.0692]"
+
+        assertEquals(listOf(5, 0, 4, 2, 3, 1), walk(page))
+    }
+
+    @Test
+    fun `balloons stacked in one panel are not two rows`() {
+        // The other side of that gap: in the top right panel "Nevermore?" (9) ends 0.006 above
+        // the balloon under it (5). A gap that small splits them into rows, and the left panel's
+        // "Who?" (10) is then read after three balloons of the panel beside it.
+        val page = "[B 0.0895,0.3673 0.1687x0.0820 ; B 0.1629,0.6681 0.1652x0.0610 ; " +
+            "B 0.5592,0.3619 0.1552x0.0689 ; B 0.4874,0.0241 0.1928x0.0623 ; " +
+            "B 0.6348,0.0623 0.1692x0.0683 ; B 0.8291,0.1399 0.1133x0.0601 ; " +
+            "B 0.3387,0.6542 0.2428x0.0625 ; B 0.0939,0.0245 0.1132x0.0574 ; " +
+            "B 0.6107,0.6620 0.1590x0.0489 ; B 0.8017,0.1012 0.1378x0.0328 ; " +
+            "B 0.3255,0.1541 0.1107x0.0361 ; B 0.7325,0.6932 0.1300x0.0378]"
+
+        assertEquals(listOf(7, 10, 3, 4, 9, 5, 0, 2, 1, 6, 8, 11), walk(page))
     }
 }

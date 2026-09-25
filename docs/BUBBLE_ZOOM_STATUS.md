@@ -1883,6 +1883,67 @@ a segunda cópia que as regras proíbem.
 P13, abandonada) não é usado pelo app, só por um teste; `DEBUG_DETECTIONS` não é usado por nada.
 Ambos são inofensivos e o R8 os tira do release; remover item do spec é decisão de escopo.
 
+## E17 — ordem em quadrinhos inclinados, e o tamanho do card
+
+Pedido do usuário: "diversos erros na ordem dos balões" em Absolute Batman #17, e uma opção para
+configurar o tamanho dos balões.
+
+**Como foi medido.** O capítulo inteiro (38 páginas) aberto no emulador com a depuração ligada.
+Uma linha nova de log, `BubbleZoom order` (só com "Mostrar regiões detectadas" ligado), grava cada
+caixa entregue à ordenação e o percurso que saiu. Cada página foi redesenhada no PC com o percurso
+numerado e julgada à mão: **11 das ~30 páginas de história tinham a ordem errada**. As páginas
+vieram de um CBZ que o usuário baixou no celular (no emulador a fonte fica atrás do Cloudflare) e
+ficaram só no emulador e numa pasta temporária — nada entrou no repositório.
+
+**Causas.**
+1. **Calhas inclinadas.** O desenhista faz os quadrinhos levemente tortos: a calha sobe ~10 px (na
+   redução de 600) de um lado ao outro, mais que a própria espessura, então nenhuma linha reta de
+   pixels é calha pura e o `PanelFinder` (E8) não achava nada — quadrinhos em 4 de 38 páginas. Sem
+   quadrinhos, uma fileira de três era lida atravessando os três, linha a linha.
+2. **Vão mínimo entre fileiras (0,02) grande demais.** Na p7 os balões de duas fileiras de
+   quadrinhos ficaram a 0,014; sem o corte de linha o grupo virava colunas, e um balão de baixo
+   passava na frente dos dois últimos de cima.
+
+**O que mudou.**
+- `GutterRegions` (novo): cada região de tinta cercada por calha é um quadrinho, qualquer que seja
+  a inclinação (componentes conexos, com 1 px de erosão para um contorno fino não unir dois
+  quadrinhos). Só em margem clara (tom ≥ 200) e só quando o resultado parece página de quadrinhos:
+  ≥ 2 regiões, nenhuma do tamanho da página, sobreposição ≤ 0,2, cobertura ≥ 0,75. Medido nas 38
+  páginas: toda página com calha real cobre ≥ 0,86 com sobreposição ≤ 0,15; toda outra falha em
+  pelo menos uma regra. O `PanelFinder` usa essas regiões quando elas dividem a página em mais
+  quadrinhos que o corte reto; no empate fica o corte reto. Margem escura (o caso do E8) continua
+  exatamente como antes.
+- `ORDER_ROW_GAP` 0,02 → 0,01. O limite de baixo, medido: dois balões empilhados no mesmo
+  quadrinho a 0,006 (p34), que 0,005 já separava e lia fora de ordem.
+- `BubbleOrderDump` + o log `BubbleZoom order`: uma ordem errada relatada vira teste colando a
+  linha do logcat.
+
+**Resultado no emulador** (percurso do app de verdade, não simulação): corrigidas p4, p7, p9, p11,
+p18, p20 e p26; a p14 melhorou (o "But he can't--" não pula mais para depois do quadrinho de
+baixo); **as 27 páginas que estavam certas continuam certas**. Continuam erradas p3, p16, p30 e
+parte da p14: quadrinhos **sem calha** — desenhados sobre a arte de fundo (p3) ou encostados num
+quadrinho que sangra até a borda (p16, p30, p14). Nenhum método pela cor da calha separa isso;
+seria preciso achar as linhas de borda desenhadas, como o `FramedPanels`, que hoje só aceita
+moldura escura e reta.
+
+**Tamanho do card.** Nova preferência "Tamanho do balão ampliado": Pequeno 75%, Padrão 100% (o
+de sempre), Grande 125%, Muito grande 150%. O fator escala juntos a ampliação e o teto de tela
+(senão os balões largos, presos no teto, não mudariam), com limite absoluto de 92% da tela. Fica no
+painel rápido do leitor (chips, só com o Bubble Zoom ligado) e em Configurações → Leitor, e vale a
+partir do próximo card. No emulador: o mesmo balão (p11, 10/10) 50% maior em Muito grande; o
+primeiro da p12, largo, para nos 92%.
+
+**Arquivos.** Novos: `GutterRegions.kt`, `BubbleCardSize.kt`, `BubbleOrderDump.kt` e os testes
+`GutterRegionsTest`, `BubbleCardSizeTest`, `BubbleOrderDumpTest`. Alterados no pacote:
+`PanelFinder`, `BubbleDetectionConfig`, `BubbleZoomConfig`, `BubbleZoomSession`,
+`BubbleZoomPagePresenter`, `BubbleZoomOverlayView` e `BubbleOrderResolverTest` (2 testes com as
+coordenadas reais; o teste do E15 que fixava a ordem errada exata sem molduras passou a verificar
+a propriedade, porque a ordem errada mudou com o novo vão). Upstream, todos já tocados na P7:
+`ReaderPreferences` (+5 linhas), `ReadingModePage` (+11), `SettingsReaderScreen` (+7), strings
+base e pt-BR.
+
+Testes: 322 do app, 0 falhas; spotless limpo.
+
 ## Onde estamos contra o Play Books — medido em 22/09/2026
 
 Mesma HQ aberta nos dois leitores, mesmas páginas, emulador. O que a comparação achou, em

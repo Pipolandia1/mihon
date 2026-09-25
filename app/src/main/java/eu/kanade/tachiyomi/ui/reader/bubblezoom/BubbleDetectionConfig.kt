@@ -100,6 +100,30 @@ object BubbleDetectionConfig {
     const val PANEL_MIN_INK = 0.35f
 
     /*
+     * Panels as the regions their gutters enclose, for gutters drawn at an angle. Amendment E17.
+     * Measured at 600 over the 38 pages of an issue drawn that way. See [GutterRegions].
+     */
+
+    /**
+     * The lightest margin the regions are looked for on. On paper the pen's lines keep a panel
+     * one region; on a dark margin the art's shadows are the margin's tone and cut it apart.
+     */
+    const val PANEL_REGION_MIN_TONE = 200
+
+    /** How much of the page the regions have to cover between them. Real gutters: 0.86 to 0.95. */
+    const val PANEL_REGION_MIN_COVER = 0.75f
+
+    /**
+     * How far two regions may overlap, as a fraction of the smaller. Panels at an angle overlap
+     * their neighbours' boxes by the angle's rise, measured up to 0.15; pieces of art lying
+     * inside each other overlap completely.
+     */
+    const val PANEL_REGION_MAX_OVERLAP = 0.2f
+
+    /** A region this large across and down is the page itself, and nothing was divided. */
+    const val PANEL_REGION_WHOLE_PAGE = 0.9f
+
+    /*
      * Framed panels, on a page no gutter divides. Amendment E15. Fractions are of the scan's
      * long side ([PANEL_SCAN_LONG_SIDE]); the figures were measured at 600 over 137 pages. See
      * [FramedPanels] for what each rule is for.

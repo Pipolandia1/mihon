@@ -6,6 +6,7 @@ import dev.icerock.moko.resources.StringResource
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import eu.kanade.tachiyomi.ui.reader.bubblezoom.BubbleCardSize
 import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.preference.getEnum
@@ -231,6 +232,10 @@ class ReaderPreferences(
     /** Answers with three fixed boxes instead of running the model, to compare the two. */
     val bubbleZoomFakeDetector: Preference<Boolean> =
         preferenceStore.getBoolean("bubble_zoom_fake_detector", false)
+
+    /** How large the lifted card is, as a percent of the calibrated size ([BubbleCardSize]). */
+    val bubbleZoomCardSize: Preference<Int> =
+        preferenceStore.getInt("bubble_zoom_card_size", BubbleCardSize.DEFAULT.percent)
 
     // endregion
 
