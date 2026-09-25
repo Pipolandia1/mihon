@@ -226,7 +226,7 @@ class BubbleMaskTest {
         val surface = BubbleMask.surface(page, side, side, box)
         assertNotNull(surface)
 
-        assertTrue(BubbleMask.outline(surface!!, side, side, passes).contentEquals(traced(page)))
+        assertTrue(BubbleMask.outline(surface!!, page, side, side, passes).contentEquals(traced(page)))
     }
 
     @Test
@@ -244,6 +244,61 @@ class BubbleMaskTest {
         assertNotNull(surface)
         assertTrue(surface!![at(30, 25)], "the balloon is the surface")
         assertFalse(surface[at(centre, centre)], "the page at the capture's middle is not")
+    }
+
+    @Test
+    fun `the growth stops at the end of the balloon's line, not in the art past it`() {
+        // Amendment E19. A white balloon, a three pixel black line, and red-brown art right
+        // against it, as on the page the rim was reported on. Grown by six passes as the page's
+        // size asks, the old growth took three rings of that art in with the balloon.
+        val pixels = IntArray(side * side) { PAPER }
+        ellipse(pixels, 50, 42, ART)
+        ellipse(pixels, 44, 36, INK)
+        ellipse(pixels, 41, 33, PAPER)
+        val surface = BubbleMask.surface(pixels, side, side, box)!!
+
+        val mask = BubbleMask.outline(surface, pixels, side, side, growPasses = 6)
+
+        assertTrue(mask[at(centre + 44, centre)], "the line's outer edge is in")
+        assertTrue(mask[at(centre, centre + 36)], "all the way round")
+        assertFalse(mask[at(centre + 46, centre)], "the art beside it is not")
+        assertFalse(mask[at(centre, centre + 38)], "all the way round")
+    }
+
+    @Test
+    fun `art against one side of the line stops the growth there only`() {
+        // A five pixel line, but on the right the art is drawn over its outer two pixels. The
+        // rings are still mostly line, so the growth goes on; on the right it takes no art.
+        val pixels = IntArray(side * side) { PAPER }
+        ellipse(pixels, 46, 38, INK)
+        ellipse(pixels, 41, 33, PAPER)
+        for (y in 0 until side) {
+            for (x in centre + 30 until side) {
+                val dx = (x - centre).toFloat() / 44
+                val dy = (y - centre).toFloat() / 36
+                if (dx * dx + dy * dy > 1f && pixels[at(x, y)] == INK) pixels[at(x, y)] = ART
+            }
+        }
+        val surface = BubbleMask.surface(pixels, side, side, box)!!
+
+        val mask = BubbleMask.outline(surface, pixels, side, side, growPasses = 6)
+
+        assertTrue(mask[at(centre - 46, centre)], "the whole line on the left is in")
+        assertTrue(mask[at(centre + 44, centre)], "the line on the right is in")
+        assertFalse(mask[at(centre + 45, centre)], "the art over it is not")
+    }
+
+    @Test
+    fun `a balloon whose edge does not stand out grows the whole way, as before`() {
+        // A caption with no border on a page nearly its own tone: there is no line to stop at.
+        val pixels = IntArray(side * side) { PALE }
+        ellipse(pixels, 41, 33, PAPER)
+        val surface = BubbleMask.surface(pixels, side, side, box)
+        assertNotNull(surface)
+
+        val mask = BubbleMask.outline(surface!!, pixels, side, side, growPasses = 4)
+
+        assertTrue(mask[at(centre + 45, centre)], "four passes past the surface")
     }
 
     private fun traced(pixels: IntArray): BooleanArray {
@@ -284,5 +339,14 @@ class BubbleMaskTest {
         const val PAPER = 0xFFFFFFFF.toInt()
         const val INK = 0xFF000000.toInt()
         const val GREY = 0xFF808080.toInt()
+
+        /** Red-brown, the art the rim was reported in. */
+        const val ART = 0xFF8C4A42.toInt()
+
+        /**
+         * A page far enough from paper for the fill to stop at it, near enough that its edge
+         * does not read as a line: a caption without a border.
+         */
+        const val PALE = 0xFFC0C0C0.toInt()
     }
 }

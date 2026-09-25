@@ -486,6 +486,7 @@ class BubbleZoomOverlayView(
         // tail it adds is measured in the same pixels as the balloon it grows from.
         val density = BubbleZoomConfig.MASK_LONG_SIDE_PX / maxOf(onScreen.width, onScreen.height)
 
+        val begun = SystemClock.elapsedRealtime()
         val first = traceIn(box, search, density, BubbleZoomConfig.MASK_LONG_SIDE_PX, aroundBox = false)
         val started = SystemClock.elapsedRealtime()
         val followed = first?.let {
@@ -507,7 +508,8 @@ class BubbleZoomOverlayView(
         logcat(LogPriority.INFO) {
             val size = first?.let { "${it.width}x${it.height} " }.orEmpty()
             val tail = followed?.let { " tail=${it.outcome}/${it.extensions} in ${tookMs}ms" }.orEmpty()
-            "BubbleZoom mask $size-> ${if (body == null || whole == null) "NONE" else "traced"}$tail"
+            val totalMs = SystemClock.elapsedRealtime() - begun
+            "BubbleZoom mask $size-> ${if (body == null || whole == null) "NONE" else "traced"}$tail total ${totalMs}ms"
         }
         if (body == null || whole == null) return null
 
@@ -550,7 +552,7 @@ class BubbleZoomOverlayView(
             paddedLongSourcePx = maxOf(trace.search.width * sourceWidth, trace.search.height * sourceHeight),
             pageWidthSourcePx = sourceWidth,
         )
-        val cells = BubbleMask.outline(trace.surface, trace.width, trace.height, passes)
+        val cells = BubbleMask.outline(trace.surface, trace.pixels, trace.width, trace.height, passes)
         val bounds = BubbleMask.bounds(cells, trace.width, trace.height) ?: return null
         val box = BubbleCardGeometry.boxOfSilhouette(bounds, trace.search, trace.width, trace.height) ?: return null
         return Outlined(cells, trace.width, bounds, box)

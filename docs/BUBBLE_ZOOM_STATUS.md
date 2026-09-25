@@ -1998,6 +1998,44 @@ resultado; modo `aroundBox` para as recapturas), `BubbleCardGeometry` (`withTail
 
 Testes: 339 do app, 0 falhas (10 novos em `BubbleTailTest`, 5 em `BubbleCardGeometryTest`, 2 em `BubbleMaskTest`); spotless limpo.
 
+## E19 — o card para na linha do balão
+
+Pedido do usuário, com uma captura do "GASP!" da p11 de Absolute Batman #17: tirar a sobra ao redor
+dos balões, que não faz parte do balão — uma faixa vermelha em volta do balão e do rabicho.
+
+**A causa, medida.** Depois do preenchimento, a silhueta é crescida um número fixo de pixels para
+levar junto a linha preta do balão. Esse número vem do tamanho da página (0,3% da largura, vezes
+1,5 de folga), e nesta HQ a caneta é mais fina que isso: o crescimento passava da linha e levava
+a arte do lado — vermelha, bege, verde-oliva conforme o quadrinho. Os anéis crescidos a partir de
+um balão leem, em mediana: o papel (0,87–1,0), a linha (0,12–0,14) por um a três anéis, e depois
+a arte (0,2–0,7). O crescimento pedia 3 a 8 anéis.
+
+**O que mudou.** `BubbleMask.outline` lê a linha do próprio balão: entre os três primeiros anéis,
+o que mais difere da superfície. Cresce enquanto os anéis ainda são daquele tom (tolerância 0,12)
+e, depois do primeiro, só em pixels daquele tom — onde a arte encosta na linha de um lado, só
+aquele lado para. O número calculado pela página vira só o teto. Um balão cuja borda não se destaca
+da superfície (contraste < 0,3; legenda sem borda) cresce até o teto, como sempre.
+
+**Resultado no Python (230 silhuetas do capítulo):** 150 ficaram mais justas, 79 já cresciam só o
+que a linha tinha, 1 sem linha (como antes). Amostra de 20 das mais justas conferida uma a uma:
+todas mantêm a linha preta inteira e perdem a arte em volta.
+
+**No emulador:** o capítulo inteiro percorrido de novo, balão a balão (263 cards): **nenhum
+card mudou de resultado** em relação ao E18 (mesmos 66 rabichos seguidos, 19 recusados, 133
+fechados, 8 largos, 37 sem silhueta), nenhum crash. O "GASP!" da captura do usuário perdeu a faixa
+vermelha em volta do balão e do rabicho; o mesmo para o bege do "MMMPH!", o verde-oliva do "I
+KNOW!" e os demais — `tools/shots/e19-p11-zoom.png` e `e19-before-after.png` (os mesmos cards no
+E18 e no E19). Tempo da silhueta inteira (captura, traçado e borda), fora o rabicho: mediana 9 ms,
+p90 13 ms, máximo 37 ms no primeiro balão traçado do percurso. Não havia medida disso antes desta
+fase, então quanto a borda nova acrescenta não está isolado.
+
+**Arquivos.** `BubbleMask` (`outline` agora recebe os pixels; `dilate` aceita um filtro por pixel),
+`BubbleZoomConfig` (3 constantes `MASK_LINE_*`), `BubbleZoomOverlayView` (passa os pixels; o log
+`BubbleZoom mask` passou a trazer o tempo total da silhueta) e `BubbleMaskTest` (3 testes novos).
+Nenhum arquivo upstream.
+
+Testes: 342 do app, 0 falhas; spotless limpo.
+
 ## Onde estamos contra o Play Books — medido em 22/09/2026
 
 Mesma HQ aberta nos dois leitores, mesmas páginas, emulador. O que a comparação achou, em

@@ -64,7 +64,7 @@ object BubbleMask {
         growPasses: Int,
     ): BooleanArray? {
         val filled = surface(pixels, width, height, box) ?: return null
-        return outline(filled, width, height, growPasses)
+        return outline(filled, pixels, width, height, growPasses)
     }
 
     /**
@@ -99,9 +99,77 @@ object BubbleMask {
         return filled
     }
 
-    /** [surface] grown by [growPasses] to take in the balloon's own line. */
-    fun outline(surface: BooleanArray, width: Int, height: Int, growPasses: Int): BooleanArray =
-        grow(surface, width, height, growPasses)
+    /**
+     * [surface] grown to take in the balloon's own line, and no further. Amendment E19.
+     *
+     * [growPasses] is how thick the caller expects the line to be, from the page's size. That
+     * is an estimate, made generous on purpose, and on a comic whose pen is finer than it
+     * assumes the growth went on past the line into the art around the balloon: a rim of red,
+     * beige or olive page the reader saw around every card. Measured on a whole issue, the
+     * rings grown out of a balloon read its paper, then its black line for one to three rings,
+     * then whatever is drawn beside it.
+     *
+     * So the line is read off the balloon itself, as the ring among the first few that differs
+     * most from its surface, and the silhouette grows while the rings are still that tone — and,
+     * past the first, only into pixels of that tone, so where art touches the line on one side
+     * only that side stops. A balloon whose edge does not stand out from its surface, a caption
+     * with no border, grows the whole way as it always did: there is no line to stop at.
+     */
+    fun outline(surface: BooleanArray, pixels: IntArray, width: Int, height: Int, growPasses: Int): BooleanArray {
+        val passes = growPasses.coerceIn(1, BubbleZoomConfig.MASK_MAX_GROW_PASSES)
+        val size = width * height
+        if (pixels.size < size || surface.size < size) return grow(surface, width, height, passes)
+
+        val luma = FloatArray(size) { lumaOf(pixels[it]) }
+        val tone = medianTone(luma, surface) { true } ?: return grow(surface, width, height, passes)
+
+        // The tone of each ring the plain growth would add, one pass at a time.
+        val rings = FloatArray(passes)
+        var reached = surface
+        for (ring in 0 until passes) {
+            val next = dilate(reached, width, height)
+            val inside = reached
+            rings[ring] = medianTone(luma, next) { !inside[it] } ?: tone
+            reached = next
+        }
+
+        var line = rings[0]
+        for (ring in 1 until minOf(passes, BubbleZoomConfig.MASK_LINE_PROBE_RINGS)) {
+            if (abs(rings[ring] - tone) > abs(line - tone)) line = rings[ring]
+        }
+        // Nothing around it stands out from its surface: no line to stop at, so as before.
+        if (abs(line - tone) < BubbleZoomConfig.MASK_LINE_CONTRAST) return reached
+
+        var thickness = 1
+        while (thickness < passes && abs(rings[thickness] - line) <= BubbleZoomConfig.MASK_LINE_TOLERANCE) {
+            thickness++
+        }
+        // The first ring always: it is where the fill stopped, half surface and half line.
+        var grown = dilate(surface, width, height)
+        repeat(thickness - 1) {
+            grown = dilate(grown, width, height) { abs(luma[it] - line) <= BubbleZoomConfig.MASK_LINE_TOLERANCE }
+        }
+        return grown
+    }
+
+    /** The median of [luma] over the pixels of [cells] that [counted] admits, or null if none. */
+    private inline fun medianTone(luma: FloatArray, cells: BooleanArray, counted: (Int) -> Boolean): Float? {
+        val bins = IntArray(TONE_BINS)
+        var total = 0
+        for (index in luma.indices) {
+            if (!cells[index] || !counted(index)) continue
+            bins[(luma[index] * (TONE_BINS - 1)).toInt().coerceIn(0, TONE_BINS - 1)]++
+            total++
+        }
+        if (total == 0) return null
+        val half = (total + 1) / 2
+        var seen = 0
+        for (bin in bins.indices) {
+            seen += bins[bin]
+            if (seen >= half) return bin / (TONE_BINS - 1f)
+        }
+        return 1f
+    }
 
     /**
      * The rectangle [shape] occupies, or null when it occupies nothing.
@@ -332,17 +400,26 @@ object BubbleMask {
         return current
     }
 
-    private fun dilate(source: BooleanArray, width: Int, height: Int): BooleanArray {
+    /** [source] grown by a pixel, four-connected, into the pixels [admits] lets it. */
+    private inline fun dilate(
+        source: BooleanArray,
+        width: Int,
+        height: Int,
+        admits: (Int) -> Boolean = { true },
+    ): BooleanArray {
         val grown = BooleanArray(source.size)
         for (y in 0 until height) {
             val row = y * width
             for (x in 0 until width) {
                 val index = row + x
-                grown[index] = source[index] ||
-                    (x > 0 && source[index - 1]) ||
-                    (x < width - 1 && source[index + 1]) ||
-                    (y > 0 && source[index - width]) ||
-                    (y < height - 1 && source[index + width])
+                grown[index] = source[index] || (
+                    (
+                        (x > 0 && source[index - 1]) ||
+                            (x < width - 1 && source[index + 1]) ||
+                            (y > 0 && source[index - width]) ||
+                            (y < height - 1 && source[index + width])
+                        ) && admits(index)
+                    )
             }
         }
         return grown
@@ -386,6 +463,7 @@ object BubbleMask {
     }
 
     private const val MIN_SIDE = 3
+    private const val TONE_BINS = 256
     private const val RED_WEIGHT = 0.299f
     private const val GREEN_WEIGHT = 0.587f
     private const val BLUE_WEIGHT = 0.114f

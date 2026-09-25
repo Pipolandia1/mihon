@@ -226,6 +226,25 @@ object BubbleZoomConfig {
     /** Ceiling on that growth, so a degenerate measurement cannot dilate the shape into a box. */
     const val MASK_MAX_GROW_PASSES = 8
 
+    /*
+     * Where the growth stops: at the end of the balloon's own line. Amendment E19, measured over
+     * the 263 balloons of a whole issue, where the rings grown out of a balloon read its paper
+     * (0.87 to 1.0), then its line (0.12 to 0.14) for one to three rings, then the art beside it
+     * (0.2 to 0.7). See [BubbleMask.outline].
+     */
+
+    /** How many of the first rings are looked at for the line. It is never further out. */
+    const val MASK_LINE_PROBE_RINGS = 3
+
+    /**
+     * How far the line's tone must be from the balloon's surface to be a line at all. Below
+     * this the edge does not stand out, and the growth goes the whole way as it always did.
+     */
+    const val MASK_LINE_CONTRAST = 0.3f
+
+    /** How near a ring, and then a pixel, must be to the line's tone to be more of the line. */
+    const val MASK_LINE_TOLERANCE = 0.12f
+
     /**
      * How far past the detected box to look for the balloon, as a fraction of the box's own
      * smallest side. Amendment E3, retuned by E10.
