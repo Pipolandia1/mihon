@@ -26,4 +26,19 @@ object StartConfig {
 
     /** How long the check for Cloudflare's challenge on a refused search may take. */
     const val CHALLENGE_CHECK_TIMEOUT_MS = 10_000L
+
+    /** How far back an entity's issues are asked of the catalogue: recent series are the readable ones. */
+    const val CATALOG_YEARS = 5
+
+    /** Pages of 100 issues read per entity; Metron lists them by series name, not by date. */
+    const val CATALOG_PAGES = 2
+
+    /** How many of the best catalogue picks get their details asked, before the sources are searched. */
+    const val CATALOG_DETAILS = 15
+
+    /** How long an entity's series are kept before the catalogue is asked again. */
+    const val CATALOG_SERIES_DAYS = 7L
+
+    /** How long a name's id and a series' details are kept: they seldom change. */
+    const val CATALOG_NAME_DAYS = 30L
 }

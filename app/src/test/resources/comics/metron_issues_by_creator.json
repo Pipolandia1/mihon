@@ -1,0 +1,51 @@
+{
+  "count": 212,
+  "next": "https://metron.cloud/api/issue/?creator_id=1437&page=2&store_date_range_after=2021-01-01",
+  "previous": null,
+  "results": [
+    {
+      "id": 101201,
+      "series": { "id": 2911, "name": "Batman: The Brave and the Bold", "volume": 1, "year_began": 2023 },
+      "number": "1",
+      "issue": "Batman: The Brave and the Bold (2023) #1",
+      "cover_date": "2023-07-01",
+      "store_date": "2023-05-16",
+      "image": "https://static.metron.cloud/media/issue/2023/05/10/bbb-1.jpg",
+      "cover_hash": "c3a1f0e2d4b59687",
+      "modified": "2024-02-11T12:00:00.000000-05:00"
+    },
+    {
+      "id": 98110,
+      "series": { "id": 2533, "name": "The Human Target", "volume": 1, "year_began": 2021 },
+      "number": "1",
+      "issue": "The Human Target (2021) #1",
+      "cover_date": "2022-01-01",
+      "store_date": "2021-11-09",
+      "image": "https://static.metron.cloud/media/issue/2021/11/03/ht-1.jpg",
+      "cover_hash": "a1b2c3d4e5f60718",
+      "modified": "2023-08-01T09:30:00.000000-04:00"
+    },
+    {
+      "id": 98111,
+      "series": { "id": 2533, "name": "The Human Target", "volume": 1, "year_began": 2021 },
+      "number": "2",
+      "issue": "The Human Target (2021) #2",
+      "cover_date": "2022-02-01",
+      "store_date": "2021-12-14",
+      "image": "https://static.metron.cloud/media/issue/2021/12/08/ht-2.jpg",
+      "cover_hash": "b1c2d3e4f5a60719",
+      "modified": "2023-08-01T09:31:00.000000-04:00"
+    },
+    {
+      "id": 107450,
+      "series": { "id": 3120, "name": "Wonder Woman", "volume": 6, "year_began": 2023 },
+      "number": "1",
+      "issue": "Wonder Woman (2023) #1",
+      "cover_date": "2023-11-01",
+      "store_date": "2023-09-19",
+      "image": "https://static.metron.cloud/media/issue/2023/09/13/ww-1.jpg",
+      "cover_hash": "d4e5f6a7b8c90123",
+      "modified": "2025-01-20T15:45:00.000000-05:00"
+    }
+  ]
+}

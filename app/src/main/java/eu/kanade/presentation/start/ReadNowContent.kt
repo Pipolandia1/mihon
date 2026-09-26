@@ -135,7 +135,7 @@ fun ReadNowCard(
 }
 
 @Composable
-private fun FeedbackMenu(expanded: Boolean, onDismiss: () -> Unit, onChoose: (FeedbackVerdict) -> Unit) {
+internal fun FeedbackMenu(expanded: Boolean, onDismiss: () -> Unit, onChoose: (FeedbackVerdict) -> Unit) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         FeedbackVerdict.entries.forEach { verdict ->
             DropdownMenuItem(

@@ -1329,8 +1329,8 @@
     <string name="start_feedback_done">%s não será mais sugerida</string>
     <string name="start_feedback_later_done">%1$s volta em %2$d dias</string>
     <string name="start_sources_title">Fontes das recomendações</string>
-    <string name="start_sources_search">Procurar recomendações nas fontes</string>
-    <string name="start_sources_search_summary">O Início envia às fontes o nome das HQs que recomenda, como numa busca manual. Desligado, recomenda só da sua biblioteca.</string>
+    <string name="start_sources_search">Recomendar HQs de fora da biblioteca</string>
+    <string name="start_sources_search_summary">O Início pergunta ao Metron, com o seu token, pelas séries dos autores e personagens que você mais lê, e procura essas séries nas suas fontes, como numa busca manual. Desligado, recomenda só da sua biblioteca.</string>
     <string name="start_sources_about">Uma HQ recomendada que não está na sua biblioteca é procurada primeiro na fonte principal e, nas outras, nesta ordem, só se a principal não tiver ou falhar. O que você adicionou fica onde está.</string>
     <string name="start_sources_order">Ordem</string>
     <string name="start_sources_empty">Nenhuma fonte escolhida. Toque numa fonte abaixo para torná-la a principal.</string>
@@ -1361,4 +1361,19 @@
     <string name="start_sources_failure_timeout">demorou demais</string>
     <string name="start_sources_failure_network">sem conexão</string>
     <string name="start_sources_failure_other">erro (%s)</string>
+    <string name="start_because_you_liked">Porque você gostou de %s</string>
+    <string name="start_creators">Autores e personagens</string>
+    <string name="start_creators_reads_a_lot">Você lê muito %s</string>
+    <string name="start_creators_more_by">Mais de %s</string>
+    <string name="start_creators_more_with">Mais com %s</string>
+    <string name="start_entity_not_interested">Não quero recomendações de %s</string>
+    <string name="start_entity_feedback_done">Sem mais recomendações de %s</string>
+    <string name="start_link_writer">Também de %s</string>
+    <string name="start_link_artist">Também desenhada por %s</string>
+    <string name="start_link_character">Também com %s</string>
+    <string name="start_in_source">em %s</string>
+    <string name="start_catalog_no_token">Para recomendar HQs de fora da sua biblioteca, o Início pergunta ao Metron com o seu token.</string>
+    <string name="start_catalog_add_token">Adicionar o token</string>
+    <string name="start_catalog_choose_source">Escolher a fonte</string>
+    <string name="start_coverage_open">Abrir a Biblioteca de HQ</string>
 </resources>

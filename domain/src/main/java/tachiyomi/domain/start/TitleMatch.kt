@@ -1,6 +1,7 @@
 package tachiyomi.domain.start
 
 import java.text.Normalizer
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -8,21 +9,27 @@ import kotlin.math.min
 data class TitleKey(val name: String, val year: Int?)
 
 /** How well a search result names a catalogue series, the best first. */
-enum class MatchQuality { EXACT_YEAR, EXACT, NEAR_YEAR }
+enum class MatchQuality { EXACT_YEAR, EXACT, ADJACENT_YEAR, NEAR_YEAR }
 
 /**
  * Whether a title in a source is the series the catalogue names (docs/HOME_PLAN.md §7.3, H4).
  *
  * Strict on purpose: nothing checks the choice before the Início shows it, and a recommendation of
  * the wrong series is worse than none. The names must be equal once the year, "Vol.", punctuation,
- * accents and a leading article are set aside, and the years equal when both sides have one. Nearly
- * equal names ([NEAR]) count only with equal years. Two different series tied for best — "Batman
- * (2016)" and "Batman (2025-)" for a catalogue "Batman" of unknown year — are no answer.
+ * accents and a leading article are set aside, and the years equal when both sides have one — or
+ * [ADJACENT_YEARS] apart, since catalogues date a series by its first cover and sources by its first
+ * sale, a year apart for a series begun late in the year (Metron's "Justice League Unlimited", 2025,
+ * is a source's "Justice League Unlimited (2024-)"). Nearly equal names ([NEAR]) count only with
+ * equal years. Two different series tied for best — "Batman (2016)" and "Batman (2025-)" for a
+ * catalogue "Batman" of unknown year — are no answer.
  */
 object TitleMatch {
 
     /** Normalized similarity from which two names count as nearly equal, with equal years. */
     const val NEAR = 0.9
+
+    /** How far apart the years of an equal name may be: a first cover and a first sale. */
+    const val ADJACENT_YEARS = 1
 
     fun key(title: String, year: Int? = null): TitleKey {
         val plain = Normalizer.normalize(title, Normalizer.Form.NFD).replace(MARKS, "").lowercase()
@@ -40,11 +47,13 @@ object TitleMatch {
     fun quality(series: TitleKey, title: String): MatchQuality? {
         val found = key(title)
         if (series.name.isEmpty() || found.name.isEmpty()) return null
-        val bothYears = series.year != null && found.year != null
-        if (bothYears && series.year != found.year) return null
+        val gap = if (series.year != null && found.year != null) abs(series.year - found.year) else null
+        val equal = series.name == found.name
         return when {
-            series.name == found.name -> if (bothYears) MatchQuality.EXACT_YEAR else MatchQuality.EXACT
-            bothYears && similarity(series.name, found.name) >= NEAR -> MatchQuality.NEAR_YEAR
+            equal && gap == null -> MatchQuality.EXACT
+            equal && gap == 0 -> MatchQuality.EXACT_YEAR
+            equal && gap!! <= ADJACENT_YEARS -> MatchQuality.ADJACENT_YEAR
+            gap == 0 && similarity(series.name, found.name) >= NEAR -> MatchQuality.NEAR_YEAR
             else -> null
         }
     }

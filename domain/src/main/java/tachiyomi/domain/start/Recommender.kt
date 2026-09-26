@@ -99,22 +99,9 @@ object Recommender {
         var score = 0.0
         val reasons = mutableListOf<Reason>()
         credits.forEach { (key, credit) ->
-            val value = model.affinity(key, excluding = id) * Affinity.originWeight(credit.origin)
-            score += value
-            val read = model.readWorks(key, excluding = id)
             // Counted either way; said only when something was actually read.
-            if (value > 0.0 && read.isNotEmpty()) {
-                reasons += EntityReason(
-                    kind = key.kind,
-                    name = read.first().displayName,
-                    worksRead = read.size,
-                    worksCompleted = read.count { it.engagement == Engagement.COMPLETED },
-                    issuesRead = read.sumOf { it.work.chaptersRead },
-                    fromTitles = read.map { it.work.title },
-                    candidateOrigin = credit.origin,
-                    score = value,
-                )
-            }
+            score += model.affinity(key, excluding = id) * Affinity.originWeight(credit.origin)
+            reasonFor(model, key, credit.origin, excluding = id)?.let { reasons += it }
         }
         val total = work.total
         if (format != null && total != null && total <= SHORT_SERIES_MAX && work.finished) {
@@ -122,6 +109,31 @@ object Recommender {
             reasons += format
         }
         return Recommendation(candidate, score, reasons.sortedByDescending { it.score }.take(REASONS_KEPT))
+    }
+
+    /**
+     * What [key] is to this reader, as a reason with its numbers, for a work whose value of it is as
+     * sure as [origin]; null when nothing of it was read. [excluding]: the work's own reading.
+     */
+    fun reasonFor(
+        model: AffinityModel,
+        key: EntityKey,
+        origin: MetadataOrigin,
+        excluding: Long? = null,
+    ): EntityReason? {
+        val value = model.affinity(key, excluding) * Affinity.originWeight(origin)
+        val read = model.readWorks(key, excluding)
+        if (value <= 0.0 || read.isEmpty()) return null
+        return EntityReason(
+            kind = key.kind,
+            name = read.first().displayName,
+            worksRead = read.size,
+            worksCompleted = read.count { it.engagement == Engagement.COMPLETED },
+            issuesRead = read.sumOf { it.work.chaptersRead },
+            fromTitles = read.map { it.work.title },
+            candidateOrigin = origin,
+            score = value,
+        )
     }
 
     /**
@@ -145,7 +157,8 @@ object Recommender {
             .mapNotNull { it.key.toLongOrNull() }
             .toSet()
 
-    private fun unwantedNames(feedback: List<Feedback>, nowMs: Long): Set<EntityKey> =
+    /** Creators and characters the reader turned down, as the entities they are. */
+    fun unwantedNames(feedback: List<Feedback>, nowMs: Long): Set<EntityKey> =
         feedback.filter { it.subject != FeedbackSubject.WORK && it.activeAt(nowMs) }
             .flatMap { entry ->
                 val kinds = if (entry.subject == FeedbackSubject.CREATOR) {

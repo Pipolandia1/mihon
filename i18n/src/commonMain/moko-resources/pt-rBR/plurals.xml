@@ -249,4 +249,14 @@
         <item quantity="many">%1$d resultados, nenhum é esta série (o primeiro: “%2$s”)</item>
         <item quantity="other">%1$d resultados, nenhum é esta série (o primeiro: “%2$s”)</item>
     </plurals>
+    <plurals name="start_catalog_needs_primary">
+        <item quantity="one">%d série dos seus autores para procurar: escolha a fonte principal</item>
+        <item quantity="many">%d séries dos seus autores para procurar: escolha a fonte principal</item>
+        <item quantity="other">%d séries dos seus autores para procurar: escolha a fonte principal</item>
+    </plurals>
+    <plurals name="start_coverage">
+        <item quantity="one">As recomendações melhoram com metadados: %d série sem roteirista</item>
+        <item quantity="many">As recomendações melhoram com metadados: %d séries sem roteirista</item>
+        <item quantity="other">As recomendações melhoram com metadados: %d séries sem roteirista</item>
+    </plurals>
 </resources>

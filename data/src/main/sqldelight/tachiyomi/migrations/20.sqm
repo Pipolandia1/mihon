@@ -1,0 +1,8 @@
+-- The catalogue's answers for the Início's discovery (docs/HOME_PLAN.md, H5).
+
+CREATE TABLE start_catalog_cache(
+    cache_key TEXT NOT NULL PRIMARY KEY,
+    body TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+);

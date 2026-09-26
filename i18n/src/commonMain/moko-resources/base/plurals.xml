@@ -236,4 +236,12 @@
         <item quantity="one">%1$d result, not this series (“%2$s”)</item>
         <item quantity="other">%1$d results, none of them this series (first “%2$s”)</item>
     </plurals>
+    <plurals name="start_catalog_needs_primary">
+        <item quantity="one">%d series by your creators to look for: choose the primary source</item>
+        <item quantity="other">%d series by your creators to look for: choose the primary source</item>
+    </plurals>
+    <plurals name="start_coverage">
+        <item quantity="one">Recommendations get better with metadata: %d series without a writer</item>
+        <item quantity="other">Recommendations get better with metadata: %d series without a writer</item>
+    </plurals>
 </resources>

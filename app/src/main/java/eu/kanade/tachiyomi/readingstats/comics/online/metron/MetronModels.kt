@@ -90,3 +90,27 @@ data class MetronIssue(
     val modified: String? = null,
     @SerialName("resource_url") val resourceUrl: String? = null,
 )
+
+/** An issue as a filtered issue list gives it (the Início's discovery, H5): what matters is its series. */
+@Serializable
+data class MetronIssueListItem(
+    val id: Long,
+    val series: MetronIssueSeries? = null,
+    val number: String = "",
+    @SerialName("store_date") val storeDate: String? = null,
+)
+
+@Serializable
+data class MetronIssueSeries(
+    val id: Long,
+    val name: String = "",
+    val volume: Int? = null,
+    @SerialName("year_began") val yearBegan: Int? = null,
+)
+
+/** What the Início asks Metron for issues by: its name search, and the issue list's filter. */
+enum class MetronNamed(val path: String, val filter: String) {
+    CREATOR("creator", "creator_id"),
+    CHARACTER("character", "character_id"),
+    TEAM("team", "team_id"),
+}

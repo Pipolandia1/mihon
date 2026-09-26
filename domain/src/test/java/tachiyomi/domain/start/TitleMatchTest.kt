@@ -49,7 +49,19 @@ class TitleMatchTest {
     @Test
     fun `a different year is a different series`() {
         best("Batman", 2011).shouldBeNull()
-        best("Absolute Batman", 2023).shouldBeNull()
+        best("Absolute Batman", 2022).shouldBeNull()
+    }
+
+    @Test
+    fun `an equal name a year off is the series, as a first cover and a first sale date it`() {
+        // Seen on the emulator (26/09/2026): Metron dates it 2025, Read Comics Online 2024.
+        TitleMatch.best("Justice League Unlimited", 2025, listOf("Justice League Unlimited (2024-)")) { it } shouldBe
+            "Justice League Unlimited (2024-)"
+        // The year itself still wins, and a year off both ways is no answer.
+        TitleMatch.best("Batman", 2025, listOf("Batman (2024)", "Batman (2025-)")) { it } shouldBe "Batman (2025-)"
+        TitleMatch.best("Batman", 2025, listOf("Batman (2024)", "Batman (2026)")) { it }.shouldBeNull()
+        // A nearly equal name still needs the very year.
+        TitleMatch.best("Absolute Batman", 2025, listOf("Absolut Batman (2024)")) { it }.shouldBeNull()
     }
 
     @Test

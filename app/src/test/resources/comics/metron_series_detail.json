@@ -1,0 +1,20 @@
+{
+  "id": 2533,
+  "name": "The Human Target",
+  "sort_name": "Human Target",
+  "volume": 1,
+  "series_type": { "id": 11, "name": "Limited Series" },
+  "status": "Completed",
+  "publisher": { "id": 2, "name": "DC Comics" },
+  "imprint": null,
+  "year_began": 2021,
+  "year_end": 2023,
+  "desc": "Christopher Chance has 12 days to find out who poisoned him.",
+  "issue_count": 12,
+  "genres": [{ "id": 10, "name": "Mystery" }],
+  "associated": [],
+  "cv_id": 139183,
+  "gcd_id": null,
+  "resource_url": "https://metron.cloud/series/the-human-target-2021/",
+  "modified": "2023-06-12T11:20:00.000000-04:00"
+}

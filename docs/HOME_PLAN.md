@@ -534,7 +534,8 @@ ficam intactos. O cartão "Continuar lendo" do Stats está no pacote da feature.
   `StartRepository` (domínio), `start_feedback` (migração 18) e backup do feedback (campo 9)
 - [x] H4 fonte principal e busca nas fontes — `TitleMatch`, `SourceResolver` (domínio), `start_source_matches`
   (migração 19), `SourceFinder`, tela "Fontes das recomendações" com "Testar uma busca"
-- [ ] H5 descoberta pelo catálogo (Metron): "Porque você gostou de X", autores e personagens
+- [x] H5 descoberta pelo catálogo (Metron): "Porque você gostou de X", autores e personagens — `Discovery`
+  (domínio), `start_catalog_cache` (migração 20), `CatalogDiscovery`, pedidos de catálogo no `MetronApi`
 - [ ] H6 lançamentos da semana + calendário
 - [ ] H7 alertas e notificações
 
@@ -801,3 +802,125 @@ e o bloqueio não se provoca de propósito. A primeira busca mostrou a falha rea
 da checagem existir), e a checagem se apoia no cabeçalho visto com `curl`. Também não visto: o
 caminho automático (`find`, cache, limite de 10), que só o H5 chama (coberto pelos testes do
 resolvedor e do banco); tema claro; TalkBack; tablet.
+
+### Verificação do H5 (26/09/2026)
+
+**Como ficou:**
+- **Quem o Metron conhece** (`Discovery.entitiesToAsk`, domínio, puro): os 4 roteiristas, desenhistas,
+  personagens ou equipes de maior afinidade (§5.1) com algo lido de fato e afinidade ≥ 1,5; nunca
+  gênero nem editora, nunca um nome recusado. O Metron recebe só esses nomes e ids — nunca a
+  biblioteca.
+- **Nome → id:** a busca de nomes do Metron acha partes do nome ("Tom King" traz "Tom Kingsley"); vale
+  só o resultado com o nome igual, e dois diferentes com o mesmo nome ("Robin (Dick Grayson)",
+  "Robin (Tim Drake)" para "Robin") não são resposta.
+- **Id → séries:** a lista de edições do Metron com `creator_id`/`character_id`/`team_id` e
+  `store_date_range_after`, dos últimos 5 anos, até 2 páginas de 100; cada edição traz a série (id,
+  nome, volume, ano). O Metron ordena por nome da série, não por data; quando a lista é cortada, o
+  logcat diz ("N de M edições desde AAAA") — nada de corte silencioso.
+- **Escolha** (`Discovery.picks`): sem as séries que o leitor tem ou leu (pelo nome e ano, com o
+  casamento do H4), cada uma pontuada pela afinidade de cada nome que a trouxe, com os motivos em
+  números; no máximo 4 por nome (diversidade). As 15 melhores têm os detalhes pedidos (total,
+  terminada, formato): encadernados (TPB, capa dura, omnibus) saem; as 10 primeiras vão às fontes
+  pelo `SourceFinder` do H4 (limite de 10 por sessão, cache de 7 dias).
+- **Cache** (`start_catalog_cache`, migração 20, fora do backup): nome → id e detalhes da série por 30
+  dias, séries de um nome por 7 dias, "não está no Metron por esse nome" por 7 dias.
+- **Porque você gostou de X:** a obra gostada mais recentemente (concluída, ≥ 10 edições, ou ≥ 3
+  edições em andamento) que tenha ao menos 2 obras não começadas que dividam um nome com ela — da
+  biblioteca e achadas nas fontes; se a mais recente não tem, a anterior. Cada capa diz o elo
+  ("Também de Geoff Johns", "Também desenhada por…", "Também com Abin Sur") e, se é de fora, "em
+  Read Comics Online".
+- **Autores e personagens:** o nome de maior afinidade (a mesma barra de quem o Metron conhece) que
+  não seja um dos nomes de X (um nome não conduz dois blocos) e tenha algo para mostrar: "Você lê
+  muito X" com 2 obras lidas ou mais, "Mais de X"/"Mais com X" com uma; o motivo com os números
+  embaixo; capas com o formato quando o Metron sabe ("21 edições", "8 edições · história fechada") e
+  "em <fonte>". O ⋮ tem "Não quero recomendações de X" (feedback de autor ou personagem, que no H3
+  ficou sem tela), com Desfazer.
+- **Capas de fora:** tocar abre a página da obra (a entrada fora da biblioteca do H4); o toque longo
+  tem o mesmo menu do "Leia isso agora" (não tenho interesse · já li · agora não), pelo id da entrada.
+- **Linhas no fim do Início:** sem token do Metron, "Para recomendar HQs de fora da sua biblioteca…"
+  com [Adicionar o token]; com séries achadas e nenhuma fonte, "N séries dos seus autores para
+  procurar: escolha a fonte principal" com [Escolher a fonte] (§7.2); e a cobertura de metadados
+  (§5.4), "As recomendações melhoram com metadados: N séries sem roteirista", só quando é a maior
+  parte da biblioteca, com [Abrir a Biblioteca de HQ].
+- **Tempo:** a descoberta roda em segundo plano, depois da biblioteca, no escopo do Início (sair o
+  cancela), e de novo quando a chave ou a ordem das fontes muda. Os blocos locais não esperam: os de
+  fora entram quando chegam.
+- A chave do H4 passou a "Recomendar HQs de fora da biblioteca" e cobre o Metron também.
+
+**Mudou em relação ao plano:**
+- **Casamento com um ano de diferença (H4):** nome igual com o ano a 1 de distância passou a valer,
+  abaixo do nome igual com o mesmo ano. Visto no emulador: o Metron data "Justice League Unlimited"
+  de 2025 (a capa), a fonte de 2024 (a venda). Dois candidatos, um ano para cada lado, continuam sem
+  resposta; quase igual (≥ 0,9) continua exigindo o mesmo ano.
+- **Só obras não começadas** nos dois blocos novos: o que está sendo lido fica no Continuar lendo, no
+  Quase terminando e nas Paradas (no emulador, o primeiro build pôs Filha do Amanhã no "Porque você
+  gostou" e o Quase terminando sumiu).
+- **"Autores e personagens" escolhe antes do backlog,** embora apareça depois dele: o "Você adicionou
+  e nunca começou" é um sorteio do dia e levaria as obras do autor toda vez. Exceção à regra "o
+  bloco mais alto fica com ela", como a Escolha pelo tempo no H2.
+- **"Autores e personagens" com uma obra lida:** a regra de 2 obras deixava sem lugar o que o Metron
+  achou para quem foi lido numa obra só (Geoff Johns, no emulador, sumiu da tela quando o "Porque
+  você gostou" passou para outra obra). A barra agora é a do Metron; o título diz a verdade ("Mais
+  de" com uma, "Você lê muito" com duas ou mais).
+- **Linhas de token e fonte principal** no fim do Início, não como blocos: são avisos, não
+  recomendações. Sem token, a Home continua como antes, só com a biblioteca.
+- Os blocos de fora usam os detalhes do Metron só para formato e para tirar encadernados; a capa é a
+  da fonte.
+
+**Testes na JVM:** `DiscoveryTest` (16: quem é perguntado e quem nunca; gênero nunca; nome → id exato,
+com acento e ambíguo; edições → séries; encadernado; o que o leitor tem ou leu não volta, pelo nome e
+ano; motivos em números e série de dois nomes primeiro; limite por nome; "Porque você gostou" com obra
+de fora e o elo; obra gostada sem prateleira cede a vez; obra marcada à mão sem data; autores sem o
+nome do bloco de cima e sem o que está sendo lido, antes do backlog; nome de uma obra só com o que foi
+achado; autor recusado; obra de fora recusada), `TitleMatchTest` +1 (ano de diferença),
+`CatalogCacheImplTest` (3, SQLite real, com a migração 20), `MetronCatalogTest` (4, respostas escritas a
+partir dos serializers do Metron: busca de criador, lista de edições por criador com `count` maior que a
+página, detalhe da série). Domínio 245, dados 50, app 352, todos passando; spotless limpo.
+
+**Emulador** (`tools/shots/home-h5-*.png`), com o token do Metron do usuário já no app:
+- **erro achado no aparelho:** o primeiro build derrubava o fluxo do Início ao comparar uma data
+  ausente (obra marcada à mão, sem histórico) — `Long` × `Int` no comparador; corrigido, com teste;
+- a biblioteca sintética só tinha nomes inventados: o Metron foi perguntado por "Carla Nunes" e não a
+  conhece (0 séries), como devia;
+- **descoberta real:** Flashpoint (2011), com Geoff Johns confirmado, marcado como lido (#1–#5) →
+  perguntados [Geoff Johns, Abin Sur, Aquaman, Atom], 35 séries, 7 escolhidas, **achadas no Read
+  Comics Online**: Geiger (2024-), Redcoat (2024-), Hyde Street (2024-), Absolute Green Lantern (2025-),
+  Superman: Space Age (2022-); na segunda rodada, com a principal no desafio do Cloudflare, Justice
+  League Unlimited achada na XOXO. Primeira rodada em 39 s (Metron a 20 pedidos por minuto, mais as
+  buscas); as seguintes em 22–24 ms com tudo no cache, e em 30–41 s quando uma série que falhou por
+  causa de uma fonte foi procurada de novo (falha não é guardada, H4);
+- **Cloudflare do H4 visto nos dois caminhos:** "failed CLOUDFLARE (HTTP error 403)" pela checagem do
+  desafio, e "failed CLOUDFLARE (Falha ao contornar o Cloudflare)" pelo interceptador;
+- "Porque você gostou de Flashpoint (2011)": Redcoat, Geiger, Hyde Street ("Também de Geoff Johns · em
+  Read Comics Online") e Absolute Green Lantern ("Também com Abin Sur"); depois de ler mais do
+  sintético, "Porque você gostou de Teste - Rastro" com Eco, Lanterna Noturna e Linha de Fuga;
+- "Autores e personagens · Mais de Geoff Johns · Você terminou 1 HQ de Geoff Johns" com Redcoat (21
+  edições), Geiger (25) e Hyde Street (14), "em Read Comics Online";
+- tocar em Redcoat abriu a página com "Adicionar à biblioteca"; toque longo em Geiger → "Agora não":
+  "Geiger (2024-) volta em 30 dias", a capa saiu, Desfazer a trouxe; ⋮ → "Não quero recomendações de
+  Geoff Johns": o bloco passou a "Mais com Abin Sur · Você leu 5 edições com Abin Sur", e Desfazer
+  voltou a Geoff Johns;
+- sem fontes escolhidas: "7 séries dos seus autores para procurar: escolha a fonte principal";
+  [Escolher a fonte] abriu a tela das fontes;
+- "As recomendações melhoram com metadados: 12 séries sem roteirista" com a maior parte da biblioteca
+  sem roteirista; com 3 séries a mais atualizadas, deixou de ser a maioria e a linha saiu;
+- nenhuma das obras achadas entrou na biblioteca (conferido na Biblioteca de HQ); nenhum crash depois
+  da correção; abertura a frio: Continuar lendo 795–971 ms, blocos 1330–1517 ms (como no H4).
+
+**Observado, não é do H5:**
+- **Wolverine (2024-)** apareceu no "Você adicionou e nunca começou": já estava na biblioteca antes
+  de qualquer busca do H5 (a contagem de "Não iniciadas" bate: 16 → 14 com Flashpoint e Mare lidos) e
+  só não tinha saído no sorteio do dia.
+- Duas capas de fora não carregaram: a imagem está atrás do Cloudflare, e o carregador de capas do
+  Mihon desistiu do desafio.
+- Voltar da página de uma obra põe o Início no topo: os blocos são recalculados e a lista perde a
+  posição (vem do H2).
+
+**Dados de teste mudados no emulador:** Flashpoint (2011) #1–#5 e Mare Vermelha #1 marcados como
+lidos; Eco, Ferrugem e Linha de Fuga atualizadas (autor e desenhista vieram do ComicInfo); o cache do
+Metron e das fontes guardado.
+
+**Não verificado no aparelho:** a linha sem token (o emulador tem token; a tela do token mostra o token
+em texto e não foi aberta); o corte de uma lista longa (Geoff Johns coube; coberto pelo log e pelo
+teste de `count`); personagem ou equipe recusado pelo ⋮ (mesmo caminho do autor); tema claro;
+TalkBack; tablet.

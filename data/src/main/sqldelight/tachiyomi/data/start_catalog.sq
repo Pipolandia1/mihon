@@ -1,0 +1,21 @@
+-- The catalogue's answers the Início asked for (docs/HOME_PLAN.md §7.5, H5): a name's id, an entity's
+-- series, a series' details, as JSON under a key. A cache: never backed up.
+CREATE TABLE start_catalog_cache(
+    cache_key TEXT NOT NULL PRIMARY KEY,
+    body TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+);
+
+getCached:
+SELECT body
+FROM start_catalog_cache
+WHERE cache_key = :key AND expires_at > :now;
+
+putCached:
+INSERT OR REPLACE INTO start_catalog_cache(cache_key, body, fetched_at, expires_at)
+VALUES (:key, :body, :fetchedAt, :expiresAt);
+
+deleteExpiredCache:
+DELETE FROM start_catalog_cache
+WHERE expires_at <= :now;

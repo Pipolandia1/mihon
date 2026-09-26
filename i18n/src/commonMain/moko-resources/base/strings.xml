@@ -1483,8 +1483,8 @@
     <string name="start_feedback_done">%s won't be suggested again</string>
     <string name="start_feedback_later_done">%1$s is back in %2$d days</string>
     <string name="start_sources_title">Recommendation sources</string>
-    <string name="start_sources_search">Search recommendations in the sources</string>
-    <string name="start_sources_search_summary">Home sends the sources the name of the comics it recommends, as a search by hand would. Off, it recommends only from your library.</string>
+    <string name="start_sources_search">Recommend comics from outside the library</string>
+    <string name="start_sources_search_summary">Home asks Metron, with your token, for series by the creators and characters you read most, and looks for them in your sources, as a search by hand would. Off, it recommends only from your library.</string>
     <string name="start_sources_about">A recommended comic that is not in your library is looked for in the primary source first, and in the others, in this order, only if the primary does not have it or fails. What you added stays where you added it.</string>
     <string name="start_sources_order">Order</string>
     <string name="start_sources_empty">No source chosen. Tap a source below to make it the primary.</string>
@@ -1515,4 +1515,19 @@
     <string name="start_sources_failure_timeout">took too long</string>
     <string name="start_sources_failure_network">no connection</string>
     <string name="start_sources_failure_other">error (%s)</string>
+    <string name="start_because_you_liked">Because you liked %s</string>
+    <string name="start_creators">Creators and characters</string>
+    <string name="start_creators_reads_a_lot">You read a lot of %s</string>
+    <string name="start_creators_more_by">More by %s</string>
+    <string name="start_creators_more_with">More with %s</string>
+    <string name="start_entity_not_interested">No more recommendations of %s</string>
+    <string name="start_entity_feedback_done">No more recommendations of %s</string>
+    <string name="start_link_writer">Also by %s</string>
+    <string name="start_link_artist">Also drawn by %s</string>
+    <string name="start_link_character">Also with %s</string>
+    <string name="start_in_source">on %s</string>
+    <string name="start_catalog_no_token">To recommend comics from outside your library, Home asks Metron with your token.</string>
+    <string name="start_catalog_add_token">Add the token</string>
+    <string name="start_catalog_choose_source">Choose the source</string>
+    <string name="start_coverage_open">Open the comics library</string>
 </resources>

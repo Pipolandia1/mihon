@@ -55,8 +55,11 @@ import tachiyomi.domain.readingstats.comics.ComicLibrary
 import tachiyomi.domain.readingstats.comics.EntryProgress
 import tachiyomi.domain.start.BacklogBlock
 import tachiyomi.domain.start.BacklogShelf
+import tachiyomi.domain.start.BecauseYouLikedBlock
 import tachiyomi.domain.start.ByTimeBlock
 import tachiyomi.domain.start.ContinueBlock
+import tachiyomi.domain.start.CreatorsBlock
+import tachiyomi.domain.start.EntityKind
 import tachiyomi.domain.start.FeedbackVerdict
 import tachiyomi.domain.start.NearFinishBlock
 import tachiyomi.domain.start.ReadNowBlock
@@ -85,6 +88,10 @@ fun StartScreen(
     onFeedback: (mangaId: Long, verdict: FeedbackVerdict) -> Unit,
     onUndoFeedback: (mangaId: Long) -> Unit,
     onOpenSources: () -> Unit,
+    onEntityFeedback: (kind: EntityKind, name: String) -> Unit,
+    onUndoEntityFeedback: (kind: EntityKind, name: String) -> Unit,
+    onOpenMetronSettings: () -> Unit,
+    onOpenComicLibrary: () -> Unit,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -107,6 +114,19 @@ fun StartScreen(
             if (result == SnackbarResult.ActionPerformed) onUndoFeedback(mangaId)
         }
     }
+    val giveEntityFeedback: (EntityKind, String) -> Unit = { kind, name ->
+        onEntityFeedback(kind, name)
+        scope.launch {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            val result = snackbarHostState.showSnackbar(
+                message = context.stringResource(MR.strings.start_entity_feedback_done, name),
+                actionLabel = context.stringResource(MR.strings.action_undo),
+                duration = SnackbarDuration.Long,
+            )
+            if (result == SnackbarResult.ActionPerformed) onUndoEntityFeedback(kind, name)
+        }
+    }
+    val shelfActions = ShelfActions(onOpenManga = onOpenManga, onFeedback = giveFeedback)
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = { scrollBehavior ->
@@ -164,8 +184,17 @@ fun StartScreen(
                         ByTimeSection(block, feed?.perIssueMs, onOpenChapter)
                     }
                     is BacklogBlock -> backlogSection(block, onOpenManga)
+                    is BecauseYouLikedBlock -> becauseYouLikedSection(block, shelfActions)
+                    is CreatorsBlock -> creatorsSection(block, shelfActions, giveEntityFeedback)
                 }
             }
+            discoveryNotices(
+                catalog = state.catalog,
+                missingWriters = feed?.missingWriters,
+                onOpenSources = onOpenSources,
+                onOpenMetronSettings = onOpenMetronSettings,
+                onOpenComicLibrary = onOpenComicLibrary,
+            )
         }
     }
 }
@@ -190,7 +219,7 @@ private fun LazyListScope.continueSection(
 }
 
 @Composable
-private fun SectionTitle(text: String) {
+internal fun SectionTitle(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.titleMedium,
@@ -460,7 +489,7 @@ private fun SeriesRow(cover: Any?, title: String, lines: List<String>, onClick: 
 }
 
 @Composable
-private fun Secondary(text: String, modifier: Modifier = Modifier) {
+internal fun Secondary(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
         style = MaterialTheme.typography.bodySmall,
@@ -519,4 +548,4 @@ private fun shelfTitleOf(kind: ShelfKind) = when (kind) {
 private const val MS_PER_MINUTE = 60_000L
 private val HighlightCoverHeight = 132.dp
 private val RowCoverHeight = 64.dp
-private val ShelfItemWidth = 96.dp
+internal val ShelfItemWidth = 96.dp

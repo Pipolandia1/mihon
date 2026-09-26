@@ -11,9 +11,13 @@ import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import eu.kanade.tachiyomi.readingstats.ContinueItem
 import eu.kanade.tachiyomi.readingstats.ContinueReadingSource
+import eu.kanade.tachiyomi.ui.start.catalog.CatalogDiscovery
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
@@ -22,6 +26,8 @@ import kotlinx.coroutines.flow.stateIn
 import logcat.LogPriority
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.start.EntityKey
+import tachiyomi.domain.start.EntityKind
 import tachiyomi.domain.start.Feedback
 import tachiyomi.domain.start.FeedbackSubject
 import tachiyomi.domain.start.FeedbackVerdict
@@ -36,6 +42,8 @@ class StartViewModel(
     continueReadingSource: ContinueReadingSource,
     feedSource: StartFeedSource,
     private val startRepository: StartRepository,
+    private val discovery: CatalogDiscovery,
+    private val preferences: StartPreferences,
 ) : ViewModel() {
 
     // When each part first arrived, for the timing the plan asks to be measured, not guessed.
@@ -54,7 +62,11 @@ class StartViewModel(
 
     // "Continuar lendo" is shown as soon as it is known; the other blocks, which need the whole
     // library, arrive after it and never hold it back (docs/HOME_PLAN.md §2, rule 4).
-    private val feed = feedSource.subscribe(continueReading)
+    private val outside = discovery.state
+        .map { (it as? CatalogDiscovery.State.Ready)?.works.orEmpty() }
+        .distinctUntilChanged()
+
+    private val feed = feedSource.subscribe(continueReading, outside)
         .onEach { result ->
             if (!feedLogged) {
                 feedLogged = true
@@ -64,9 +76,22 @@ class StartViewModel(
         .map<StartFeedResult, StartFeedResult?> { it }
         .onStart { emit(null) }
 
-    val state: StateFlow<State> = combine(continueReading, feed) { continueItems, feed ->
-        State(loading = false, continueReading = continueItems, feed = feed)
+    val state: StateFlow<State> = combine(continueReading, feed, discovery.state) { continueItems, feed, catalog ->
+        State(loading = false, continueReading = continueItems, feed = feed, catalog = catalog)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(StartConfig.STOP_TIMEOUT_MS), State())
+
+    init {
+        // The catalogue and the sources are asked in the background, after the library, and again
+        // when the switch or the order of sources changes; leaving the Início cancels it.
+        viewModelScope.launchIO {
+            combine(preferences.searchSources.changes(), preferences.recommendationSources.changes(), ::Pair)
+                .collectLatest {
+                    val works = startRepository.subscribeWorks().first()
+                    val feedback = startRepository.subscribeFeedback().first()
+                    discovery.refresh(works, feedback)
+                }
+        }
+    }
 
     /**
      * What the reader said of a recommendation. "Agora não" lasts [StartConfig.LATER_DAYS]; the
@@ -84,6 +109,25 @@ class StartViewModel(
         viewModelScope.launchIO { startRepository.removeFeedback(FeedbackSubject.WORK, mangaId.toString()) }
     }
 
+    /** "Não quero recomendações de …": a creator or a character, by name, until undone. */
+    fun setEntityFeedback(kind: EntityKind, name: String) {
+        val now = Clock.System.now().toEpochMilliseconds()
+        viewModelScope.launchIO {
+            startRepository.setFeedback(
+                Feedback(subjectOf(kind), EntityKey.normalize(name), FeedbackVerdict.NOT_INTERESTED, null, now),
+            )
+        }
+    }
+
+    fun undoEntityFeedback(kind: EntityKind, name: String) {
+        viewModelScope.launchIO { startRepository.removeFeedback(subjectOf(kind), EntityKey.normalize(name)) }
+    }
+
+    private fun subjectOf(kind: EntityKind) = when (kind) {
+        EntityKind.CHARACTER, EntityKind.TEAM -> FeedbackSubject.CHARACTER
+        else -> FeedbackSubject.CREATOR
+    }
+
     private fun logElapsed(what: String) {
         logcat(LogPriority.INFO) { "StartFeed $what in ${SystemClock.elapsedRealtime() - created}ms" }
     }
@@ -99,5 +143,7 @@ class StartViewModel(
         val continueReading: List<ContinueItem> = emptyList(),
         /** The other blocks; null until the library has been read. */
         val feed: StartFeedResult? = null,
+        /** Where discovery beyond the library stands (H5). */
+        val catalog: CatalogDiscovery.State = CatalogDiscovery.State.Idle,
     )
 }

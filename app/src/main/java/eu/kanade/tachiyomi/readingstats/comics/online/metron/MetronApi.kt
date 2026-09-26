@@ -28,7 +28,8 @@ import java.io.File
 
 /**
  * Metron (metron.cloud), with the user's own token. Requests go out one at a time within Metron's
- * limits, and only when the user asks: nothing here runs in the background.
+ * limits: the comic metadata ones only when the user asks, and the Início's catalogue (H5) while its
+ * "recommend from outside the library" switch is on. Both share the one allowance.
  */
 @Inject
 @SingleIn(AppScope::class)
@@ -94,6 +95,44 @@ class MetronApi(
         }
         return OnlineSuggestions(values, matched.size, fetched)
     }
+
+    /** Creators, characters or teams whose name has [name] in it, as Metron's search lists them. */
+    suspend fun names(kind: MetronNamed, name: String): List<MetronItem> {
+        val url = "${MetronConfig.BASE_URL}${kind.path}/".toHttpUrl().newBuilder()
+            .addQueryParameter("name", name)
+            .build()
+        return get<MetronPage<MetronItem>>(url.toString()).results
+    }
+
+    /**
+     * The issues [id] is in, on sale from [from] (YYYY-MM-DD), up to [maxPages] pages of Metron's
+     * 100; and how many there are in all, so a list cut short can be told.
+     */
+    suspend fun issuesOf(
+        kind: MetronNamed,
+        id: Long,
+        from: String,
+        maxPages: Int,
+    ): Pair<List<MetronIssueListItem>, Int> {
+        val issues = mutableListOf<MetronIssueListItem>()
+        var url: String? = "${MetronConfig.BASE_URL}issue/".toHttpUrl().newBuilder()
+            .addQueryParameter(kind.filter, id.toString())
+            .addQueryParameter("store_date_range_after", from)
+            .build()
+            .toString()
+        var count = 0
+        var pages = 0
+        while (url != null && pages < maxPages) {
+            val page = get<MetronPage<MetronIssueListItem>>(url)
+            issues += page.results
+            count = page.count
+            url = page.next
+            pages++
+        }
+        return issues to count
+    }
+
+    suspend fun series(id: Long): MetronSeries = get("${MetronConfig.BASE_URL}series/$id/")
 
     /** Every issue of a series, page after page. */
     private suspend fun issues(seriesId: Long): List<MetronIssueSummary> {

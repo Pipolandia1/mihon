@@ -28,6 +28,7 @@ import tachiyomi.domain.readingstats.repository.ReadingStatsRepository
 import tachiyomi.domain.readingstats.service.ReadingStatsPreferences
 import tachiyomi.domain.start.CollectionState
 import tachiyomi.domain.start.Feedback
+import tachiyomi.domain.start.OutsideWork
 import tachiyomi.domain.start.ReadingTime
 import tachiyomi.domain.start.StartFeed
 import tachiyomi.domain.start.StartFeedResult
@@ -41,6 +42,7 @@ private data class Extras(
     val hideStalled: Boolean,
     val works: List<WorkFacts>,
     val feedback: List<Feedback>,
+    val outside: List<OutsideWork>,
 )
 
 /** Everything the Início's blocks are built from, kept current as reading and the library change. */
@@ -54,8 +56,11 @@ class StartFeedSource(
     private val startRepository: StartRepository,
 ) {
 
-    /** The blocks for [continueReading], the works "Continuar lendo" shows. */
-    fun subscribe(continueReading: Flow<List<ContinueItem>>): Flow<StartFeedResult> =
+    /**
+     * The blocks for [continueReading], the works "Continuar lendo" shows, and [outside], the
+     * catalogue's series found in the sources (H5), which arrive later.
+     */
+    fun subscribe(continueReading: Flow<List<ContinueItem>>, outside: Flow<List<OutsideWork>>): Flow<StartFeedResult> =
         combine(
             continueReading,
             metadata.subscribeLibrary().map { entries -> entries.map(ComicLibrary::progress) },
@@ -66,9 +71,10 @@ class StartFeedSource(
                 statsPreferences.hideStalledReminders.changes(),
                 startRepository.subscribeWorks(),
                 startRepository.subscribeFeedback(),
+                outside,
                 ::Extras,
             ),
-        ) { continueItems, progress, collections, perIssue, (today, hideStalled, works, feedback) ->
+        ) { continueItems, progress, collections, perIssue, (today, hideStalled, works, feedback, outside) ->
             StartFeed.build(
                 StartInput(
                     continueIds = continueItems.map { it.mangaId },
@@ -80,6 +86,7 @@ class StartFeedSource(
                     hideStalled = hideStalled,
                     works = works,
                     feedback = feedback,
+                    outside = outside,
                 ),
             )
         }

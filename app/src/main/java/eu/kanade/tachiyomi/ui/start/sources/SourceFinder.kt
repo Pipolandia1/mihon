@@ -19,8 +19,11 @@ import logcat.LogPriority
 import mihon.domain.manga.model.toDomainManga
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.manga.model.MangaCover
+import tachiyomi.domain.manga.model.asMangaCover
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.start.Attempt
 import tachiyomi.domain.start.CatalogSeries
@@ -34,8 +37,18 @@ import java.io.IOException
 import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
 
-/** A recommended series found in a source, as an entry outside the library that the Início opens. */
-data class FoundSeries(val mangaId: Long, val sourceId: Long, val sourceName: String, val title: String)
+/**
+ * A recommended series found in a source, as the entry the Início opens: outside the library, or
+ * [inLibrary] when the reader already has that very entry.
+ */
+data class FoundSeries(
+    val mangaId: Long,
+    val sourceId: Long,
+    val sourceName: String,
+    val title: String,
+    val cover: MangaCover,
+    val inLibrary: Boolean,
+)
 
 /**
  * Looks for the Início's recommendations from outside the library in the reader's sources, the
@@ -50,6 +63,7 @@ data class FoundSeries(val mangaId: Long, val sourceId: Long, val sourceName: St
 class SourceFinder(
     private val sourceManager: SourceManager,
     private val networkToLocalManga: NetworkToLocalManga,
+    private val getManga: GetManga,
     private val matches: SourceMatchRepository,
     private val preferences: StartPreferences,
 ) {
@@ -77,10 +91,10 @@ class SourceFinder(
         log(series, resolution)
         val match = resolution.match?.takeIf { resolution.status == Resolution.Status.FOUND } ?: return null
         val sourceId = match.sourceId ?: return null
-        val mangaId = match.mangaId
-            ?: entryFor(sourceId, match.mangaUrl.orEmpty(), match.matchedTitle.orEmpty())
-                .also { matches.put(match.copy(mangaId = it)) }
-        return FoundSeries(mangaId, sourceId, sourceName(sourceId), match.matchedTitle.orEmpty())
+        val manga = match.mangaId?.let { getManga.await(it) }
+            ?: entry(sourceId, match.mangaUrl.orEmpty(), match.matchedTitle.orEmpty())
+                .also { matches.put(match.copy(mangaId = it.id)) }
+        return FoundSeries(manga.id, sourceId, sourceName(sourceId), manga.title, manga.asMangaCover(), manga.favorite)
     }
 
     /** "Testar uma busca": every source in the list asked afresh, whatever the switch; nothing kept. */
@@ -91,14 +105,14 @@ class SourceFinder(
     }
 
     /** The entry outside the library for what a source found, made when it is first opened. */
-    suspend fun entryFor(found: Attempt.Found): Long = entryFor(found.sourceId, found.hit.url, found.hit.title)
+    suspend fun entryFor(found: Attempt.Found): Long = entry(found.sourceId, found.hit.url, found.hit.title).id
 
     suspend fun sourceName(sourceId: Long): String = sourceManager.get(sourceId)?.name ?: sourceId.toString()
 
-    private suspend fun entryFor(sourceId: Long, url: String, title: String): Long {
+    private suspend fun entry(sourceId: Long, url: String, title: String): Manga {
         val result = synchronized(recent) { recent[sourceId to url] }
         val manga = result?.toDomainManga(sourceId) ?: Manga.create().copy(source = sourceId, url = url, title = title)
-        return networkToLocalManga(manga.copy(favorite = false)).id
+        return networkToLocalManga(manga.copy(favorite = false))
     }
 
     private suspend fun search(sourceId: Long, query: String): SearchResult {
