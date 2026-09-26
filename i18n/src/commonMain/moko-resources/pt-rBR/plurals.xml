@@ -264,4 +264,9 @@
         <item quantity="many">%d lançamentos</item>
         <item quantity="other">%d lançamentos</item>
     </plurals>
+    <plurals name="releases_following">
+        <item quantity="one">O que você acompanha (%d)</item>
+        <item quantity="many">O que você acompanha (%d)</item>
+        <item quantity="other">O que você acompanha (%d)</item>
+    </plurals>
 </resources>

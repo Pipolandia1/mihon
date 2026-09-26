@@ -537,7 +537,8 @@ ficam intactos. O cartão "Continuar lendo" do Stats está no pacote da feature.
   (domínio), `start_catalog_cache` (migração 20), `CatalogDiscovery`, pedidos de catálogo no `MetronApi`
 - [x] H6 lançamentos da semana + calendário — `Releases` (domínio), `release_weeks`/`release_items` (migração 21),
   `ReleaseFeed` (Metron, GCD de reserva), bloco "Lançamentos da semana" e tela "Lançamentos"
-- [ ] H7 alertas e notificações
+- [x] H7 alertas e notificações — `Alerts` (domínio), `release_follows`/`release_notified` (migração 22),
+  `ReleaseAlerts`, `ReleaseAlertJob`, `ReleaseNotifier`, sino e tela "Alertas", backup (campo 8)
 
 ### Verificação do H1 (25/09/2026)
 
@@ -1003,3 +1004,81 @@ tema claro; TalkBack; tablet.
 
 **Observado:** quando o Read Comics Online está na pausa de 30 minutos depois de falhar no Cloudflare,
 "Não achada nas suas fontes" também vale para "não perguntada"; a mensagem não distingue.
+
+### Verificação do H7 (26/09/2026)
+
+**Como ficou:**
+- **O sino** em cada lançamento (bloco do Início e tela Lançamentos): cheio quando algo acompanhado
+  cobre a edição. Tocado, pergunta o que acompanhar — "Só esta edição", "Todos os próximos números" e,
+  com os detalhes da edição no Metron (um pedido), os roteiristas e desenhistas (até 3) e os
+  personagens (até 5), pelos ids do Metron. Numa lista do GCD, só os dois primeiros, e o diálogo diz
+  por quê.
+- **O que é acompanhado** (`release_follows`, migração 22) tem a chave do catálogo — a edição, a
+  série, o personagem ou o autor —, então vai no backup como está (`BackupReadingStats`, **campo 8**,
+  o reservado desde o H3).
+- **A checagem** (`ReleaseAlerts`, a mesma do job e do "Verificar agora"): baixa a semana (H6), pede
+  ao Metron as edições da semana de cada autor e personagem acompanhado (um pedido cada, até 10), e
+  avisa **"Absolute Batman #24 saiu esta semana"** do que está à venda até hoje; depois procura a
+  edição avisada entre os capítulos — na biblioteca, os que a atualização do Mihon trouxe (nada é
+  buscado para ela); fora, a série é achada nas fontes (H4) e os capítulos trazidos como ao abrir a
+  página (até 5 por checagem) — e avisa **"já está disponível · em Read Comics Online · Ler agora"**,
+  que abre o leitor no capítulo. A edição é o capítulo com o número dela.
+- **Uma vez só** (`release_notified`, chave da edição × tipo de aviso): uma edição da lista da semana e
+  da de um autor acompanhado é um lançamento só; quem cobre qual não importa.
+- **Avisos desligados:** sem a permissão de notificação (Android 13+) ou com o canal desligado, a
+  checagem não faz nada e **não marca nada** — os avisos ficam para quando forem ligados. A tela
+  Alertas diz "Os avisos estão desligados neste aparelho" com [Permitir] (o pedido do Android, ou as
+  configurações quando ele não pode mais pedir).
+- **Job diário** (`ReleaseAlertJob`, WorkManager, com conexão): agendado no primeiro acompanhamento,
+  cancelado quando não sobra nenhum, reagendado ao abrir o Início (depois de uma restauração, por
+  exemplo). As dependências vêm de uma interface do pacote contribuída ao grafo (`@ContributesTo`):
+  `AppGraph.kt` não mudou.
+- **Canal "Lançamentos"** criado pelo pacote; os canais do Mihon ficam como estão. "Saiu" abre a obra
+  da biblioteca quando há uma (o mesmo intent das notificações do Mihon); senão, o app.
+- **Tela "Alertas"** (⋮ do Início): o que é acompanhado, com ✕; "Verificar agora" e o que ela avisou.
+
+**Mudou em relação ao plano:**
+- A **tabela `release_notified`** guarda, além da chave, a série e o número: o "já disponível" é
+  procurado por até 30 dias depois do "saiu", sem precisar da lista da semana.
+- Chaves do catálogo em vez de ids do GCD (§4): a fonte principal dos lançamentos é o Metron (H6).
+- **Personagem e autor** casam pela lista de edições do Metron com o filtro do id, não pelo detalhe
+  de cada edição (§8.3): um pedido por acompanhamento por dia, e funciona para qualquer edição.
+- "Verificar agora" **não estava no plano**: é o jeito de conferir no aparelho sem esperar o job, e a
+  checagem é a mesma do job.
+- Ícone do sino: `notifications` do Material Symbols (contorno e cheio), como o `home` do H1.
+
+**Testes na JVM:** `AlertsTest` (9, com a data e o relógio dados: o que cada acompanhamento cobre;
+série acompanhada no Metron coberta na lista do GCD; o que saiu até o dia, e o que ainda não; nunca
+duas vezes, com dois acompanhamentos cobrindo; **edição na lista da semana e na de um autor, avisada
+uma vez**; variantes uma vez; procurar o capítulo por um mês até o "disponível"; o capítulo pelo
+número; o sino), `AlertRepositoryImplTest` (3, SQLite real: acompanhamentos, uma vez por tipo de aviso,
+migração 22), `BackupReadingStatsTest` +1 (acompanhamentos numa ida e volta). Domínio 265, dados
+57, app 357, todos passando; spotless limpo.
+
+**Emulador** (`tools/shots/home-h7-*.png`), Android 16, com o token do Metron:
+- o sino nas capas do bloco; tocado em Absolute Batman #24, o diálogo trouxe do Metron Nick Dragotta
+  (arte), Scott Snyder (roteiro) e 5 personagens "(Earth Alpha)"; "Todos os próximos números" + Scott
+  Snyder salvos: sino cheio, "2 follows, daily check scheduled";
+- **sem permissão de notificação** (o emulador não a tinha): o job rodou ao ser agendado e o
+  "Verificar agora" também — "notifications are off, nothing checked" — e a tela disse "Nada
+  verificado: os avisos estão desligados…"; nada marcado;
+- com a permissão dada (pelo [Permitir] da tela e o diálogo do Android, com o OK do usuário):
+  "Verificar agora" → as notificações **"Absolute Batman #24 saiu esta semana"** e **"Absolute Batman
+  #24 já está disponível · em Read Comics Online · Ler agora"**; "Ler agora" abriu o leitor em
+  **Absolute Batman (2024-) #24** (28 páginas);
+- **achado no aparelho:** o log disse "out [Absolute Batman #24, Absolute Batman #24]" — a edição veio
+  da lista da semana e da de Scott Snyder. Na tela eram duas notificações (a repetida tinha o mesmo
+  id), mas a regra "uma vez" tem que valer na lógica: corrigido (`Releases.grouped` junta pela chave),
+  com teste;
+- "Verificar agora" de novo: **"Nada novo."** (out [], available []);
+- ✕ nos dois: "1 follows, daily check scheduled" → **"0 follows, daily check cancelled"**, "O que você
+  acompanha (0)"; nenhum crash.
+
+**Não verificado no aparelho:** o job disparando sozinho depois de 24 h (o WorkManager o rodou ao
+agendar, com a mesma checagem); o "já disponível" de uma série fora da biblioteca (caminho do H4 +
+`UpdateMangaFromRemote`, o mesmo de abrir a página; coberto pela regra do capítulo nos testes);
+acompanhar personagem até sair uma edição dele; a restauração dos acompanhamentos (coberta pelo teste
+do backup); tema claro; TalkBack; tablet.
+
+**Dados de teste mudados no emulador:** a permissão de notificação do Mihon dada (com o OK do
+usuário); Absolute Batman #24 aberto pelo "Ler agora" (está no Continuar lendo).

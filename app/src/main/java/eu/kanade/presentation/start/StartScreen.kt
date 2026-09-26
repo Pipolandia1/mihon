@@ -45,6 +45,7 @@ import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.presentation.readingstats.readingTimeText
 import eu.kanade.presentation.util.formatChapterNumber
 import eu.kanade.tachiyomi.readingstats.ContinueItem
+import eu.kanade.tachiyomi.releases.FollowOption
 import eu.kanade.tachiyomi.ui.start.StartConfig
 import eu.kanade.tachiyomi.ui.start.StartViewModel
 import kotlinx.coroutines.launch
@@ -53,6 +54,7 @@ import mihon.icons.materialsymbols.rounded.Search
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.domain.readingstats.comics.ComicLibrary
 import tachiyomi.domain.readingstats.comics.EntryProgress
+import tachiyomi.domain.start.Alerts
 import tachiyomi.domain.start.BacklogBlock
 import tachiyomi.domain.start.BacklogShelf
 import tachiyomi.domain.start.BecauseYouLikedBlock
@@ -64,6 +66,7 @@ import tachiyomi.domain.start.FeedbackVerdict
 import tachiyomi.domain.start.NearFinishBlock
 import tachiyomi.domain.start.ReadNowBlock
 import tachiyomi.domain.start.ReadingTime
+import tachiyomi.domain.start.ReleaseItem
 import tachiyomi.domain.start.ReleasesBlock
 import tachiyomi.domain.start.RelevantRelease
 import tachiyomi.domain.start.ShelfKind
@@ -96,7 +99,15 @@ fun StartScreen(
     onOpenComicLibrary: () -> Unit,
     onOpenRelease: (RelevantRelease) -> Unit,
     onOpenCalendar: () -> Unit,
+    onOpenAlerts: () -> Unit,
+    loadFollowOptions: suspend (ReleaseItem) -> List<FollowOption>,
+    onSaveFollows: (List<FollowOption>) -> Unit,
 ) {
+    var followFor by remember { mutableStateOf<ReleaseItem?>(null) }
+    val bells = ReleaseBells(followed = { Alerts.followed(it, state.follows) }, onBell = { followFor = it })
+    followFor?.let { item ->
+        FollowDialog(item, loadFollowOptions, onSaveFollows, onDismiss = { followFor = null })
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -149,6 +160,10 @@ fun StartScreen(
                                 onClick = onOpenCalendar,
                             ),
                             AppBar.OverflowAction(
+                                title = stringResource(MR.strings.releases_alerts),
+                                onClick = onOpenAlerts,
+                            ),
+                            AppBar.OverflowAction(
                                 title = stringResource(MR.strings.start_sources_title),
                                 onClick = onOpenSources,
                             ),
@@ -192,7 +207,7 @@ fun StartScreen(
                         ByTimeSection(block, feed?.perIssueMs, onOpenChapter)
                     }
                     is BacklogBlock -> backlogSection(block, onOpenManga)
-                    is ReleasesBlock -> releasesSection(block, onOpenRelease, onOpenCalendar)
+                    is ReleasesBlock -> releasesSection(block, bells, onOpenRelease, onOpenCalendar)
                     is BecauseYouLikedBlock -> becauseYouLikedSection(block, shelfActions)
                     is CreatorsBlock -> creatorsSection(block, shelfActions, giveEntityFeedback)
                 }

@@ -98,7 +98,8 @@ object Releases {
     fun grouped(items: List<ReleaseItem>): List<ReleaseItem> {
         val keys = items.map { it.key }.toSet()
         val seenVariantOf = mutableSetOf<String>()
-        return items.filter { item ->
+        // The same issue from two lists (the week's, and a followed creator's) is one release.
+        return items.distinctBy { it.key }.filter { item ->
             val regular = item.variantOf ?: return@filter true
             // A variant whose regular cover is listed goes; the first of the rest stands for it.
             regular !in keys && seenVariantOf.add(regular)
@@ -135,8 +136,7 @@ object Releases {
         val byName = mutableListOf<RelevantRelease>()
         grouped(items).forEach { item ->
             val series = TitleMatch.key(item.seriesName, item.seriesYear)
-            val work = own.firstOrNull { item.seriesKey in it.catalogIds }
-                ?: own.firstOrNull { TitleMatch.quality(series, it.title) != null }
+            val work = ownerOf(item, own)
             if (work != null) {
                 yours += RelevantRelease(item, ReleaseReason.YourSeries(work.mangaId, work.title)) to work
                 return@forEach
@@ -151,6 +151,16 @@ object Releases {
                 .thenBy { it.first.item.seriesName },
         )
             .map { it.first } + byName
+    }
+
+    /**
+     * The work of [own] that is [item]'s series: by the catalogue's id in its metadata first, else by
+     * name and year.
+     */
+    fun ownerOf(item: ReleaseItem, own: List<WorkFacts>): WorkFacts? {
+        val series = TitleMatch.key(item.seriesName, item.seriesYear)
+        return own.firstOrNull { item.seriesKey in it.catalogIds }
+            ?: own.firstOrNull { TitleMatch.quality(series, it.title) != null }
     }
 
     /** Whether the catalogue's [listed] series is the release's, by id or by name and year. */

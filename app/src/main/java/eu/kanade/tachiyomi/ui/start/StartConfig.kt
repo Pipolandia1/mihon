@@ -45,4 +45,13 @@ object StartConfig {
     /** Pages of a week's releases read from Metron (100 each) and from the GCD (50 each). */
     const val RELEASES_METRON_PAGES = 10
     const val RELEASES_GCD_PAGES = 10
+
+    /** Series outside the library looked for in the sources per alerts' check (H7): each is a search and a fetch. */
+    const val ALERT_OUTSIDE_CHECKS = 5
+
+    /** Characters and creators followed whose week is asked of Metron per check: one request each. */
+    const val ALERT_ENTITY_FOLLOWS = 10
+
+    /** How often the alerts' check runs on its own. */
+    const val ALERT_CHECK_HOURS = 24L
 }

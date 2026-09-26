@@ -1,0 +1,24 @@
+-- What the reader follows among the releases, and what they were told of (docs/HOME_PLAN.md, H7).
+
+CREATE TABLE release_follows(
+    kind INTEGER NOT NULL,
+    follow_key TEXT NOT NULL,
+    label TEXT NOT NULL,
+    series_name TEXT,
+    series_year INTEGER,
+    number TEXT,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY(kind, follow_key)
+);
+
+CREATE TABLE release_notified(
+    release_key TEXT NOT NULL,
+    what INTEGER NOT NULL,
+    series_key TEXT NOT NULL,
+    series_name TEXT NOT NULL,
+    series_year INTEGER,
+    number TEXT NOT NULL,
+    store_date TEXT,
+    notified_at INTEGER NOT NULL,
+    PRIMARY KEY(release_key, what)
+);

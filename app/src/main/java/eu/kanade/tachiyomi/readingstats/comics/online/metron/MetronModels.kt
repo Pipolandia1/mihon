@@ -60,6 +60,8 @@ data class MetronIssueSummary(
 
 @Serializable
 data class MetronCredit(
+    /** The creator's id (not the credit's): Metron's credit serializer gives `creator.id` here. */
+    val id: Long? = null,
     val creator: String = "",
     val role: List<MetronItem> = emptyList(),
 )

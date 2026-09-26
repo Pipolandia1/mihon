@@ -105,23 +105,28 @@ class MetronApi(
     }
 
     /**
-     * The issues [id] is in, on sale from [from] (YYYY-MM-DD), up to [maxPages] pages of Metron's
-     * 100; and how many there are in all, so a list cut short can be told.
+     * The issues [id] is in, on sale from [from] (YYYY-MM-DD) — to [to], when given — up to
+     * [maxPages] pages of Metron's 100; and how many there are in all, so a list cut short can be told.
      */
     suspend fun issuesOf(
         kind: MetronNamed,
         id: Long,
         from: String,
         maxPages: Int,
+        to: String? = null,
     ): Pair<List<MetronIssueListItem>, Int> {
         val url = "${MetronConfig.BASE_URL}issue/".toHttpUrl().newBuilder()
             .addQueryParameter(kind.filter, id.toString())
             .addQueryParameter("store_date_range_after", from)
+            .apply { if (to != null) addQueryParameter("store_date_range_before", to) }
             .build()
         return issuePages(url.toString(), maxPages)
     }
 
     suspend fun series(id: Long): MetronSeries = get("${MetronConfig.BASE_URL}series/$id/")
+
+    /** One issue's details: its creators and characters, for following them (H7). */
+    suspend fun issueDetail(id: Long): MetronIssue = get("${MetronConfig.BASE_URL}issue/$id/")
 
     /**
      * Every issue on sale from [from] to [to] (YYYY-MM-DD, both included), up to [maxPages] pages

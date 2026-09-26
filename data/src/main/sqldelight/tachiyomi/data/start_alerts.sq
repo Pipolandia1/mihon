@@ -1,0 +1,50 @@
+-- What the reader follows among the releases, and what they were told of (docs/HOME_PLAN.md §8.3,
+-- H7). A follow's key is the catalogue's: the issue's or the series' release key, or the id of a
+-- character or creator, so it travels in a backup as it is.
+CREATE TABLE release_follows(
+    kind INTEGER NOT NULL,
+    follow_key TEXT NOT NULL,
+    label TEXT NOT NULL,
+    series_name TEXT,
+    series_year INTEGER,
+    number TEXT,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY(kind, follow_key)
+);
+
+-- A release the reader was told of (0: out, 1: available), with what finding it again needs.
+CREATE TABLE release_notified(
+    release_key TEXT NOT NULL,
+    what INTEGER NOT NULL,
+    series_key TEXT NOT NULL,
+    series_name TEXT NOT NULL,
+    series_year INTEGER,
+    number TEXT NOT NULL,
+    store_date TEXT,
+    notified_at INTEGER NOT NULL,
+    PRIMARY KEY(release_key, what)
+);
+
+allFollows:
+SELECT *
+FROM release_follows
+ORDER BY created_at;
+
+upsertFollow:
+INSERT OR REPLACE INTO release_follows(kind, follow_key, label, series_name, series_year, number, created_at)
+VALUES (:kind, :followKey, :label, :seriesName, :seriesYear, :number, :createdAt);
+
+deleteFollow:
+DELETE FROM release_follows
+WHERE kind = :kind AND follow_key = :followKey;
+
+notifiedSince:
+SELECT *
+FROM release_notified
+WHERE notified_at >= :since;
+
+insertNotified:
+INSERT OR IGNORE INTO release_notified(
+    release_key, what, series_key, series_name, series_year, number, store_date, notified_at
+)
+VALUES (:releaseKey, :what, :seriesKey, :seriesName, :seriesYear, :number, :storeDate, :notifiedAt);

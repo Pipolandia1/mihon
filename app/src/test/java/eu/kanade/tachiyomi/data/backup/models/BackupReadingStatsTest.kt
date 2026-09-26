@@ -29,6 +29,8 @@ import tachiyomi.domain.start.ExportedFeedback
 import tachiyomi.domain.start.Feedback
 import tachiyomi.domain.start.FeedbackSubject
 import tachiyomi.domain.start.FeedbackVerdict
+import tachiyomi.domain.start.Follow
+import tachiyomi.domain.start.FollowKind
 
 class BackupReadingStatsTest {
 
@@ -168,6 +170,21 @@ class BackupReadingStatsTest {
             BackupReadingStats.serializer(),
             ProtoBuf.encodeToByteArray(BackupReadingStats.serializer(), BackupReadingStats()),
         ).startFeedback shouldBe emptyList()
+    }
+
+    @Test
+    fun `the releases followed survive a round trip, as the catalogue names them`() {
+        val series =
+            Follow(FollowKind.SERIES, "metron:series:3001", "Absolute Batman", "Absolute Batman", 2024, null, 5)
+        val creator = Follow(FollowKind.CREATOR, "metron:creator:7", "Scott Snyder", createdAt = 6)
+        val stats = BackupReadingStats(releaseFollows = listOf(series, creator).map(BackupReleaseFollow::of))
+
+        val decoded = ProtoBuf.decodeFromByteArray(
+            BackupReadingStats.serializer(),
+            ProtoBuf.encodeToByteArray(BackupReadingStats.serializer(), stats),
+        )
+
+        decoded.releaseFollows.map { it.toFollow() } shouldBe listOf(series, creator)
     }
 
     @Test

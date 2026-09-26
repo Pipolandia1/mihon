@@ -11,7 +11,9 @@ import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import eu.kanade.tachiyomi.readingstats.ContinueItem
 import eu.kanade.tachiyomi.readingstats.ContinueReadingSource
+import eu.kanade.tachiyomi.releases.FollowOption
 import eu.kanade.tachiyomi.releases.ReleaseFeed
+import eu.kanade.tachiyomi.releases.ReleaseFollowing
 import eu.kanade.tachiyomi.releases.ReleaseOpener
 import eu.kanade.tachiyomi.ui.start.catalog.CatalogDiscovery
 import kotlinx.coroutines.flow.SharingStarted
@@ -34,6 +36,8 @@ import tachiyomi.domain.start.EntityKind
 import tachiyomi.domain.start.Feedback
 import tachiyomi.domain.start.FeedbackSubject
 import tachiyomi.domain.start.FeedbackVerdict
+import tachiyomi.domain.start.Follow
+import tachiyomi.domain.start.ReleaseItem
 import tachiyomi.domain.start.ReleaseWeek
 import tachiyomi.domain.start.RelevantRelease
 import tachiyomi.domain.start.StartFeedResult
@@ -52,6 +56,7 @@ class StartViewModel(
     private val preferences: StartPreferences,
     private val releaseFeed: ReleaseFeed,
     private val opener: ReleaseOpener,
+    private val following: ReleaseFollowing,
 ) : ViewModel() {
 
     // When each part first arrived, for the timing the plan asks to be measured, not guessed.
@@ -84,13 +89,20 @@ class StartViewModel(
         .map<StartFeedResult, StartFeedResult?> { it }
         .onStart { emit(null) }
 
-    val state: StateFlow<State> = combine(continueReading, feed, discovery.state) { continueItems, feed, catalog ->
-        State(loading = false, continueReading = continueItems, feed = feed, catalog = catalog)
+    val state: StateFlow<State> = combine(
+        continueReading,
+        feed,
+        discovery.state,
+        following.follows,
+    ) { continueItems, feed, catalog, follows ->
+        State(loading = false, continueReading = continueItems, feed = feed, catalog = catalog, follows = follows)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(StartConfig.STOP_TIMEOUT_MS), State())
 
     init {
         // This week's releases (H6): kept on the device, fetched at most once a day.
         viewModelScope.launchIO { releaseFeed.refresh(ReleaseWeek.of(LocalDate.now())) }
+        // The alerts' daily check while something is followed (H7), again after a restore.
+        viewModelScope.launchIO { following.keepScheduled() }
         // The catalogue and the sources are asked in the background, after the library, and again
         // when the switch or the order of sources changes; leaving the Início cancels it.
         viewModelScope.launchIO {
@@ -129,6 +141,12 @@ class StartViewModel(
         }
     }
 
+    suspend fun followOptions(item: ReleaseItem): List<FollowOption> = following.options(item)
+
+    fun saveFollows(options: List<FollowOption>) {
+        viewModelScope.launchIO { following.save(options) }
+    }
+
     /** "Não quero recomendações de …": a creator or a character, by name, until undone. */
     fun setEntityFeedback(kind: EntityKind, name: String) {
         val now = Clock.System.now().toEpochMilliseconds()
@@ -165,5 +183,7 @@ class StartViewModel(
         val feed: StartFeedResult? = null,
         /** Where discovery beyond the library stands (H5). */
         val catalog: CatalogDiscovery.State = CatalogDiscovery.State.Idle,
+        /** What the reader follows among the releases (H7): the bells show it. */
+        val follows: List<Follow> = emptyList(),
     )
 }

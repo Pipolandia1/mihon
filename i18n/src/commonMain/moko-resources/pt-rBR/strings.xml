@@ -1398,4 +1398,27 @@
     <string name="releases_failed_kept">Sem conexão: mostrando a lista de %s.</string>
     <string name="releases_credit_metron">Dados: Metron (metron.cloud).</string>
     <string name="releases_credit_gcd">Dados: Grand Comics Database (comics.org), CC BY-SA 4.0. O GCD diz a semana, não o dia.</string>
+    <string name="releases_follow_title">Avisar sobre</string>
+    <string name="releases_follow_issue">Só esta edição</string>
+    <string name="releases_follow_series">Todos os próximos números</string>
+    <string name="releases_follow_writer">roteiro</string>
+    <string name="releases_follow_artist">arte</string>
+    <string name="releases_follow_creator">autor</string>
+    <string name="releases_follow_character">personagem</string>
+    <string name="releases_follow_names_need_metron">Autores e personagens só com os detalhes do Metron sobre a edição.</string>
+    <string name="releases_alerts">Alertas</string>
+    <string name="releases_alerts_about">Uma vez por dia, com conexão, o Início confere os lançamentos do que você acompanha e avisa quando saem e quando dá para ler. Os avisos vêm no canal \"Lançamentos\", que dá para desligar nas configurações do sistema.</string>
+    <string name="releases_check_now">Verificar agora</string>
+    <string name="releases_check_nothing">Nada novo.</string>
+    <string name="releases_check_out">Saiu: %s</string>
+    <string name="releases_check_available">Disponível: %s</string>
+    <string name="releases_following_none">Nada ainda: toque no sino de um lançamento.</string>
+    <string name="releases_unfollow">Parar de acompanhar</string>
+    <string name="releases_channel">Lançamentos</string>
+    <string name="releases_notification_out">%s saiu esta semana</string>
+    <string name="releases_notification_available">%s já está disponível</string>
+    <string name="releases_notification_read_now">Ler agora</string>
+    <string name="releases_notifications_off">Os avisos estão desligados neste aparelho.</string>
+    <string name="releases_notifications_allow">Permitir</string>
+    <string name="releases_check_off">Nada verificado: os avisos estão desligados, e ficam guardados para quando forem ligados.</string>
 </resources>

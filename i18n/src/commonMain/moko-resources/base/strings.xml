@@ -1552,4 +1552,27 @@
     <string name="releases_failed_kept">No connection: showing the list of %s.</string>
     <string name="releases_credit_metron">Data: Metron (metron.cloud).</string>
     <string name="releases_credit_gcd">Data: Grand Comics Database (comics.org), CC BY-SA 4.0. The GCD gives the week, not the day.</string>
+    <string name="releases_follow_title">Notify me about</string>
+    <string name="releases_follow_issue">Only this issue</string>
+    <string name="releases_follow_series">Every next issue</string>
+    <string name="releases_follow_writer">writer</string>
+    <string name="releases_follow_artist">art</string>
+    <string name="releases_follow_creator">creator</string>
+    <string name="releases_follow_character">character</string>
+    <string name="releases_follow_names_need_metron">Creators and characters can be followed with Metron\'s details of the issue.</string>
+    <string name="releases_alerts">Alerts</string>
+    <string name="releases_alerts_about">Once a day, with a connection, Home checks the releases of what you follow and tells you when they are out and when you can read them. The alerts come on the \"Releases\" channel, which you can turn off in the system settings.</string>
+    <string name="releases_check_now">Check now</string>
+    <string name="releases_check_nothing">Nothing new.</string>
+    <string name="releases_check_out">Out: %s</string>
+    <string name="releases_check_available">Available: %s</string>
+    <string name="releases_following_none">Nothing yet: tap the bell on a release.</string>
+    <string name="releases_unfollow">Stop following</string>
+    <string name="releases_channel">Releases</string>
+    <string name="releases_notification_out">%s is out this week</string>
+    <string name="releases_notification_available">%s is available</string>
+    <string name="releases_notification_read_now">Read now</string>
+    <string name="releases_notifications_off">Alerts are off on this device.</string>
+    <string name="releases_notifications_allow">Allow</string>
+    <string name="releases_check_off">Nothing checked: alerts are off, and are kept for when they are on.</string>
 </resources>

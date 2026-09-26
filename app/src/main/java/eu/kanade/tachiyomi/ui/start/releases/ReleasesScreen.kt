@@ -20,7 +20,9 @@ import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import eu.kanade.presentation.start.ReleasesCalendar
 import eu.kanade.presentation.util.Screen
+import eu.kanade.tachiyomi.releases.FollowOption
 import eu.kanade.tachiyomi.releases.ReleaseFeed
+import eu.kanade.tachiyomi.releases.ReleaseFollowing
 import eu.kanade.tachiyomi.releases.ReleaseOpener
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.start.catalog.CatalogDiscovery
@@ -35,6 +37,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.lang.launchIO
+import tachiyomi.domain.start.CatalogAnswer
+import tachiyomi.domain.start.Feedback
+import tachiyomi.domain.start.Follow
 import tachiyomi.domain.start.ReleaseItem
 import tachiyomi.domain.start.ReleaseReason
 import tachiyomi.domain.start.ReleaseRepository
@@ -43,6 +48,7 @@ import tachiyomi.domain.start.ReleaseWeekList
 import tachiyomi.domain.start.Releases
 import tachiyomi.domain.start.RelevantRelease
 import tachiyomi.domain.start.StartRepository
+import tachiyomi.domain.start.WorkFacts
 import tachiyomi.i18n.MR
 import java.time.LocalDate
 
@@ -67,6 +73,8 @@ class ReleasesScreen : Screen() {
             navigateUp = navigator::pop,
             onWeek = model::showWeek,
             onOnlyRelevant = model::setOnlyRelevant,
+            loadFollowOptions = model::followOptions,
+            onSaveFollows = model::saveFollows,
             onOpen = { item, reason ->
                 model.open(
                     item = item,
@@ -90,6 +98,7 @@ class ReleasesModel(
     private val feed: ReleaseFeed,
     private val repository: ReleaseRepository,
     private val opener: ReleaseOpener,
+    private val following: ReleaseFollowing,
     startRepository: StartRepository,
     discovery: CatalogDiscovery,
 ) : ViewModel() {
@@ -102,11 +111,17 @@ class ReleasesModel(
     @OptIn(ExperimentalCoroutinesApi::class)
     val state: StateFlow<State> = combine(
         week.flatMapLatest { repository.subscribeWeek(it) },
-        combine(startRepository.subscribeWorks(), startRepository.subscribeFeedback(), discovery.answers, ::Triple),
+        combine(
+            startRepository.subscribeWorks(),
+            startRepository.subscribeFeedback(),
+            discovery.answers,
+            following.follows,
+            ::Reader,
+        ),
         fetch,
         onlyRelevant,
         week,
-    ) { list, (works, feedback, answers), fetch, only, week ->
+    ) { list, (works, feedback, answers, follows), fetch, only, week ->
         val items = list?.items.orEmpty()
         val relevant = Releases.relevant(
             items,
@@ -126,6 +141,7 @@ class ReleasesModel(
             onlyRelevant = only,
             loading = fetch.loading,
             failed = fetch.failed,
+            follows = follows,
         )
     }.stateIn(
         viewModelScope,
@@ -148,6 +164,12 @@ class ReleasesModel(
         }
     }
 
+    suspend fun followOptions(item: ReleaseItem): List<FollowOption> = following.options(item)
+
+    fun saveFollows(options: List<FollowOption>) {
+        viewModelScope.launchIO { following.save(options) }
+    }
+
     fun setOnlyRelevant(only: Boolean) {
         onlyRelevant.update { only }
     }
@@ -162,6 +184,14 @@ class ReleasesModel(
 
     private data class Fetch(val loading: Boolean = false, val failed: Boolean = false)
 
+    /** What the reader has, said and follows: the relevance's and the bells' inputs. */
+    private data class Reader(
+        val works: List<WorkFacts>,
+        val feedback: List<Feedback>,
+        val answers: List<CatalogAnswer>,
+        val follows: List<Follow>,
+    )
+
     @Immutable
     data class State(
         val week: ReleaseWeek,
@@ -175,6 +205,8 @@ class ReleasesModel(
         val loading: Boolean = false,
         /** The last fetch failed: what is shown, if anything, is the list kept from before. */
         val failed: Boolean = false,
+        /** What the reader follows (H7): the bells show it. */
+        val follows: List<Follow> = emptyList(),
     )
 
     private companion object {

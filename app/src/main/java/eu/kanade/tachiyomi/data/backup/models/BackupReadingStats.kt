@@ -24,6 +24,8 @@ import tachiyomi.domain.start.ExportedFeedback
 import tachiyomi.domain.start.Feedback
 import tachiyomi.domain.start.FeedbackSubject
 import tachiyomi.domain.start.FeedbackVerdict
+import tachiyomi.domain.start.Follow
+import tachiyomi.domain.start.FollowKind
 
 /**
  * Reading sessions, per-chapter progress, goals, plans, collections, confirmed comic metadata and
@@ -40,9 +42,38 @@ class BackupReadingStats(
     @ProtoNumber(5) val plans: List<BackupReadingPlan> = emptyList(),
     @ProtoNumber(6) val comicMetadata: List<BackupComicMetadata> = emptyList(),
     @ProtoNumber(7) val collections: List<BackupReadingCollection> = emptyList(),
-    // 8 is kept for the Início's release follows (docs/HOME_PLAN.md, H7).
+    @ProtoNumber(8) val releaseFollows: List<BackupReleaseFollow> = emptyList(),
     @ProtoNumber(9) val startFeedback: List<BackupStartFeedback> = emptyList(),
 )
+
+/**
+ * A release the reader follows (docs/HOME_PLAN.md, H7). Its key is the catalogue's — an issue, a
+ * series, a character or a creator — so it restores as it is, on any device.
+ */
+@Serializable
+class BackupReleaseFollow(
+    @ProtoNumber(1) val kind: Long,
+    @ProtoNumber(2) val key: String,
+    @ProtoNumber(3) val label: String,
+    @ProtoNumber(4) val seriesName: String? = null,
+    @ProtoNumber(5) val seriesYear: Int? = null,
+    @ProtoNumber(6) val number: String? = null,
+    @ProtoNumber(7) val createdAt: Long,
+) {
+    fun toFollow() = Follow(FollowKind.of(kind), key, label, seriesName, seriesYear, number, createdAt)
+
+    companion object {
+        fun of(follow: Follow) = BackupReleaseFollow(
+            kind = follow.kind.id,
+            key = follow.key,
+            label = follow.label,
+            seriesName = follow.seriesName,
+            seriesYear = follow.seriesYear,
+            number = follow.number,
+            createdAt = follow.createdAt,
+        )
+    }
+}
 
 /**
  * What the reader said of an Início recommendation (docs/HOME_PLAN.md, H3). A work is named by source

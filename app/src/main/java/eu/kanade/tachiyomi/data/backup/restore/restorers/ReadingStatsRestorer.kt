@@ -7,6 +7,7 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.readingstats.repository.ComicMetadataRepository
 import tachiyomi.domain.readingstats.repository.ReadingPlanRepository
 import tachiyomi.domain.readingstats.repository.ReadingStatsRepository
+import tachiyomi.domain.start.AlertRepository
 import tachiyomi.domain.start.StartRepository
 
 /** Adds a backup's reading to this device's. Restoring the same backup again changes nothing. */
@@ -16,6 +17,7 @@ class ReadingStatsRestorer(
     private val planRepository: ReadingPlanRepository,
     private val metadataRepository: ComicMetadataRepository,
     private val startRepository: StartRepository,
+    private val alertRepository: AlertRepository,
 ) {
 
     /** Returns why the restore failed, or null if it did not. */
@@ -33,6 +35,8 @@ class ReadingStatsRestorer(
                 works = stats.startFeedback.mapNotNull { it.toExported() },
                 names = stats.startFeedback.mapNotNull { it.toNameFeedback() },
             )
+            // The daily check is scheduled again the next time the Início opens.
+            stats.releaseFollows.forEach { alertRepository.follow(it.toFollow()) }
             null
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e)

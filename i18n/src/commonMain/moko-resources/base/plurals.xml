@@ -248,4 +248,8 @@
         <item quantity="one">%d release</item>
         <item quantity="other">%d releases</item>
     </plurals>
+    <plurals name="releases_following">
+        <item quantity="one">What you follow (%d)</item>
+        <item quantity="other">What you follow (%d)</item>
+    </plurals>
 </resources>

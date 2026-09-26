@@ -2,6 +2,7 @@ package eu.kanade.presentation.start
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -34,10 +36,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.manga.components.MangaCover
+import eu.kanade.tachiyomi.releases.FollowOption
 import eu.kanade.tachiyomi.ui.start.releases.ReleasesModel
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.rounded.KeyboardArrowLeft
 import mihon.icons.materialsymbols.rounded.KeyboardArrowRight
+import tachiyomi.domain.start.Alerts
 import tachiyomi.domain.start.EntityKind
 import tachiyomi.domain.start.ReleaseItem
 import tachiyomi.domain.start.ReleaseOrigin
@@ -57,9 +61,16 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+/** The bells on releases (H7): whether one is followed, and what tapping a bell does. */
+class ReleaseBells(
+    val followed: (ReleaseItem) -> Boolean,
+    val onBell: (ReleaseItem) -> Unit,
+)
+
 /** "Lançamentos da semana" (docs/HOME_PLAN.md §9.1, H6): what matters this week, and the calendar. */
 fun LazyListScope.releasesSection(
     block: ReleasesBlock,
+    bells: ReleaseBells,
     onOpenRelease: (RelevantRelease) -> Unit,
     onOpenCalendar: () -> Unit,
 ) {
@@ -86,7 +97,14 @@ fun LazyListScope.releasesSection(
                         .clickable { onOpenRelease(pick) },
                     verticalArrangement = Arrangement.spacedBy(MaterialTheme.padding.extraSmall),
                 ) {
-                    MangaCover.Book(data = pick.item.coverUrl, modifier = Modifier.fillMaxWidth())
+                    Box {
+                        MangaCover.Book(data = pick.item.coverUrl, modifier = Modifier.fillMaxWidth())
+                        FollowBell(
+                            followed = bells.followed(pick.item),
+                            onClick = { bells.onBell(pick.item) },
+                            modifier = Modifier.align(Alignment.TopEnd),
+                        )
+                    }
                     Text(
                         text = releaseTitle(pick.item),
                         style = MaterialTheme.typography.bodySmall,
@@ -110,7 +128,14 @@ fun ReleasesCalendar(
     onWeek: (Long) -> Unit,
     onOnlyRelevant: (Boolean) -> Unit,
     onOpen: (ReleaseItem, ReleaseReason?) -> Unit,
+    loadFollowOptions: suspend (ReleaseItem) -> List<FollowOption>,
+    onSaveFollows: (List<FollowOption>) -> Unit,
 ) {
+    var followFor by remember { mutableStateOf<ReleaseItem?>(null) }
+    val bells = ReleaseBells(followed = { Alerts.followed(it, state.follows) }, onBell = { followFor = it })
+    followFor?.let { item ->
+        FollowDialog(item, loadFollowOptions, onSaveFollows, onDismiss = { followFor = null })
+    }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = { scrollBehavior ->
@@ -173,11 +198,11 @@ fun ReleasesCalendar(
                 item(key = "for-you-empty") { Notice(stringResource(MR.strings.releases_none_for_you)) }
             }
             items(state.relevant, key = { "relevant-${it.item.key}" }) { pick ->
-                ReleaseRow(pick.item, reasonText(pick.reason)) { onOpen(pick.item, pick.reason) }
+                ReleaseRow(pick.item, reasonText(pick.reason), bells) { onOpen(pick.item, pick.reason) }
             }
             if (!state.onlyRelevant) {
                 if (list.items.isEmpty()) item(key = "empty") { Notice(stringResource(MR.strings.releases_empty)) }
-                state.others.forEach { (day, items) -> dayGroup(day, items, onOpen) }
+                state.others.forEach { (day, items) -> dayGroup(day, items, bells, onOpen) }
             }
             item(key = "credit") { Credit(list.origin) }
         }
@@ -188,6 +213,7 @@ fun ReleasesCalendar(
 private fun LazyListScope.dayGroup(
     day: LocalDate?,
     items: List<ReleaseItem>,
+    bells: ReleaseBells,
     onOpen: (ReleaseItem, ReleaseReason?) -> Unit,
 ) {
     item(key = "day-$day") {
@@ -214,13 +240,13 @@ private fun LazyListScope.dayGroup(
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
-            if (open) items.forEach { item -> ReleaseRow(item, null) { onOpen(item, null) } }
+            if (open) items.forEach { item -> ReleaseRow(item, null, bells) { onOpen(item, null) } }
         }
     }
 }
 
 @Composable
-private fun ReleaseRow(item: ReleaseItem, reason: String?, onClick: () -> Unit) {
+private fun ReleaseRow(item: ReleaseItem, reason: String?, bells: ReleaseBells, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -244,6 +270,7 @@ private fun ReleaseRow(item: ReleaseItem, reason: String?, onClick: () -> Unit) 
             Secondary(dayText(item))
             reason?.let { Secondary(it) }
         }
+        FollowBell(followed = bells.followed(item), onClick = { bells.onBell(item) })
     }
 }
 
