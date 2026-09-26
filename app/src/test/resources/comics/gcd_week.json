@@ -1,0 +1,47 @@
+{
+  "count": 4,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "api_url": "https://www.comics.org/api/issue/2868581/?format=json",
+      "series_name": "Absolute Batman (2024 series)",
+      "descriptor": "24",
+      "publication_date": "November 2026",
+      "price": "4.99 USD",
+      "page_count": "32.000",
+      "variant_of": null,
+      "series": "https://www.comics.org/api/series/216143/?format=json"
+    },
+    {
+      "api_url": "https://www.comics.org/api/issue/2868920/?format=json",
+      "series_name": "Absolute Batman (2024 series)",
+      "descriptor": "24 [Cardstock Variant Cover]",
+      "publication_date": "November 2026",
+      "price": "5.99 USD",
+      "page_count": "36.000",
+      "variant_of": "https://www.comics.org/api/issue/2868581/?format=json",
+      "series": "https://www.comics.org/api/series/216143/?format=json"
+    },
+    {
+      "api_url": "https://www.comics.org/api/issue/2868921/?format=json",
+      "series_name": "Absolute Batman (2024 series)",
+      "descriptor": "24 [1:25 Variant Cover]",
+      "publication_date": "November 2026",
+      "price": "5.99 USD",
+      "page_count": "36.000",
+      "variant_of": "https://www.comics.org/api/issue/2868581/?format=json",
+      "series": "https://www.comics.org/api/series/216143/?format=json"
+    },
+    {
+      "api_url": "https://www.comics.org/api/issue/2869581/?format=json",
+      "series_name": "2000 AD (2001 series)",
+      "descriptor": "2501",
+      "publication_date": "23 September 2026",
+      "price": "3.99 GBP",
+      "page_count": "32.000",
+      "variant_of": null,
+      "series": "https://www.comics.org/api/series/11293/?format=json"
+    }
+  ]
+}

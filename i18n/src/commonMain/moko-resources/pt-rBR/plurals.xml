@@ -259,4 +259,9 @@
         <item quantity="many">As recomendações melhoram com metadados: %d séries sem roteirista</item>
         <item quantity="other">As recomendações melhoram com metadados: %d séries sem roteirista</item>
     </plurals>
+    <plurals name="releases_count">
+        <item quantity="one">%d lançamento</item>
+        <item quantity="many">%d lançamentos</item>
+        <item quantity="other">%d lançamentos</item>
+    </plurals>
 </resources>

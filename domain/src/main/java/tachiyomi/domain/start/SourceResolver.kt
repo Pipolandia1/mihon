@@ -109,19 +109,28 @@ class SourceResolver(
     private val failedAt = HashMap<Long, Pair<FailureKind, Long>>()
     private var searches = 0
 
-    suspend fun resolve(series: CatalogSeries, order: List<Long>): Resolution = queue.withLock {
-        if (order.isEmpty()) return@withLock Resolution(Resolution.Status.NO_SOURCES, null, emptyList(), false)
+    suspend fun resolve(series: CatalogSeries, order: List<Long>): Resolution =
+        queue.withLock { resolveLocked(series, order, limited = true) }
+
+    /** As [resolve], for a search the reader asked for by a tap: the session's limit neither applies nor counts. */
+    suspend fun resolveByHand(series: CatalogSeries, order: List<Long>): Resolution =
+        queue.withLock { resolveLocked(series, order, limited = false) }
+
+    private suspend fun resolveLocked(series: CatalogSeries, order: List<Long>, limited: Boolean): Resolution {
+        if (order.isEmpty()) return Resolution(Resolution.Status.NO_SOURCES, null, emptyList(), false)
         val now = clock()
         val cached = cache.get(series.key)
         if (cached != null && cached.validFor(order, now)) {
             val status = if (cached.sourceId != null) Resolution.Status.FOUND else Resolution.Status.NOT_FOUND
-            return@withLock Resolution(status, cached, emptyList(), fromCache = true)
+            return Resolution(status, cached, emptyList(), fromCache = true)
         }
-        if (searches >= maxSearches) return@withLock Resolution(Resolution.Status.LIMITED, null, emptyList(), false)
-        searches++
+        if (limited) {
+            if (searches >= maxSearches) return Resolution(Resolution.Status.LIMITED, null, emptyList(), false)
+            searches++
+        }
         val resolution = ask(series, order, now, skipFailed = true)
         resolution.match?.let { cache.put(it) }
-        resolution
+        return resolution
     }
 
     suspend fun test(series: CatalogSeries, order: List<Long>): Resolution = queue.withLock {

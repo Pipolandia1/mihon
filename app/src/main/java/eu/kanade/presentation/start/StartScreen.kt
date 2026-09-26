@@ -64,6 +64,8 @@ import tachiyomi.domain.start.FeedbackVerdict
 import tachiyomi.domain.start.NearFinishBlock
 import tachiyomi.domain.start.ReadNowBlock
 import tachiyomi.domain.start.ReadingTime
+import tachiyomi.domain.start.ReleasesBlock
+import tachiyomi.domain.start.RelevantRelease
 import tachiyomi.domain.start.ShelfKind
 import tachiyomi.domain.start.TimeChoice
 import tachiyomi.domain.start.TimeOption
@@ -92,6 +94,8 @@ fun StartScreen(
     onUndoEntityFeedback: (kind: EntityKind, name: String) -> Unit,
     onOpenMetronSettings: () -> Unit,
     onOpenComicLibrary: () -> Unit,
+    onOpenRelease: (RelevantRelease) -> Unit,
+    onOpenCalendar: () -> Unit,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -141,6 +145,10 @@ fun StartScreen(
                                 onClick = onClickSearch,
                             ),
                             AppBar.OverflowAction(
+                                title = stringResource(MR.strings.releases_title),
+                                onClick = onOpenCalendar,
+                            ),
+                            AppBar.OverflowAction(
                                 title = stringResource(MR.strings.start_sources_title),
                                 onClick = onOpenSources,
                             ),
@@ -184,6 +192,7 @@ fun StartScreen(
                         ByTimeSection(block, feed?.perIssueMs, onOpenChapter)
                     }
                     is BacklogBlock -> backlogSection(block, onOpenManga)
+                    is ReleasesBlock -> releasesSection(block, onOpenRelease, onOpenCalendar)
                     is BecauseYouLikedBlock -> becauseYouLikedSection(block, shelfActions)
                     is CreatorsBlock -> creatorsSection(block, shelfActions, giveEntityFeedback)
                 }

@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.minus
+import kotlinx.datetime.toJavaLocalDate
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.readingstats.comics.ComicLibrary
@@ -26,10 +27,14 @@ import tachiyomi.domain.readingstats.repository.ComicMetadataRepository
 import tachiyomi.domain.readingstats.repository.ReadingPlanRepository
 import tachiyomi.domain.readingstats.repository.ReadingStatsRepository
 import tachiyomi.domain.readingstats.service.ReadingStatsPreferences
+import tachiyomi.domain.start.CatalogAnswer
 import tachiyomi.domain.start.CollectionState
 import tachiyomi.domain.start.Feedback
 import tachiyomi.domain.start.OutsideWork
 import tachiyomi.domain.start.ReadingTime
+import tachiyomi.domain.start.ReleaseItem
+import tachiyomi.domain.start.ReleaseRepository
+import tachiyomi.domain.start.ReleaseWeek
 import tachiyomi.domain.start.StartFeed
 import tachiyomi.domain.start.StartFeedResult
 import tachiyomi.domain.start.StartInput
@@ -42,7 +47,14 @@ private data class Extras(
     val hideStalled: Boolean,
     val works: List<WorkFacts>,
     val feedback: List<Feedback>,
+    val network: Network,
+)
+
+/** What arrives from the catalogue and the sources, later than the rest (H5, H6). */
+private data class Network(
     val outside: List<OutsideWork>,
+    val answers: List<CatalogAnswer>,
+    val releases: List<ReleaseItem>,
 )
 
 /** Everything the Início's blocks are built from, kept current as reading and the library change. */
@@ -54,13 +66,19 @@ class StartFeedSource(
     private val readingDays: ReadingDays,
     private val statsPreferences: ReadingStatsPreferences,
     private val startRepository: StartRepository,
+    private val releases: ReleaseRepository,
 ) {
 
     /**
-     * The blocks for [continueReading], the works "Continuar lendo" shows, and [outside], the
-     * catalogue's series found in the sources (H5), which arrive later.
+     * The blocks for [continueReading], the works "Continuar lendo" shows; [outside], the
+     * catalogue's series found in the sources, and [answers], what it listed for the names the reader
+     * reads (H5), arrive later, as the week's releases (H6) do.
      */
-    fun subscribe(continueReading: Flow<List<ContinueItem>>, outside: Flow<List<OutsideWork>>): Flow<StartFeedResult> =
+    fun subscribe(
+        continueReading: Flow<List<ContinueItem>>,
+        outside: Flow<List<OutsideWork>>,
+        answers: Flow<List<CatalogAnswer>>,
+    ): Flow<StartFeedResult> =
         combine(
             continueReading,
             metadata.subscribeLibrary().map { entries -> entries.map(ComicLibrary::progress) },
@@ -71,10 +89,10 @@ class StartFeedSource(
                 statsPreferences.hideStalledReminders.changes(),
                 startRepository.subscribeWorks(),
                 startRepository.subscribeFeedback(),
-                outside,
+                combine(outside, answers, thisWeek(), ::Network),
                 ::Extras,
             ),
-        ) { continueItems, progress, collections, perIssue, (today, hideStalled, works, feedback, outside) ->
+        ) { continueItems, progress, collections, perIssue, (today, hideStalled, works, feedback, network) ->
             StartFeed.build(
                 StartInput(
                     continueIds = continueItems.map { it.mangaId },
@@ -86,12 +104,22 @@ class StartFeedSource(
                     hideStalled = hideStalled,
                     works = works,
                     feedback = feedback,
-                    outside = outside,
+                    outside = network.outside,
+                    releases = network.releases,
+                    catalogAnswers = network.answers,
                 ),
             )
         }
             .catch { logcat(LogPriority.ERROR, it) }
             .flowOn(Dispatchers.IO)
+
+    /** This week's releases as kept on the device; a new week follows the day. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun thisWeek(): Flow<List<ReleaseItem>> = readingDays.today
+        .map { ReleaseWeek.of(it.toJavaLocalDate()) }
+        .distinctUntilChanged()
+        .flatMapLatest { week -> releases.subscribeWeek(week) }
+        .map { it?.items.orEmpty() }
 
     /** The measured time per issue, recomputed when a day's reading changes. */
     @OptIn(ExperimentalCoroutinesApi::class)

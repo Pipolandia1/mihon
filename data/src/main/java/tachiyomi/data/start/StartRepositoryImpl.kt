@@ -64,9 +64,22 @@ class StartRepositoryImpl(
                 activeMs = sessionsBy[work._id]?.active_ms ?: 0,
                 lastReadAt = listOfNotNull(read[work._id], opened[work._id]).maxOrNull()?.takeIf { it > 0 },
                 credits = storedCredits(rows) + sourceCredits(work.title, work.author, work.artist, work.genre),
+                catalogIds = catalogIds(rows),
             )
         }
     }
+
+    /** The series' own ids in the catalogues; the ones stored per issue are the issues', not the series'. */
+    private fun catalogIds(rows: List<tachiyomi.data.WorksMetadata>): Set<String> = rows
+        .filter { it.chapter_id == null }
+        .mapNotNull { row ->
+            when (row.field_) {
+                ComicField.METRON_ID.id -> "metron:series:${row.value_}"
+                ComicField.GCD_ID.id -> "gcd:series:${row.value_}"
+                else -> null
+            }
+        }
+        .toSet()
 
     /** Confirmed values count as the reader's own; suggestions keep where they came from. */
     private fun storedCredits(rows: List<tachiyomi.data.WorksMetadata>): List<Credit> = rows.mapNotNull { row ->

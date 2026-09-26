@@ -76,6 +76,10 @@ class CatalogDiscovery(
     private val mutableState = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = mutableState.asStateFlow()
 
+    /** What the catalogue listed for each name asked about, for the releases' reasons (H6). */
+    private val mutableAnswers = MutableStateFlow<List<CatalogAnswer>>(emptyList())
+    val answers: StateFlow<List<CatalogAnswer>> = mutableAnswers.asStateFlow()
+
     private val queue = Mutex()
 
     /** Asks again, for the reader as [works] and [feedback] describe them. */
@@ -87,6 +91,7 @@ class CatalogDiscovery(
         val model = Affinity.model(works, now)
         val asked = Discovery.entitiesToAsk(model, feedback, now)
         val answers = asked.mapNotNull { ask -> answer(ask, now) }
+        mutableAnswers.value = answers
         val picks = Discovery.picks(answers, model, works)
             .take(StartConfig.CATALOG_DETAILS)
             .mapNotNull { pick -> detailed(pick, now) }

@@ -41,4 +41,8 @@ object StartConfig {
 
     /** How long a name's id and a series' details are kept: they seldom change. */
     const val CATALOG_NAME_DAYS = 30L
+
+    /** Pages of a week's releases read from Metron (100 each) and from the GCD (50 each). */
+    const val RELEASES_METRON_PAGES = 10
+    const val RELEASES_GCD_PAGES = 10
 }

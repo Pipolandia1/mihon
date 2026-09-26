@@ -34,6 +34,8 @@ data class WorkFacts(
     /** The last reading or opening, epoch ms; null if never. */
     val lastReadAt: Long?,
     val credits: List<Credit>,
+    /** The catalogues' ids of its series, from its metadata: "metron:series:10", "gcd:series:216143". */
+    val catalogIds: Set<String> = emptySet(),
 )
 
 /** What the reader said of a recommendation. Amendment H3. */

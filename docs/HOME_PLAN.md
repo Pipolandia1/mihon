@@ -485,9 +485,8 @@ com o relógio do job injetado.
 2. **O Início abre o app e é o destino do "voltar"?** (sim)
 3. **Badge da aba Mais** = novidades + extensões, respeitando as preferências de badge? (sim)
 4. **"% compatível" trocado por motivos** com números reais? (sim)
-5. **Fonte de lançamentos:** com o token do Metron (25/09/2026), Metron como fonte principal dos
-   lançamentos (semanas de antecedência, autor e personagem em cada edição) e GCD quando o Metron
-   falhar? (sim; decidir antes do H6)
+5. **Fonte de lançamentos:** respondida pelo usuário em 26/09/2026 — Metron como fonte principal dos
+   lançamentos, GCD quando o Metron falhar.
 6. **"Continuar lendo" e "Perto de terminar" saem da aba Stats** e ficam só no Início? (sim; Stats
    fica com números, metas e atividade)
 7. **Metadados em lote:** permitir "buscar metadados de todas as séries" como ação explícita,
@@ -536,7 +535,8 @@ ficam intactos. O cartão "Continuar lendo" do Stats está no pacote da feature.
   (migração 19), `SourceFinder`, tela "Fontes das recomendações" com "Testar uma busca"
 - [x] H5 descoberta pelo catálogo (Metron): "Porque você gostou de X", autores e personagens — `Discovery`
   (domínio), `start_catalog_cache` (migração 20), `CatalogDiscovery`, pedidos de catálogo no `MetronApi`
-- [ ] H6 lançamentos da semana + calendário
+- [x] H6 lançamentos da semana + calendário — `Releases` (domínio), `release_weeks`/`release_items` (migração 21),
+  `ReleaseFeed` (Metron, GCD de reserva), bloco "Lançamentos da semana" e tela "Lançamentos"
 - [ ] H7 alertas e notificações
 
 ### Verificação do H1 (25/09/2026)
@@ -924,3 +924,82 @@ Metron e das fontes guardado.
 em texto e não foi aberta); o corte de uma lista longa (Geoff Johns coube; coberto pelo log e pelo
 teste de `count`); personagem ou equipe recusado pelo ⋮ (mesmo caminho do autor); tema claro;
 TalkBack; tablet.
+
+### Verificação do H6 (26/09/2026)
+
+**Como ficou:**
+- **Fonte** (decisão 5, do usuário): o **Metron**, com o token do leitor — a lista de edições filtrada
+  por `store_date_range` da semana ISO (segunda a domingo), com o dia de venda e a capa de cada edição
+  e a série com id, nome e ano. Sem token ou com o Metron fora, a lista semanal do **GCD**
+  (`on_sale_weekly`), que diz só a semana e lista cada capa variante como uma edição. É um pedido
+  genérico, igual para qualquer pessoa: nada da biblioteca sai para montá-lo.
+- **Guardado no aparelho** (`release_weeks`/`release_items`, migração 21, fora do backup): a semana
+  corrente é baixada de novo no máximo uma vez por dia; uma semana baixada antes de acabar é baixada
+  uma última vez depois; uma semana baixada depois de acabar nunca mais. No máximo 10 páginas por
+  semana (1.000 no Metron, 500 no GCD), e o logcat diz quando uma lista é cortada.
+- **Uma entrada por edição** (`Releases.grouped`): a variante do GCD vai para a capa regular; se a
+  regular não está na lista, a primeira variante fica no lugar dela. O número sai do `descriptor`
+  ("24 [Clay Mann Cardstock Variant Cover]" é a 24), a série e o ano do nome ("Absolute Batman (2024
+  series)").
+- **O que importa ao leitor** (`Releases.relevant`, domínio, puro): primeiro as séries que ele tem ou
+  leu — pelo id do catálogo quando os metadados o têm (`METRON_ID`/`GCD_ID` da série, nunca o da
+  edição), senão pelo nome e ano com o casamento do H4 —, com "Porque você lê Absolute Batman
+  (2024-)"; depois as séries que o Metron listou no H5 para um nome que ele lê, com "De Geoff Johns,
+  que você leu" / "Arte de …" / "Com Abin Sur, que você lê". Nada recusado volta.
+- **Bloco "Lançamentos da semana"** no Início (entre Leia isso agora e Porque você gostou): até 8
+  capas com número, dia ("qua., 23/09") e motivo, e "Ver todos". Só aparece com algo que importa; as
+  edições não entram na regra "uma obra uma vez" (uma edição nova de uma série em leitura é notícia,
+  não repetição).
+- **Tela "Lançamentos"** (Ver todos, e também o ⋮ do Início): uma semana por vez com ◀ ▶ e "Esta
+  semana"; "Para você (N)" com os motivos; o resto por dia, recolhido ("quarta-feira, 23 set. · 75
+  lançamentos · Mostrar"); filtro "Só o que importa para você"; sem conexão, "Sem conexão: mostrando a
+  lista de <data>"; crédito da fonte no rodapé ("Dados: Metron", ou o GCD com a licença CC BY-SA 4.0 e
+  "O GCD diz a semana, não o dia").
+- **Tocar num lançamento:** de uma série do leitor abre a obra dele; de fora, procura a série nas
+  fontes (H4) numa busca pedida pelo toque — sem o limite de 10 por sessão, que é para o que o Início
+  faz sozinho — e abre a página, ou diz "Não achada nas suas fontes".
+
+**Mudou em relação ao plano:**
+- **Oito blocos:** com os lançamentos, o Início tem os 8 tipos da V1 e o máximo continua 7; quando
+  todos têm conteúdo, "Escolha pelo tempo" sai primeiro (é uma ferramenta, sem conteúdo até tocar num
+  chip).
+- **Lançamentos no ⋮ do Início:** sem nada relevante na semana o bloco não aparece, e o "Ver todos"
+  some com ele; o calendário precisa de outra porta (achado no emulador).
+- **Relevância por autor e personagem** usa as respostas do Metron do H5 (as séries de cada nome), não
+  o detalhe de cada edição: nenhum pedido a mais. "#1 nova de editora ou personagem recorrente" (§8.2)
+  não foi feito — exigiria o detalhe de centenas de edições por semana.
+- **O sino** fica para o H7, como no plano.
+- A tabela `release_details` do §4 não foi necessária: o Metron já dá dia e capa na lista.
+
+**Testes na JVM:** `ReleasesTest` (10: semana ISO, inclusive na virada do ano; edição com variantes é
+uma; variantes sem a regular; Absolute Batman #24 uma vez, "porque você lê"; id do catálogo antes do
+nome e ano; nome que o leitor lê depois das séries dele; nada recusado; quando baixar de novo; o bloco
+no Início; com 8 blocos, a Escolha pelo tempo sai primeiro), `SourceResolverTest` +1 (busca pedida
+pelo toque sem o limite da sessão), `ReleaseRepositoryImplTest` (4, SQLite real: a semana guardada e
+trocada, semanas separadas e semana vazia, **o id do catálogo da série chega à obra e o da edição
+não**, migração 21), `ReleaseMappingTest` (4: lista do Metron e do GCD escritas a partir dos schemas;
+Absolute Batman #24 uma vez pelas duas; o `METRON_ID` casa mesmo com títulos diferentes). Domínio
+256, dados 54, app 356, todos passando; spotless limpo.
+
+**Emulador** (`tools/shots/home-h6-*.png`), com o token do Metron do usuário:
+- semana 39 de 2026 baixada do Metron: **79 edições em 1,4 s** (o GCD lista 273 para a mesma semana,
+  com as variantes); semana 40, pedida na tela: 66 edições em 1,0 s; voltar à semana 39 não pediu
+  nada (guardada);
+- **"Lançamentos da semana"**: Absolute Batman #24 ("qua., 23/09 · Porque você lê Absolute Batman
+  (2024-)") **uma vez**, Wolverine #28 ("Porque você lê Wolverine (2024-)") e Justice League Unlimited
+  #23 ("Com Abin Sur, que você lê", das respostas do Metron do H5), com as capas do Metron;
+- **tela Lançamentos**, 21–27 set.: "Para você (3)", "terça-feira, 22 set. · 1 lançamento",
+  "quarta-feira, 23 set. · 75 lançamentos"; semana 40: Geiger #25 e Hyde Street #13 ("De Geoff Johns,
+  que você leu"); "Mostrar" abriu o dia, "Só o que importa" deixou só os 2, "Esta semana" voltou;
+- **toques:** Absolute Batman #24 abriu a obra da biblioteca; Justice League Unlimited #23 abriu a
+  página na XOXO, fora da biblioteca (do cache do H5); 2000 AD #2501 e A Mischief of Magpies #2
+  achadas na XOXO; Any Given Smile #1 → "Não achada nas suas fontes";
+- abertura a frio: Continuar lendo em 922 ms, como antes; os lançamentos chegam depois, da rede;
+  nenhum crash.
+
+**Não verificado no aparelho:** a lista do GCD (o emulador tem token e o Metron respondeu; coberta
+pelos testes com a forma da resposta do GCD); "Sem conexão: mostrando a lista de …"; a virada do ano;
+tema claro; TalkBack; tablet.
+
+**Observado:** quando o Read Comics Online está na pausa de 30 minutos depois de falhar no Cloudflare,
+"Não achada nas suas fontes" também vale para "não perguntada"; a mensagem não distingue.

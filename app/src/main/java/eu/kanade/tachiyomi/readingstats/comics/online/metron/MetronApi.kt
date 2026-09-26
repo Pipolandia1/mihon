@@ -114,12 +114,31 @@ class MetronApi(
         from: String,
         maxPages: Int,
     ): Pair<List<MetronIssueListItem>, Int> {
-        val issues = mutableListOf<MetronIssueListItem>()
-        var url: String? = "${MetronConfig.BASE_URL}issue/".toHttpUrl().newBuilder()
+        val url = "${MetronConfig.BASE_URL}issue/".toHttpUrl().newBuilder()
             .addQueryParameter(kind.filter, id.toString())
             .addQueryParameter("store_date_range_after", from)
             .build()
-            .toString()
+        return issuePages(url.toString(), maxPages)
+    }
+
+    suspend fun series(id: Long): MetronSeries = get("${MetronConfig.BASE_URL}series/$id/")
+
+    /**
+     * Every issue on sale from [from] to [to] (YYYY-MM-DD, both included), up to [maxPages] pages
+     * of 100; and how many there are in all (the Início's releases, H6).
+     */
+    suspend fun weekIssues(from: String, to: String, maxPages: Int): Pair<List<MetronIssueListItem>, Int> {
+        val url = "${MetronConfig.BASE_URL}issue/".toHttpUrl().newBuilder()
+            .addQueryParameter("store_date_range_after", from)
+            .addQueryParameter("store_date_range_before", to)
+            .build()
+        return issuePages(url.toString(), maxPages)
+    }
+
+    /** An issue list, page after page up to [maxPages]; and how many issues it has in all. */
+    private suspend fun issuePages(first: String, maxPages: Int): Pair<List<MetronIssueListItem>, Int> {
+        val issues = mutableListOf<MetronIssueListItem>()
+        var url: String? = first
         var count = 0
         var pages = 0
         while (url != null && pages < maxPages) {
@@ -131,8 +150,6 @@ class MetronApi(
         }
         return issues to count
     }
-
-    suspend fun series(id: Long): MetronSeries = get("${MetronConfig.BASE_URL}series/$id/")
 
     /** Every issue of a series, page after page. */
     private suspend fun issues(seriesId: Long): List<MetronIssueSummary> {

@@ -119,6 +119,25 @@ class GcdApi(
             .name.takeIf(String::isNotBlank)
     }
 
+    /**
+     * The GCD's list of the releases of ISO week [week] of [year], variant covers included, up to
+     * [maxPages] pages of 50; and how many there are in all. Not cached here: the Início keeps it.
+     */
+    suspend fun weekIssues(year: Int, week: Int, maxPages: Int): Pair<List<GcdWeeklyItem>, Int> {
+        val items = mutableListOf<GcdWeeklyItem>()
+        var url: String? = "${GcdConfig.BASE_URL}issue/on_sale_weekly/$year/week/$week/?format=json"
+        var count = 0
+        var pages = 0
+        while (url != null && pages < maxPages) {
+            val page = get(url, GcdPage.serializer(GcdWeeklyItem.serializer()))
+            items += page.results
+            count = page.count
+            url = page.next
+            pages++
+        }
+        return items to count
+    }
+
     /** A record from the disk cache while it is recent enough, else from the GCD. */
     private suspend fun <T> cached(key: String, url: String, serializer: KSerializer<T>): T {
         val file = File(cacheDir, "$key.json")

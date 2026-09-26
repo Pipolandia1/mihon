@@ -21,7 +21,9 @@ import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.readingstats.ComicLibraryScreen
 import eu.kanade.tachiyomi.ui.readingstats.ComicOnlineSettingsScreen
+import eu.kanade.tachiyomi.ui.start.releases.ReleasesScreen
 import eu.kanade.tachiyomi.ui.start.sources.RecommendationSourcesScreen
+import eu.kanade.tachiyomi.util.system.toast
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.rounded.Home
 import mihon.icons.materialsymbols.roundedfilled.Home
@@ -76,6 +78,14 @@ data object StartTab : Tab {
             onUndoEntityFeedback = viewModel::undoEntityFeedback,
             onOpenMetronSettings = { navigator.push(ComicOnlineSettingsScreen()) },
             onOpenComicLibrary = { navigator.push(ComicLibraryScreen()) },
+            onOpenRelease = { pick ->
+                viewModel.openRelease(
+                    pick = pick,
+                    onOpen = { navigator.push(MangaScreen(it)) },
+                    onNotFound = { context.toast(MR.strings.start_release_not_found) },
+                )
+            },
+            onOpenCalendar = { navigator.push(ReleasesScreen()) },
         )
 
         // The splash screen waits for the first tab to have something to show.

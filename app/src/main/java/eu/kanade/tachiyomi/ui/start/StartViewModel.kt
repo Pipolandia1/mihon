@@ -11,6 +11,8 @@ import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import eu.kanade.tachiyomi.readingstats.ContinueItem
 import eu.kanade.tachiyomi.readingstats.ContinueReadingSource
+import eu.kanade.tachiyomi.releases.ReleaseFeed
+import eu.kanade.tachiyomi.releases.ReleaseOpener
 import eu.kanade.tachiyomi.ui.start.catalog.CatalogDiscovery
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import logcat.LogPriority
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
@@ -31,8 +34,11 @@ import tachiyomi.domain.start.EntityKind
 import tachiyomi.domain.start.Feedback
 import tachiyomi.domain.start.FeedbackSubject
 import tachiyomi.domain.start.FeedbackVerdict
+import tachiyomi.domain.start.ReleaseWeek
+import tachiyomi.domain.start.RelevantRelease
 import tachiyomi.domain.start.StartFeedResult
 import tachiyomi.domain.start.StartRepository
+import java.time.LocalDate
 import kotlin.time.Clock
 
 @Inject
@@ -44,6 +50,8 @@ class StartViewModel(
     private val startRepository: StartRepository,
     private val discovery: CatalogDiscovery,
     private val preferences: StartPreferences,
+    private val releaseFeed: ReleaseFeed,
+    private val opener: ReleaseOpener,
 ) : ViewModel() {
 
     // When each part first arrived, for the timing the plan asks to be measured, not guessed.
@@ -66,7 +74,7 @@ class StartViewModel(
         .map { (it as? CatalogDiscovery.State.Ready)?.works.orEmpty() }
         .distinctUntilChanged()
 
-    private val feed = feedSource.subscribe(continueReading, outside)
+    private val feed = feedSource.subscribe(continueReading, outside, discovery.answers)
         .onEach { result ->
             if (!feedLogged) {
                 feedLogged = true
@@ -81,6 +89,8 @@ class StartViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(StartConfig.STOP_TIMEOUT_MS), State())
 
     init {
+        // This week's releases (H6): kept on the device, fetched at most once a day.
+        viewModelScope.launchIO { releaseFeed.refresh(ReleaseWeek.of(LocalDate.now())) }
         // The catalogue and the sources are asked in the background, after the library, and again
         // when the switch or the order of sources changes; leaving the Início cancels it.
         viewModelScope.launchIO {
@@ -107,6 +117,16 @@ class StartViewModel(
 
     fun undoFeedback(mangaId: Long) {
         viewModelScope.launchIO { startRepository.removeFeedback(FeedbackSubject.WORK, mangaId.toString()) }
+    }
+
+    /**
+     * Opens a release: the reader's own entry for a series they have; otherwise the series looked
+     * for in their sources, by the tap's own search ([onNotFound] when no source has it).
+     */
+    fun openRelease(pick: RelevantRelease, onOpen: (Long) -> Unit, onNotFound: () -> Unit) {
+        viewModelScope.launch {
+            opener.entryFor(pick.item, pick.reason)?.let(onOpen) ?: onNotFound()
+        }
     }
 
     /** "Não quero recomendações de …": a creator or a character, by name, until undone. */

@@ -59,6 +59,6 @@ GROUP BY manga_id;
 -- The fields affinity reads: publisher, imprint, universe, genre, issue total, writer, artist,
 -- character and team, confirmed or suggested, on the series or on any chapter.
 worksMetadata:
-SELECT manga_id, field, value, origin, confirmed
+SELECT manga_id, chapter_id, field, value, origin, confirmed
 FROM comic_metadata
-WHERE field IN (5, 6, 7, 8, 9, 15, 16, 21, 22);
+WHERE field IN (5, 6, 7, 8, 9, 15, 16, 21, 22, 24, 25);

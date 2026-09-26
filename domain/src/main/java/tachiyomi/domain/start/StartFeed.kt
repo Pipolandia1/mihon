@@ -45,6 +45,11 @@ data class BacklogBlock(val shelves: List<BacklogShelf>) : StartBlock {
     override val kind get() = StartBlockKind.BACKLOG
 }
 
+/** "Lançamentos da semana" (H6): this week's issues that matter to the reader, and why. */
+data class ReleasesBlock(val picks: List<RelevantRelease>) : StartBlock {
+    override val kind get() = StartBlockKind.RELEASES
+}
+
 /** "Porque você gostou de X" (H5): works that share a writer, artist, character or team with [anchorTitle]. */
 data class BecauseYouLikedBlock(val anchorId: Long, val anchorTitle: String, val picks: List<ShelfPick>) : StartBlock {
     override val kind get() = StartBlockKind.BECAUSE_YOU_LIKED
@@ -117,6 +122,10 @@ data class StartInput(
     val feedback: List<Feedback> = emptyList(),
     /** Catalogue series found in the reader's sources, outside the library (amendment H5). */
     val outside: List<OutsideWork> = emptyList(),
+    /** This week's releases (amendment H6). */
+    val releases: List<ReleaseItem> = emptyList(),
+    /** What the catalogue lists for the names the reader reads (H5), for the releases' reasons. */
+    val catalogAnswers: List<CatalogAnswer> = emptyList(),
 )
 
 data class StartFeedResult(
@@ -159,6 +168,15 @@ object StartFeed {
     /** Library series without a writer from which the Início says metadata would help. */
     const val COVERAGE_MIN = 3
 
+    /** How many of the week's releases the Início shows; the calendar has them all. */
+    const val RELEASES_SHOWN = 8
+
+    /**
+     * With more than [MAX_BLOCKS] to show, the kinds that go first. "Escolha pelo tempo" is a tool
+     * with nothing of its own until a chip is tapped; the others are content.
+     */
+    val DROPPED_FIRST = listOf(StartBlockKind.BY_TIME)
+
     /** A series this short, with its total known, is a "short story" of the backlog. */
     const val SHORT_MAX_ISSUES = 6
 
@@ -184,6 +202,11 @@ object StartFeed {
             blocks += ReadNowBlock(readNow)
             shown += readNow.progress.entry.mangaId
         }
+
+        // Issues, not works: a release of a series being read is news, not a repeat.
+        val releases = Releases.relevant(input.releases, input.works, input.catalogAnswers, input.feedback, input.nowMs)
+            .take(RELEASES_SHOWN)
+        if (releases.isNotEmpty()) blocks += ReleasesBlock(releases)
 
         val model = Affinity.model(input.works, input.nowMs)
         val liked = becauseYouLiked(input, model, shown)
@@ -223,11 +246,18 @@ object StartFeed {
             .filter { (it.remaining ?: 0) > 0 }
             .associate { it.entry.mangaId to timed(it, it.remaining!!, input.perIssueMs) }
         return StartFeedResult(
-            blocks = blocks.sortedBy { it.kind }.take(MAX_BLOCKS),
+            blocks = fit(blocks),
             remaining = remaining,
             perIssueMs = input.perIssueMs,
             missingWriters = missingWriters(input.works),
         )
+    }
+
+    /** At most [MAX_BLOCKS], in the fixed order; with more, the kinds in [DROPPED_FIRST] go first. */
+    fun fit(blocks: List<StartBlock>): List<StartBlock> {
+        val kept = blocks.toMutableList()
+        DROPPED_FIRST.forEach { kind -> if (kept.size > MAX_BLOCKS) kept.removeAll { it.kind == kind } }
+        return kept.sortedBy { it.kind }.take(MAX_BLOCKS)
     }
 
     /**

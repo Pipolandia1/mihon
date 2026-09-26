@@ -1,0 +1,54 @@
+-- The week's releases for the Início and its calendar (docs/HOME_PLAN.md §8, H6): each ISO week's
+-- list as a catalogue gave it, and when. A cache: never backed up.
+CREATE TABLE release_weeks(
+    iso_year INTEGER NOT NULL,
+    iso_week INTEGER NOT NULL,
+    origin TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL,
+    PRIMARY KEY(iso_year, iso_week)
+);
+
+CREATE TABLE release_items(
+    release_key TEXT NOT NULL PRIMARY KEY,
+    iso_year INTEGER NOT NULL,
+    iso_week INTEGER NOT NULL,
+    series_key TEXT NOT NULL,
+    series_name TEXT NOT NULL,
+    series_year INTEGER,
+    number TEXT NOT NULL,
+    store_date TEXT,
+    cover_url TEXT,
+    variant_of TEXT,
+    position INTEGER NOT NULL
+);
+
+CREATE INDEX release_items_week_index ON release_items(iso_year, iso_week);
+
+getWeek:
+SELECT *
+FROM release_weeks
+WHERE iso_year = :year AND iso_week = :week;
+
+weekItems:
+SELECT *
+FROM release_items
+WHERE iso_year = :year AND iso_week = :week
+ORDER BY position;
+
+upsertWeek:
+INSERT OR REPLACE INTO release_weeks(iso_year, iso_week, origin, fetched_at)
+VALUES (:year, :week, :origin, :fetchedAt);
+
+deleteWeekItems:
+DELETE FROM release_items
+WHERE iso_year = :year AND iso_week = :week;
+
+insertItem:
+INSERT OR REPLACE INTO release_items(
+    release_key, iso_year, iso_week, series_key, series_name, series_year, number, store_date, cover_url,
+    variant_of, position
+)
+VALUES (
+    :releaseKey, :year, :week, :seriesKey, :seriesName, :seriesYear, :number, :storeDate, :coverUrl, :variantOf,
+    :position
+);

@@ -1,0 +1,25 @@
+-- The week's releases for the Início and its calendar (docs/HOME_PLAN.md, H6).
+
+CREATE TABLE release_weeks(
+    iso_year INTEGER NOT NULL,
+    iso_week INTEGER NOT NULL,
+    origin TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL,
+    PRIMARY KEY(iso_year, iso_week)
+);
+
+CREATE TABLE release_items(
+    release_key TEXT NOT NULL PRIMARY KEY,
+    iso_year INTEGER NOT NULL,
+    iso_week INTEGER NOT NULL,
+    series_key TEXT NOT NULL,
+    series_name TEXT NOT NULL,
+    series_year INTEGER,
+    number TEXT NOT NULL,
+    store_date TEXT,
+    cover_url TEXT,
+    variant_of TEXT,
+    position INTEGER NOT NULL
+);
+
+CREATE INDEX release_items_week_index ON release_items(iso_year, iso_week);

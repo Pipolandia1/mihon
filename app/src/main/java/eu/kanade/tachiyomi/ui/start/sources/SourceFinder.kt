@@ -87,7 +87,17 @@ class SourceFinder(
      */
     suspend fun find(series: CatalogSeries): FoundSeries? {
         if (!preferences.searchSources.get()) return null
-        val resolution = resolver.resolve(series, preferences.recommendationSources.get())
+        return found(resolver.resolve(series, preferences.recommendationSources.get()), series)
+    }
+
+    /**
+     * Where [series] is, for the reader who tapped it (a release outside the library, H6): the switch
+     * and the session's limit are for what the Início does on its own, not for this.
+     */
+    suspend fun findByHand(series: CatalogSeries): FoundSeries? =
+        found(resolver.resolveByHand(series, preferences.recommendationSources.get()), series)
+
+    private suspend fun found(resolution: Resolution, series: CatalogSeries): FoundSeries? {
         log(series, resolution)
         val match = resolution.match?.takeIf { resolution.status == Resolution.Status.FOUND } ?: return null
         val sourceId = match.sourceId ?: return null

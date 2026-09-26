@@ -1530,4 +1530,26 @@
     <string name="start_catalog_add_token">Add the token</string>
     <string name="start_catalog_choose_source">Choose the source</string>
     <string name="start_coverage_open">Open the comics library</string>
+    <string name="start_releases">This week\'s releases</string>
+    <string name="start_releases_all">See all</string>
+    <string name="start_release_this_week">this week</string>
+    <string name="start_release_reason_yours">Because you read %s</string>
+    <string name="start_release_reason_writer">By %s, whom you read</string>
+    <string name="start_release_reason_artist">Art by %s, whom you read</string>
+    <string name="start_release_reason_character">With %s, whom you read</string>
+    <string name="start_release_not_found">Not found in your sources</string>
+    <string name="releases_title">Releases</string>
+    <string name="releases_previous_week">Previous week</string>
+    <string name="releases_next_week">Next week</string>
+    <string name="releases_this_week">This week</string>
+    <string name="releases_only_relevant">Only what matters to you</string>
+    <string name="releases_for_you">For you (%d)</string>
+    <string name="releases_none_for_you">Nothing this week from the series and names you read.</string>
+    <string name="releases_empty">No releases this week.</string>
+    <string name="releases_show">Show</string>
+    <string name="releases_hide">Hide</string>
+    <string name="releases_failed_none">Neither Metron nor the GCD answered. Try again later.</string>
+    <string name="releases_failed_kept">No connection: showing the list of %s.</string>
+    <string name="releases_credit_metron">Data: Metron (metron.cloud).</string>
+    <string name="releases_credit_gcd">Data: Grand Comics Database (comics.org), CC BY-SA 4.0. The GCD gives the week, not the day.</string>
 </resources>

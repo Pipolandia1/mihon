@@ -244,4 +244,8 @@
         <item quantity="one">Recommendations get better with metadata: %d series without a writer</item>
         <item quantity="other">Recommendations get better with metadata: %d series without a writer</item>
     </plurals>
+    <plurals name="releases_count">
+        <item quantity="one">%d release</item>
+        <item quantity="other">%d releases</item>
+    </plurals>
 </resources>

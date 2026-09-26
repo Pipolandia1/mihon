@@ -64,3 +64,13 @@ data class GcdIssue(
     val editing: String = "",
     @SerialName("story_set") val stories: List<GcdStory> = emptyList(),
 )
+
+/** An issue as the GCD's list of a week's releases gives it (the Início's releases, H6). */
+@Serializable
+data class GcdWeeklyItem(
+    @SerialName("api_url") val apiUrl: String,
+    @SerialName("series_name") val seriesName: String = "",
+    val descriptor: String = "",
+    @SerialName("variant_of") val variantOf: String? = null,
+    val series: String? = null,
+)

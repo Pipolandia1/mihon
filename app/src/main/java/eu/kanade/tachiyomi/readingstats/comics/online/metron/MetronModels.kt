@@ -98,6 +98,8 @@ data class MetronIssueListItem(
     val series: MetronIssueSeries? = null,
     val number: String = "",
     @SerialName("store_date") val storeDate: String? = null,
+    /** The cover. */
+    val image: String? = null,
 )
 
 @Serializable

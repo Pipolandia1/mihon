@@ -187,6 +187,20 @@ class SourceResolverTest {
     }
 
     @Test
+    fun `a search the reader taps for is not held by the session's limit, and keeps its answer`() = runTest {
+        answers[primary] = hits("Absolute Batman (2024-)", "Flashpoint (2011)")
+        val resolver = resolver(maxSearches = 1)
+        resolver.resolve(absolute, listOf(primary))
+
+        val tapped = resolver.resolveByHand(CatalogSeries("metron:series:2", "Flashpoint", 2011), listOf(primary))
+
+        tapped.status shouldBe Resolution.Status.FOUND
+        cache.rows.keys shouldBe setOf("metron:series:1", "metron:series:2")
+        resolver.resolve(CatalogSeries("metron:series:3", "Batman", 2025), listOf(primary)).status shouldBe
+            Resolution.Status.LIMITED
+    }
+
+    @Test
     fun `the test by hand asks every source afresh and keeps nothing`() = runTest {
         answers[primary] = cloudflare
         answers[reserve] = hits("Absolute Batman (2024-)")
