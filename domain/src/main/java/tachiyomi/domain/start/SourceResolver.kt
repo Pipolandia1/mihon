@@ -91,6 +91,9 @@ data class Resolution(
  * Finds a catalogue series in the reader's sources: the primary first, the others in their order
  * only when it does not have it or fails (docs/HOME_PLAN.md §7.3, H4).
  *
+ * A source is searched by the series' name; when it lists results and none is the series, and the
+ * year is known, by the name with the year as sources title it ([withYear], H12).
+ *
  * One series at a time, in a queue. The answer is kept: found for [FOUND_DAYS], not found for
  * [NOT_FOUND_DAYS]; found only after an earlier source failed for [RETRY_DAYS], so the primary is
  * asked again soon; nothing kept when a failure leaves the answer unknown. A source that fails is
@@ -180,7 +183,18 @@ class SourceResolver(
         if (skipFailed && failed != null && now - failed.second < SKIP_FAILED_MS) {
             return Attempt.Skipped(sourceId, failed.first)
         }
-        return when (val result = searcher.search(sourceId, series.name)) {
+        val byName = searchOnce(series, sourceId, series.name)
+        if (byName !is Attempt.NoMatch || series.year == null) return byName
+        // A name many series share ("Batman") fills the results with the others; the sources title a
+        // series with its year, "Batman (2016)" or "Batman (2016-)", and searched that way list it (H12).
+        return when (val byYear = searchOnce(series, sourceId, withYear(series.name, series.year))) {
+            is Attempt.Found, is Attempt.Failed -> byYear
+            else -> byName
+        }
+    }
+
+    private suspend fun searchOnce(series: CatalogSeries, sourceId: Long, query: String): Attempt =
+        when (val result = searcher.search(sourceId, query)) {
             is SearchResult.Failure -> {
                 failedAt[sourceId] = result.kind to clock()
                 Attempt.Failed(sourceId, result.kind, result.detail)
@@ -196,9 +210,14 @@ class SourceResolver(
                 }
             }
         }
-    }
 
     companion object {
+        /**
+         * The second search, for a name the first could not tell apart: "Batman (2016", left open so it
+         * finds the titles "Batman (2016)" and "Batman (2016-)" alike.
+         */
+        fun withYear(name: String, year: Int) = "$name ($year"
+
         const val FOUND_DAYS = 7L
         const val NOT_FOUND_DAYS = 1L
         const val RETRY_DAYS = 1L

@@ -20,9 +20,11 @@ class SourceResolverTest {
 
     private val absolute = CatalogSeries("metron:series:1", "Absolute Batman", 2024)
 
-    /** What each source answers, and who was asked. */
+    /** What each source answers, to one query or to any; and who was asked what. */
     private val answers = HashMap<Long, SearchResult>()
+    private val answersTo = HashMap<Pair<Long, String>, SearchResult>()
     private val asked = mutableListOf<Long>()
+    private val queries = mutableListOf<String>()
 
     private val cache = object : SourceMatchRepository {
         val rows = HashMap<String, SourceMatch>()
@@ -33,9 +35,10 @@ class SourceResolverTest {
     }
 
     private fun resolver(maxSearches: Int = 10) = SourceResolver(
-        searcher = { sourceId, _ ->
+        searcher = { sourceId, query ->
             asked += sourceId
-            answers[sourceId] ?: SearchResult.Hits(emptyList())
+            queries += query
+            answersTo[sourceId to query] ?: answers[sourceId] ?: SearchResult.Hits(emptyList())
         },
         cache = cache,
         maxSearches = maxSearches,
@@ -69,7 +72,8 @@ class SourceResolverTest {
         val resolution = resolver().resolve(absolute, listOf(primary, reserve, third))
 
         resolution.match.shouldNotBeNull().sourceId shouldBe third
-        asked shouldBe listOf(primary, reserve, third)
+        // Results, none of them the series: asked again with the year (H12).
+        asked shouldBe listOf(primary, primary, reserve, third)
         resolution.attempts[0] shouldBe Attempt.NoMatch(primary, 2, "Batman (2025-)")
         resolution.attempts[1] shouldBe Attempt.NoResults(reserve)
     }
@@ -170,8 +174,8 @@ class SourceResolverTest {
         asked shouldBe listOf(primary, reserve, reserve)
         now += 31 * 60_000
         resolver.resolve(CatalogSeries("metron:series:3", "Batman", 2025), listOf(primary, reserve))
-        asked.last() shouldBe reserve
-        asked[asked.size - 2] shouldBe primary
+        // The primary asked again; the reserve twice, by name and with the year (H12).
+        asked.takeLast(3) shouldBe listOf(primary, reserve, reserve)
     }
 
     @Test
@@ -222,5 +226,60 @@ class SourceResolverTest {
         resolution.status shouldBe Resolution.Status.NO_SOURCES
         resolution.match.shouldBeNull()
         asked.shouldBeEmpty()
+    }
+
+    @Test
+    fun `a name many series share is searched again with the year, as sources title the series`() = runTest {
+        val batman = CatalogSeries("metron:series:2", "Batman", 2016)
+        answers[primary] = hits("Batman & Robin Eternal", "Batman/Superman (2013)", "Batman (2011)")
+        answersTo[primary to "Batman (2016"] = hits("All-Star Batman (2016-)", "Batman (2016-)")
+
+        val resolution = resolver().resolve(batman, listOf(primary, reserve))
+
+        resolution.status shouldBe Resolution.Status.FOUND
+        resolution.match.shouldNotBeNull().matchedTitle shouldBe "Batman (2016-)"
+        queries shouldBe listOf("Batman", "Batman (2016")
+        asked shouldBe listOf(primary, primary)
+    }
+
+    @Test
+    fun `searched again with the year and still not there, the source says what the name found`() = runTest {
+        val batman = CatalogSeries("metron:series:2", "Batman", 2016)
+        answers[primary] = hits("Batman & Robin Eternal", "Batman (2011)")
+        answersTo[primary to "Batman (2016"] = SearchResult.Hits(emptyList())
+
+        val resolution = resolver().resolve(batman, listOf(primary))
+
+        resolution.status shouldBe Resolution.Status.NOT_FOUND
+        resolution.attempts.single() shouldBe Attempt.NoMatch(primary, 2, "Batman & Robin Eternal")
+    }
+
+    @Test
+    fun `the second search failing leaves the answer unknown, as any failure does`() = runTest {
+        val batman = CatalogSeries("metron:series:2", "Batman", 2016)
+        answers[primary] = hits("Batman & Robin Eternal")
+        answersTo[primary to "Batman (2016"] = cloudflare
+
+        val resolution = resolver().resolve(batman, listOf(primary))
+
+        resolution.status shouldBe Resolution.Status.FAILED
+        resolution.attempts.single().shouldBeInstanceOf<Attempt.Failed>()
+    }
+
+    @Test
+    fun `no second search without a year, with nothing found, or with the series found`() = runTest {
+        answers[primary] = hits("Batman & Robin Eternal")
+        resolver().resolve(CatalogSeries("metron:series:3", "Batman", null), listOf(primary))
+        queries shouldBe listOf("Batman")
+
+        queries.clear()
+        answers[primary] = SearchResult.Hits(emptyList())
+        resolver().resolve(CatalogSeries("metron:series:4", "Batman", 2016), listOf(primary))
+        queries shouldBe listOf("Batman")
+
+        queries.clear()
+        answers[primary] = hits("Batman (2016)")
+        resolver().resolve(CatalogSeries("metron:series:5", "Batman", 2016), listOf(primary))
+        queries shouldBe listOf("Batman")
     }
 }

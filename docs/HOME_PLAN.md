@@ -658,6 +658,8 @@ com aprovação.
   "Não tenho interesse neste arco" (`FeedbackSubject.ARC`)
 - [ ] H10 seguir um arco: avisos e Continuar lendo
 - [ ] H11 (opcional) leitor: próxima do arco
+- [x] H12 busca nas fontes com o ano — `SourceResolver` busca de novo "Batman (2016" quando o nome sozinho
+  não acha a série entre os resultados
 
 ### Verificação do H1 (25/09/2026)
 
@@ -1344,4 +1346,39 @@ biblioteca ou ler, o app pega os metadados automaticamente" — hoje é pela tel
 
 **Dados de teste mudados no emulador:** a Issue #1 de "Stats ComicInfo Test" aberta (está no Continuar
 lendo); o arco Absolute Power recusado e desfeito; respostas do Metron guardadas.
+
+### Verificação do H12 (03/10/2026)
+
+**O pedido:** "faz … a busca melhorada" — no H8, Batman (2016), Superman (2023), Wonder Woman (2023) e
+Green Lantern (2023), 10 das 33 edições de Absolute Power, ficaram "Não achada": a busca manda só o nome,
+e no XOXO "Batman" traz 36 títulos parecidos sem o certo.
+
+**Como ficou** (`SourceResolver.askOne`, domínio): a fonte é buscada pelo nome; quando ela lista
+resultados e nenhum é a série, e o ano da série é conhecido, **busca de novo com "Nome (ano"** — o
+parêntese aberto foi sugestão do usuário: casa com "Batman (2016)" (como o XOXO titula) e "Batman
+(2016-)" (como o Read Comics Online titula). O resultado da segunda busca passa pelo mesmo `TitleMatch`.
+Achou → achado; a segunda busca falhou → falha (resposta desconhecida, nada guardado, como qualquer
+falha); não achou de novo → fica o que o nome achou ("36 results, none this series"). Sem ano, sem
+resultados, ou achado pelo nome: uma busca só. Vale para tudo que procura nas fontes (página do arco,
+descoberta do H5, lançamentos e alertas): a regra é do resolvedor. O limite de séries por sessão não
+muda (conta séries, não buscas).
+
+**Medido no emulador antes de escrever** (busca global, todas as fontes): "Batman 2016" → XOXO nada;
+"Batman (2016)" → XOXO "Batman (2016)"; "Batman (2016" → XOXO "Batman (2016)" (e, no celular do
+usuário, Read Comics Online "Batman (2016-)" e "All-Star Batman (2016-)").
+
+**Testes na JVM:** `SourceResolverTest` +4 (o nome comum buscado de novo com o ano e achado entre
+"All-Star Batman (2016-)" e "Batman (2016-)"; de novo e não achado, fica o que o nome achou; a segunda
+falhando deixa a resposta desconhecida; sem ano, sem resultados ou achado pelo nome, uma busca só) e 2
+ajustados (agora a fonte que lista outras séries é perguntada duas vezes). Domínio 287, dados 61, app
+359, todos passando; spotless limpo.
+
+**Emulador** (`tools/shots/h12-*.png`): aberto o arco Absolute Power — log "source "Batman" (2016) FOUND
+… XOXO Comics: found "Batman (2016)"", e o mesmo para "Green Lantern (2023)", "Superman (2023)" e
+"Wonder Woman (2023)"; na página, Batman #152, Green Lantern #15, Superman #18 e Wonder Woman #13
+passaram de "Não achada nas suas fontes" para **"em XOXO Comics"**. Nenhum crash.
+
+**Não verificado:** o Read Comics Online no emulador (Cloudflare); uma série cujo ano no catálogo e no
+título da fonte diferem em um (a segunda busca usa o ano do catálogo; o `TitleMatch` aceita ±1, mas a
+busca por texto não).
 
