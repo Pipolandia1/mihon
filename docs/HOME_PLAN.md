@@ -654,7 +654,8 @@ com aprovação.
   `ReleaseAlerts`, `ReleaseAlertJob`, `ReleaseNotifier`, sino e tela "Alertas", backup (campo 8)
 - [x] H8 página do arco, leitura em ordem e rastreador — `Arcs` (domínio), `start_arcs`/`start_arc_issues`
   (migração 23), `ArcCatalog`, `ArcReading`, telas "Arcos e eventos" (busca) e "Arco"
-- [ ] H9 "Arcos e eventos" no Início
+- [x] H9 "Arcos e eventos" no Início — `ArcShelf` (domínio), `ArcShelfSource`, bloco depois de Lançamentos,
+  "Não tenho interesse neste arco" (`FeedbackSubject.ARC`)
 - [ ] H10 seguir um arco: avisos e Continuar lendo
 - [ ] H11 (opcional) leitor: próxima do arco
 
@@ -1270,3 +1271,77 @@ do H6/H7, coberto pelos testes); Metron fora do ar com o arco guardado; arco mai
 criadas pela busca (Ground Zero, Green Arrow (2023), Absolute Power, Origins, Task Force VII, Super
 Son) com capítulos; Green Arrow #13 lida (Green Arrow (2023) está no Continuar lendo) e Ground Zero
 aberto na página 1.
+
+### Verificação do H9 (03/10/2026)
+
+**Como ficou:**
+- **Bloco "Arcos e eventos"** na ordem fixa logo depois de "Lançamentos da semana" (`StartBlockKind.ARCS`),
+  com até 6 arcos numa fileira e [Procurar] (a busca do H8). Com 9 tipos de bloco, o corte é o do H6:
+  "Escolha pelo tempo" sai primeiro, depois os de baixo.
+- **Cartão:** a imagem do arco, o nome, "1 de 33 · faltam 32" com a barra quando há edição lida (senão
+  "33 edições"), "<série> #N saiu esta semana" quando uma edição dele que importa saiu, e o motivo
+  ("Porque você lê Absolute Batman", ou o do lançamento: "De Geoff Johns, que você leu"). Tocar abre a
+  página do arco; segurar oferece **"Não tenho interesse neste arco"**, com "Desfazer".
+- **De onde vêm** (`ArcShelf.leads`, puro), nesta ordem, cada arco uma vez, com o motivo mais alto:
+  1. **os arcos que você está lendo** — guardados no aparelho (H8), com edição lida e alguma faltando,
+     o lido mais recentemente primeiro. Fica no lugar dos "seguidos" até o H10;
+  2. **os do que você abriu nos últimos 60 dias** — o arco nos metadados confirmados do capítulo
+     (`ComicField.ARC`), o mais recente primeiro; o nome vira o id pelo Metron (`arc/?name=`, nome
+     exato e único; guardado 30 dias, ou 7 quando não acha), até 5 nomes;
+  3. **os dos lançamentos da semana que importam** (`Releases.relevant`, o mesmo do bloco de cima): o
+     detalhe da edição no Metron traz os arcos (guardados 7 dias), até 5 lançamentos.
+  Fora: o arco recusado (enquanto valer), o de uma obra recusada, e o **lido até o fim**.
+- **Progresso no cartão** (`ArcShelf.progress`): o mesmo rastreador do H8, contando as obras que você
+  tem (biblioteca ou lidas); série que você não tem conta como não lida. Nada é procurado nas fontes
+  para o Início — a página do arco procura o resto.
+- **Rede** (`ArcShelfSource`): primeiro o que está guardado (sem rede), depois o Metron para o que
+  falta; tudo guardado (`start_catalog_cache` e `start_arcs`), então reabrir o Início não pede de novo.
+  Sair do Início cancela (o fluxo é o do feed, `WhileSubscribed`). Sem token do Metron, só o guardado.
+- **Recusar um arco** é `FeedbackSubject.ARC` (id 3) com a chave do arco; vai no backup como as recusas
+  de nomes (o campo 9 já carrega o tipo), e não conta como nome recusado (`Recommender.unwantedNames`).
+
+**Mudou em relação ao plano:**
+- **(1) "arcos seguidos em andamento"** virou **"arcos que você está lendo"** até o H10: seguir é do
+  H10, e o arco aberto pela página do H8 e lido em parte é justamente o que você está lendo — sem isso,
+  ele sumiria do Início (as entradas trazidas pela página não têm metadados com o arco).
+- **Sugestão do usuário (League of Comic Geeks):** não usada. O site responde 403 a acesso automático
+  até no `robots.txt` (03/10/2026); ler a lista de eventos de lá exigiria contornar essa proteção. Os
+  arcos continuam vindo só do Metron.
+
+**Testes na JVM:** `ArcShelfTest` (9: a ordem lendo → do que você lê → da semana; um arco uma vez, com
+o motivo mais alto e a edição da semana; **nada recusado** — arco recusado enquanto vale, obra
+recusada; arco recusado não é nome recusado; progresso pelas obras que você tem; "está lendo" pela
+última leitura de uma obra com edição lida no arco; lido até o fim não entra; o bloco depois de
+Lançamentos e no máximo 6; a série casada como num lançamento), `ArcRepositoryImplTest` +2 (os arcos
+guardados com as suas edições; os nomes de arco do que foi aberto, o mais recente primeiro, uma vez,
+só confirmados, com o limite). Domínio 283, dados 61, app 359, todos passando; spotless limpo.
+
+**Emulador** (`tools/shots/home-h9-*.png`), Android 16, com o token do Metron:
+- Início: depois de "Lançamentos da semana" (Geiger #25, Hyde Street #13), **"Arcos e eventos"** com
+  [Procurar] e o cartão **Absolute Power — "1 de 33 · faltam 32"** com a barra (o arco do teste do H8,
+  com Green Arrow #13 lida); log "StartFeed arcs: 1 started, 0 from reading, 0 from releases ->
+  [Absolute Power]";
+- **dos lançamentos:** o Metron foi perguntado pelos dois da semana (`issue/172633/`, `issue/163765/`) —
+  nenhum está num arco; reabrindo, não perguntou de novo (guardado);
+- **do que você lê:** aberta a Issue #1 de "Stats ComicInfo Test" (arco "Night Lanterns", sintético,
+  nos metadados confirmados), o Início perguntou `arc/?name=Night Lanterns` (200) e, sem arco com esse
+  nome no Metron, não acrescentou nada — o caminho roda até o Metron; um arco real não pôde ser visto
+  por aqui (abaixo);
+- tocar no cartão abriu a página do arco com o mesmo "1 de 33"; [Procurar] abriu a busca;
+- segurar → "Não tenho interesse neste arco" → o bloco sumiu (era o único) e o aviso "O arco Absolute
+  Power não será mais sugerido · Desfazer"; Desfazer → o cartão voltou; nenhum crash.
+
+**Não verificado no aparelho:** um arco vindo de verdade dos metadados (nenhuma HQ do emulador tem o
+arco de um arco real nos metadados — o pedido de metadados automáticos de 03/10 mudaria isso) ou de um
+lançamento da semana (nenhum dos desta semana está num arco); vários cartões na fileira; "saiu esta
+semana" no cartão; tema claro; TalkBack; tablet.
+
+**Visto de passagem (fora do H9):** "Continuar lendo" mostra "Cap. -1" para um one-shot (o capítulo
+"Full" sem número).
+
+**Pedido registrado em 03/10/2026, a planejar como passo próprio:** "Qualquer HQ que eu adicionar à
+biblioteca ou ler, o app pega os metadados automaticamente" — hoje é pela tela de metadados, à mão.
+
+**Dados de teste mudados no emulador:** a Issue #1 de "Stats ComicInfo Test" aberta (está no Continuar
+lendo); o arco Absolute Power recusado e desfeito; respostas do Metron guardadas.
+

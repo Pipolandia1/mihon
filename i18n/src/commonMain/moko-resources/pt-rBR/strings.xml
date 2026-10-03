@@ -1440,4 +1440,8 @@
     <string name="arc_state_not_found">Não achada nas suas fontes</string>
     <string name="arc_state_not_out">Sai em %s</string>
     <string name="arc_cover_date">capa: %s</string>
+    <string name="start_arc_left">%1$d de %2$d · faltam %3$d</string>
+    <string name="start_arc_out">%s saiu esta semana</string>
+    <string name="start_arc_not_interested">Não tenho interesse neste arco</string>
+    <string name="start_arc_feedback_done">O arco %s não será mais sugerido</string>
 </resources>

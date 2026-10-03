@@ -60,4 +60,16 @@ object StartConfig {
 
     /** Pages of an arc's issues read from Metron, 100 each: an event's crossovers fit. */
     const val ARC_PAGES = 5
+
+    /** How far back an issue opened puts its arcs on the Início (H9). */
+    const val ARC_READ_DAYS = 60L
+
+    /** Arc names of what was read asked of Metron per build of the Início's arcs: one search each, kept. */
+    const val ARC_NAMES_ASKED = 5
+
+    /** Releases of the week whose arcs are asked of Metron: one issue's details each, kept [ARC_DAYS]. */
+    const val ARC_RELEASES_ASKED = 5
+
+    /** Arcs tried beyond the ones shown, for those read to the end or that Metron does not answer for. */
+    const val ARC_SPARE = 3
 }

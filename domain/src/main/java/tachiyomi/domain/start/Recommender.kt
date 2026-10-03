@@ -159,7 +159,7 @@ object Recommender {
 
     /** Creators and characters the reader turned down, as the entities they are. */
     fun unwantedNames(feedback: List<Feedback>, nowMs: Long): Set<EntityKey> =
-        feedback.filter { it.subject != FeedbackSubject.WORK && it.activeAt(nowMs) }
+        feedback.filter { it.subject in NAMED && it.activeAt(nowMs) }
             .flatMap { entry ->
                 val kinds = if (entry.subject == FeedbackSubject.CREATOR) {
                     listOf(EntityKind.WRITER, EntityKind.ARTIST)
@@ -169,4 +169,7 @@ object Recommender {
                 kinds.map { EntityKey(it, EntityKey.normalize(entry.key)) }
             }
             .toSet()
+
+    /** The subjects turned down by name; an arc is turned down by its key ([ArcShelf.turnedDown]). */
+    private val NAMED = setOf(FeedbackSubject.CREATOR, FeedbackSubject.CHARACTER)
 }

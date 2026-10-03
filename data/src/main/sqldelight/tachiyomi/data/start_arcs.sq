@@ -48,3 +48,25 @@ INSERT INTO start_arc_issues(
 VALUES (
     :arcKey, :position, :issueKey, :seriesKey, :seriesName, :seriesYear, :number, :coverDate, :storeDate, :coverUrl
 );
+
+-- Every arc kept, for the Início's arcs (H9).
+keptArcs:
+SELECT *
+FROM start_arcs;
+
+keptArcIssues:
+SELECT *
+FROM start_arc_issues
+ORDER BY arc_key, position;
+
+-- The arcs named in confirmed chapter metadata (field 23) of chapters opened since :since, each with
+-- the work and the time of its latest opening (H9).
+readArcNames:
+SELECT A.value AS name, A.manga_id, M.title, max(H.last_read) AS read_at
+FROM comic_metadata A
+JOIN history H ON H.chapter_id = A.chapter_id
+JOIN mangas M ON M._id = A.manga_id
+WHERE A.field = 23 AND A.confirmed = 1 AND A.chapter_id IS NOT NULL AND H.last_read >= :since
+GROUP BY A.value
+ORDER BY read_at DESC
+LIMIT :limit;

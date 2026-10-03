@@ -55,6 +55,8 @@ import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.domain.readingstats.comics.ComicLibrary
 import tachiyomi.domain.readingstats.comics.EntryProgress
 import tachiyomi.domain.start.Alerts
+import tachiyomi.domain.start.Arc
+import tachiyomi.domain.start.ArcsBlock
 import tachiyomi.domain.start.BacklogBlock
 import tachiyomi.domain.start.BacklogShelf
 import tachiyomi.domain.start.BecauseYouLikedBlock
@@ -101,6 +103,9 @@ fun StartScreen(
     onOpenCalendar: () -> Unit,
     onOpenAlerts: () -> Unit,
     onOpenArcs: () -> Unit,
+    onOpenArc: (Arc) -> Unit,
+    onArcFeedback: (arcKey: String) -> Unit,
+    onUndoArcFeedback: (arcKey: String) -> Unit,
     loadFollowOptions: suspend (ReleaseItem) -> List<FollowOption>,
     onSaveFollows: (List<FollowOption>) -> Unit,
 ) {
@@ -140,6 +145,18 @@ fun StartScreen(
                 duration = SnackbarDuration.Long,
             )
             if (result == SnackbarResult.ActionPerformed) onUndoEntityFeedback(kind, name)
+        }
+    }
+    val turnDownArc: (Arc) -> Unit = { arc ->
+        onArcFeedback(arc.key)
+        scope.launch {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            val result = snackbarHostState.showSnackbar(
+                message = context.stringResource(MR.strings.start_arc_feedback_done, arc.name),
+                actionLabel = context.stringResource(MR.strings.action_undo),
+                duration = SnackbarDuration.Long,
+            )
+            if (result == SnackbarResult.ActionPerformed) onUndoArcFeedback(arc.key)
         }
     }
     val shelfActions = ShelfActions(onOpenManga = onOpenManga, onFeedback = giveFeedback)
@@ -213,6 +230,7 @@ fun StartScreen(
                     }
                     is BacklogBlock -> backlogSection(block, onOpenManga)
                     is ReleasesBlock -> releasesSection(block, bells, onOpenRelease, onOpenCalendar)
+                    is ArcsBlock -> arcsSection(block, onOpenArc, onOpenArcs, turnDownArc)
                     is BecauseYouLikedBlock -> becauseYouLikedSection(block, shelfActions)
                     is CreatorsBlock -> creatorsSection(block, shelfActions, giveEntityFeedback)
                 }

@@ -161,6 +161,20 @@ class StartViewModel(
         viewModelScope.launchIO { startRepository.removeFeedback(subjectOf(kind), EntityKey.normalize(name)) }
     }
 
+    /** "Não tenho interesse neste arco" (H9): the arc stays off the Início until undone. */
+    fun setArcFeedback(arcKey: String) {
+        val now = Clock.System.now().toEpochMilliseconds()
+        viewModelScope.launchIO {
+            startRepository.setFeedback(
+                Feedback(FeedbackSubject.ARC, arcKey, FeedbackVerdict.NOT_INTERESTED, null, now),
+            )
+        }
+    }
+
+    fun undoArcFeedback(arcKey: String) {
+        viewModelScope.launchIO { startRepository.removeFeedback(FeedbackSubject.ARC, arcKey) }
+    }
+
     private fun subjectOf(kind: EntityKind) = when (kind) {
         EntityKind.CHARACTER, EntityKind.TEAM -> FeedbackSubject.CHARACTER
         else -> FeedbackSubject.CREATOR

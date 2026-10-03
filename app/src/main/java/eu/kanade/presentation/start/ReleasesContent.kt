@@ -113,7 +113,7 @@ fun LazyListScope.releasesSection(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Secondary(dayText(pick.item))
-                    Secondary(reasonText(pick.reason))
+                    Secondary(releaseReasonText(pick.reason))
                 }
             }
         }
@@ -198,7 +198,7 @@ fun ReleasesCalendar(
                 item(key = "for-you-empty") { Notice(stringResource(MR.strings.releases_none_for_you)) }
             }
             items(state.relevant, key = { "relevant-${it.item.key}" }) { pick ->
-                ReleaseRow(pick.item, reasonText(pick.reason), bells) { onOpen(pick.item, pick.reason) }
+                ReleaseRow(pick.item, releaseReasonText(pick.reason), bells) { onOpen(pick.item, pick.reason) }
             }
             if (!state.onlyRelevant) {
                 if (list.items.isEmpty()) item(key = "empty") { Notice(stringResource(MR.strings.releases_empty)) }
@@ -292,7 +292,7 @@ private fun Credit(origin: ReleaseOrigin) {
 }
 
 /** "Absolute Batman #24". */
-private fun releaseTitle(item: ReleaseItem) = "${item.seriesName} #${item.number}"
+internal fun releaseTitle(item: ReleaseItem) = "${item.seriesName} #${item.number}"
 
 /** "qua., 23/09", or "esta semana" when the list says only the week. */
 @Composable
@@ -313,7 +313,7 @@ private fun fetchedText(epochMs: Long): String = DateTimeFormatter.ofPattern("d 
     .format(Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault()))
 
 @Composable
-private fun reasonText(reason: ReleaseReason): String = when (reason) {
+internal fun releaseReasonText(reason: ReleaseReason): String = when (reason) {
     is ReleaseReason.YourSeries -> stringResource(MR.strings.start_release_reason_yours, reason.title)
     is ReleaseReason.ByName -> when (reason.kind) {
         EntityKind.WRITER -> stringResource(MR.strings.start_release_reason_writer, reason.name)

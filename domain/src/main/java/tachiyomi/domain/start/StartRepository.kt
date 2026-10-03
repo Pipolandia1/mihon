@@ -58,6 +58,9 @@ enum class FeedbackSubject(val id: Long) {
     WORK(0),
     CREATOR(1),
     CHARACTER(2),
+
+    /** A story arc or event of the catalogue, by its key ("metron:arc:123"). H9. */
+    ARC(3),
     ;
 
     companion object {
@@ -65,7 +68,7 @@ enum class FeedbackSubject(val id: Long) {
     }
 }
 
-/** For a work, [key] is its manga id; for a creator or character, the normalized name. */
+/** For a work, [key] is its manga id; for a creator or character, the normalized name; for an arc, its key. */
 data class Feedback(
     val subject: FeedbackSubject,
     val key: String,

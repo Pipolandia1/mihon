@@ -22,9 +22,9 @@ import tachiyomi.domain.start.ArcSeries
 import tachiyomi.domain.start.Arcs
 import tachiyomi.domain.start.CatalogSeries
 import tachiyomi.domain.start.ChapterRef
-import tachiyomi.domain.start.ReleaseItem
 import tachiyomi.domain.start.Releases
 import tachiyomi.domain.start.StartRepository
+import tachiyomi.domain.start.asRelease
 import java.time.LocalDate
 
 /**
@@ -49,7 +49,7 @@ class ArcReading(
         val bySeries = issues.sortedBy { it.position }.groupBy { it.seriesKey }
         val state = LinkedHashMap<String, ArcSeries>()
         bySeries.forEach { (key, inSeries) ->
-            val owner = Releases.ownerOf(asRelease(inSeries.first()), own)
+            val owner = Releases.ownerOf(inSeries.first().asRelease(), own)
             state[key] =
                 owner?.let { ArcSeries.Found(it.mangaId, sourceName(it.mangaId), it.inLibrary) } ?: ArcSeries.Searching
         }
@@ -103,14 +103,4 @@ class ArcReading(
         val manga = getManga.await(mangaId) ?: return ""
         return sourceManager.getOrStub(manga.source).name
     }
-
-    private fun asRelease(issue: ArcIssue) = ReleaseItem(
-        key = issue.key,
-        seriesKey = issue.seriesKey,
-        seriesName = issue.seriesName,
-        seriesYear = issue.seriesYear,
-        number = issue.number,
-        storeDate = issue.storeDate,
-        coverUrl = issue.coverUrl,
-    )
 }

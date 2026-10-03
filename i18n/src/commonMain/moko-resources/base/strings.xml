@@ -1594,4 +1594,8 @@
     <string name="arc_state_not_found">Not in your sources</string>
     <string name="arc_state_not_out">Out on %s</string>
     <string name="arc_cover_date">cover: %s</string>
+    <string name="start_arc_left">%1$d of %2$d · %3$d left</string>
+    <string name="start_arc_out">%s is out this week</string>
+    <string name="start_arc_not_interested">Not interested in this arc</string>
+    <string name="start_arc_feedback_done">The arc %s will no longer be suggested</string>
 </resources>

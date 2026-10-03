@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.start
 
 import dev.zacsweers.metro.Inject
+import eu.kanade.tachiyomi.arcs.ArcShelfSource
 import eu.kanade.tachiyomi.readingstats.ContinueItem
 import eu.kanade.tachiyomi.readingstats.ReadingDays
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.onStart
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.minus
@@ -27,6 +29,7 @@ import tachiyomi.domain.readingstats.repository.ComicMetadataRepository
 import tachiyomi.domain.readingstats.repository.ReadingPlanRepository
 import tachiyomi.domain.readingstats.repository.ReadingStatsRepository
 import tachiyomi.domain.readingstats.service.ReadingStatsPreferences
+import tachiyomi.domain.start.ArcPick
 import tachiyomi.domain.start.CatalogAnswer
 import tachiyomi.domain.start.CollectionState
 import tachiyomi.domain.start.Feedback
@@ -35,6 +38,7 @@ import tachiyomi.domain.start.ReadingTime
 import tachiyomi.domain.start.ReleaseItem
 import tachiyomi.domain.start.ReleaseRepository
 import tachiyomi.domain.start.ReleaseWeek
+import tachiyomi.domain.start.Releases
 import tachiyomi.domain.start.StartFeed
 import tachiyomi.domain.start.StartFeedResult
 import tachiyomi.domain.start.StartInput
@@ -50,11 +54,12 @@ private data class Extras(
     val network: Network,
 )
 
-/** What arrives from the catalogue and the sources, later than the rest (H5, H6). */
+/** What arrives from the catalogue and the sources, later than the rest (H5, H6, H9). */
 private data class Network(
     val outside: List<OutsideWork>,
     val answers: List<CatalogAnswer>,
     val releases: List<ReleaseItem>,
+    val arcs: List<ArcPick>,
 )
 
 /** Everything the Início's blocks are built from, kept current as reading and the library change. */
@@ -67,6 +72,7 @@ class StartFeedSource(
     private val statsPreferences: ReadingStatsPreferences,
     private val startRepository: StartRepository,
     private val releases: ReleaseRepository,
+    private val arcShelf: ArcShelfSource,
 ) {
 
     /**
@@ -89,7 +95,7 @@ class StartFeedSource(
                 statsPreferences.hideStalledReminders.changes(),
                 startRepository.subscribeWorks(),
                 startRepository.subscribeFeedback(),
-                combine(outside, answers, thisWeek(), ::Network),
+                combine(outside, answers, thisWeek(), arcs(answers), ::Network),
                 ::Extras,
             ),
         ) { continueItems, progress, collections, perIssue, (today, hideStalled, works, feedback, network) ->
@@ -107,11 +113,27 @@ class StartFeedSource(
                     outside = network.outside,
                     releases = network.releases,
                     catalogAnswers = network.answers,
+                    arcs = network.arcs,
                 ),
             )
         }
             .catch { logcat(LogPriority.ERROR, it) }
             .flowOn(Dispatchers.IO)
+
+    /**
+     * The arcs of "Arcos e eventos" (H9), from the week's releases that matter as the releases' block
+     * finds them; none until they arrive, so the other blocks never wait for them.
+     */
+    private fun arcs(answers: Flow<List<CatalogAnswer>>): Flow<List<ArcPick>> {
+        val works = startRepository.subscribeWorks()
+        val feedback = startRepository.subscribeFeedback()
+        val relevant = combine(thisWeek(), works, answers, feedback) { items, works, answers, feedback ->
+            Releases.relevant(items, works, answers, feedback, Clock.System.now().toEpochMilliseconds())
+        }.distinctUntilChanged()
+        return arcShelf.subscribe(works, feedback, relevant)
+            .catch { logcat(LogPriority.ERROR, it) { "StartFeed arcs failed" } }
+            .onStart { emit(emptyList()) }
+    }
 
     /** This week's releases as kept on the device; a new week follows the day. */
     @OptIn(ExperimentalCoroutinesApi::class)

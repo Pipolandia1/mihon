@@ -62,9 +62,18 @@ data class ArcProgress(
     val series: Int,
 )
 
+/** An arc named in the confirmed metadata of an issue of [mangaId] last opened at [readAt] (H9). */
+data class ReadArcName(val name: String, val mangaId: Long, val title: String, val readAt: Long)
+
 interface ArcRepository {
     suspend fun getArc(key: String): Pair<Arc, List<ArcIssue>>?
     suspend fun saveArc(arc: Arc, issues: List<ArcIssue>)
+
+    /** Every arc kept on the device, with its issues in order (H9). */
+    suspend fun keptArcs(): List<Pair<Arc, List<ArcIssue>>>
+
+    /** The arcs named in the confirmed metadata of chapters opened since [since], the latest first, each once. */
+    suspend fun readArcNames(since: Long, limit: Int): List<ReadArcName>
 }
 
 /**

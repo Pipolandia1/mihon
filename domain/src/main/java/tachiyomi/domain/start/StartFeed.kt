@@ -12,6 +12,7 @@ enum class StartBlockKind {
     CONTINUE,
     READ_NOW,
     RELEASES,
+    ARCS,
     BECAUSE_YOU_LIKED,
     NEAR_FINISH,
     BY_TIME,
@@ -48,6 +49,11 @@ data class BacklogBlock(val shelves: List<BacklogShelf>) : StartBlock {
 /** "Lançamentos da semana" (H6): this week's issues that matter to the reader, and why. */
 data class ReleasesBlock(val picks: List<RelevantRelease>) : StartBlock {
     override val kind get() = StartBlockKind.RELEASES
+}
+
+/** "Arcos e eventos" (H9): the arcs the reader is in, of what they read, of the week's releases. */
+data class ArcsBlock(val picks: List<ArcPick>) : StartBlock {
+    override val kind get() = StartBlockKind.ARCS
 }
 
 /** "Porque você gostou de X" (H5): works that share a writer, artist, character or team with [anchorTitle]. */
@@ -126,6 +132,8 @@ data class StartInput(
     val releases: List<ReleaseItem> = emptyList(),
     /** What the catalogue lists for the names the reader reads (H5), for the releases' reasons. */
     val catalogAnswers: List<CatalogAnswer> = emptyList(),
+    /** The arcs to offer, in order ([ArcShelf]); they arrive later, from the catalogue (H9). */
+    val arcs: List<ArcPick> = emptyList(),
 )
 
 data class StartFeedResult(
@@ -207,6 +215,10 @@ object StartFeed {
         val releases = Releases.relevant(input.releases, input.works, input.catalogAnswers, input.feedback, input.nowMs)
             .take(RELEASES_SHOWN)
         if (releases.isNotEmpty()) blocks += ReleasesBlock(releases)
+
+        // Arcs, not works: an arc of a series shown above is a reading order, not a repeat.
+        val arcs = input.arcs.take(ArcShelf.SHOWN)
+        if (arcs.isNotEmpty()) blocks += ArcsBlock(arcs)
 
         val model = Affinity.model(input.works, input.nowMs)
         val liked = becauseYouLiked(input, model, shown)
