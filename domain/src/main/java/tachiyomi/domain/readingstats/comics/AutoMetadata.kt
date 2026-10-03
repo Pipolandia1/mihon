@@ -8,7 +8,7 @@ enum class AutoStatus(val id: Long) {
     /** The catalogue's series was certain: its values were confirmed where nothing was. */
     CONFIRMED(0),
 
-    /** A likely series, not certain: its values wait as suggestions for the reader to accept. */
+    /** A likely series, not certain (a year apart): its values wait as suggestions for the reader to accept. */
     SUGGESTED(1),
 
     /** No series the catalogue lists is this work; asked again after [AutoMetadata.RETRY_NOT_FOUND_DAYS]. */
@@ -57,9 +57,11 @@ data class AutoPick(val seriesId: Long, val status: AutoStatus)
  * Comic metadata without a tap (H13): every work in the library or read gets its series' and issues'
  * values from the catalogue on its own.
  *
- * - **Certain or nothing confirmed:** a series is confirmed only when its name and year are the
- *   work's ([MatchQuality.EXACT_YEAR]) and no other series ties; a likely one — a year apart, or a
- *   work whose title has no year — is kept as suggestions, which the metadata screen offers to accept.
+ * - **Certain or nothing confirmed:** a series is confirmed when its name and year are the work's
+ *   ([MatchQuality.EXACT_YEAR]), or when the work's title has no year and the series is the only one
+ *   of the name ([MatchQuality.EXACT]: a title goes without its year when no other series shares the
+ *   name — the reader's rule, 03/10/2026); a likely one, a year apart or a nearly equal name, is kept
+ *   as suggestions, which the metadata screen offers to accept.
  * - **The reader's values stay:** only fields with nothing confirmed are filled; a work the reader
  *   matched to another catalogue by hand gets Metron's values only from a certain series.
  * - **New issues:** a work is looked at again when it has more chapters than when it was last done.
@@ -68,6 +70,9 @@ object AutoMetadata {
 
     /** Days before a work no series was found for is searched again: catalogues grow. */
     const val RETRY_NOT_FOUND_DAYS = 7L
+
+    /** Days before a work left with suggestions is looked at again, as the rules may now be sure of it. */
+    const val RETRY_SUGGESTED_DAYS = 1L
 
     /** Works done per run: each is a search and a few requests, or one per new issue. */
     const val PER_RUN = 15
@@ -80,7 +85,7 @@ object AutoMetadata {
         val ordered = candidates.sortedBy { it.collected }
         val best = TitleMatch.best(parsed.name, parsed.startYear, ordered, ::labelOf) ?: return null
         val quality = TitleMatch.quality(key, labelOf(best)) ?: return null
-        val status = if (quality == MatchQuality.EXACT_YEAR) AutoStatus.CONFIRMED else AutoStatus.SUGGESTED
+        val status = if (quality in CERTAIN) AutoStatus.CONFIRMED else AutoStatus.SUGGESTED
         return AutoPick(best.id, status)
     }
 
@@ -88,7 +93,10 @@ object AutoMetadata {
     fun due(work: AutoWork, state: AutoState?, nowMs: Long): Boolean = when (state?.status) {
         null -> true
         AutoStatus.NOT_FOUND -> nowMs - state.checkedAt >= RETRY_NOT_FOUND_DAYS * DAY_MS
-        AutoStatus.CONFIRMED, AutoStatus.SUGGESTED -> work.chapters > state.chapters
+        AutoStatus.CONFIRMED -> work.chapters > state.chapters
+        AutoStatus.SUGGESTED ->
+            work.chapters > state.chapters ||
+                nowMs - state.checkedAt >= RETRY_SUGGESTED_DAYS * DAY_MS
         AutoStatus.LEFT -> false
     }
 
@@ -110,6 +118,9 @@ object AutoMetadata {
         val year = candidate.yearBegan ?: return candidate.title
         return if (TitleMatch.key(candidate.title).year != null) candidate.title else "${candidate.title} ($year)"
     }
+
+    /** The matches a series is confirmed from: name and year, or the name alone with no year to compare. */
+    private val CERTAIN = setOf(MatchQuality.EXACT_YEAR, MatchQuality.EXACT)
 
     private const val DAY_MS = 24L * 60 * 60 * 1000
 }

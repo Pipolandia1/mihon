@@ -652,9 +652,11 @@ poucos; buscar ao adicionar, ao abrir e uma vez por dia.
   para a próxima. Para quando o Metron recusa (cota) — a obra cortada no meio é refeita.
 - **Escolha da série** (`AutoMetadata.pick`, puro): busca no Metron por nome e ano (por nome só quando
   o ano não acha), o `TitleMatch` do H4 entre os resultados, as séries de edições antes das
-  encadernadas. **Nome e ano iguais, uma série só → confirmado** onde nada estava confirmado. Um ano
-  de diferença, ou título sem ano → **sugestão** (a tela de metadados oferece "Aceitar"). Nenhuma, ou
-  duas empatadas → nada, e de novo em 7 dias.
+  encadernadas. **Nome e ano iguais, uma série só → confirmado** onde nada estava confirmado; **título
+  sem ano e uma série só com o nome → confirmado também** (regra do usuário, 03/10/2026: "quando não
+  tem ano é porque normalmente não tem outro com nome igual"). Um ano de diferença ou nome quase igual →
+  **sugestão** (a tela de metadados oferece "Aceitar"), olhada de novo um dia depois. Nenhuma, ou duas
+  empatadas → nada, e de novo em 7 dias.
 - **O que o leitor fez fica:** só campos sem nada confirmado são preenchidos; obra casada com o GCD à
   mão recebe valores do Metron só de série certa (senão fica como está).
 - **Edições novas:** uma obra já feita é refeita quando tem mais capítulos do que na última vez (as
@@ -1464,9 +1466,19 @@ celular; a rodada diária sozinha depois de 24 h; a cota diária do Metron estou
 (coberto: a obra cortada não guarda a contagem de capítulos e é refeita); a obra adicionada à
 biblioteca sem ser aberta (o mesmo gatilho: a lista de obras muda).
 
-**Para decidir com o uso:** títulos sem ano (comuns no XOXO: "Absolute Power: Task Force VII") ficam
-como sugestão mesmo quando o nome é único no Metron; dá para confirmar também esses.
+**Decidido depois (03/10/2026):** título sem ano com nome único no Metron é confirmado, não sugerido
+(ver abaixo).
 
 **Dados de teste mudados no emulador:** metadados do Metron confirmados nas 5 obras acima e sugeridos
 nas 3 sem ano; estado de 27 obras em `comic_auto_metadata`; Task Force VII #1 aberta.
+
+**Ajuste do H13 (03/10/2026) — título sem ano.** O usuário: "quando não tem ano é porque normalmente não
+tem outro com nome igual; pode confirmar automaticamente". `AutoMetadata.pick` confirma também o
+`MatchQuality.EXACT` (sem ano para comparar, uma série só com o nome — duas do mesmo nome continuam
+empatando em nada); sugestão fica só para um ano de diferença ou nome quase igual. Uma obra deixada
+com sugestões é olhada de novo um dia depois (`RETRY_SUGGESTED_DAYS`), escolhida de novo pela regra
+de agora — as que ficaram como sugestão pela regra antiga passam a confirmadas; a mesma série ainda só
+provável, sem capítulos novos, não pede nada. Testes: `AutoMetadataTest` ajustado (sem ano →
+confirmado; sugestão revista depois de um dia, não antes). Emulador: aberta Absolute Power: Origins #1
+(título sem ano) → "new works [576]" → **"Absolute Power: Origins" CONFIRMED** (1,6 s); nenhum crash.
 

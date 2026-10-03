@@ -103,18 +103,25 @@ class AutoMetadataFetcher(
     private suspend fun one(work: AutoWork, state: AutoState?, now: Long): Pair<AutoStatus, Boolean> {
         val stored = metadata.get(work.mangaId)
         val confirmedSeries = stored.series(ComicField.METRON_ID)?.values?.firstOrNull()?.toLongOrNull()
-        val suggestedSeries = state?.seriesId?.takeIf { state.status == AutoStatus.SUGGESTED }
         // Matched to the GCD by hand: Metron's values fill what is empty only when its series is certain.
         val byHand = stored.series(ComicField.GCD_ID) != null
-        val pick = when {
-            confirmedSeries != null -> AutoPick(confirmedSeries, AutoStatus.CONFIRMED)
-            suggestedSeries != null -> AutoPick(suggestedSeries, AutoStatus.SUGGESTED)
-            else -> search(work.title)?.takeIf { !byHand || it.status == AutoStatus.CONFIRMED }
+        val pick = if (confirmedSeries != null) {
+            AutoPick(confirmedSeries, AutoStatus.CONFIRMED)
+        } else {
+            // Left with suggestions before: picked again, as the rules may now be sure of it.
+            search(work.title)?.takeIf { !byHand || it.status == AutoStatus.CONFIRMED }
         }
         if (pick == null) {
             val status = if (byHand) AutoStatus.LEFT else AutoStatus.NOT_FOUND
             states.put(AutoState(work.mangaId, status, null, work.chapters, now))
             return status to false
+        }
+        val unchanged = state?.status == AutoStatus.SUGGESTED && state.seriesId == pick.seriesId &&
+            pick.status == AutoStatus.SUGGESTED && work.chapters <= state.chapters
+        if (unchanged) {
+            // The same likely series, nothing new: its suggestions are already there.
+            states.put(state.copy(checkedAt = now))
+            return AutoStatus.SUGGESTED to false
         }
 
         val chapters = getChapters.await(work.mangaId, applyScanlatorFilter = true)

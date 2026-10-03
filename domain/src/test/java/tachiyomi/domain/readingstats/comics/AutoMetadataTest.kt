@@ -29,14 +29,15 @@ class AutoMetadataTest {
     }
 
     @Test
-    fun `a series a year apart, or a work without a year, is only suggested`() {
+    fun `a series a year apart is only suggested, and the only one of a name without a year is confirmed`() {
         AutoMetadata.pick(
             "Justice League Unlimited (2024-)",
             listOf(CatalogCandidate(7, "Justice League Unlimited (2025)", 2025)),
         ) shouldBe
             AutoPick(7, AutoStatus.SUGGESTED)
+        // A title goes without its year when no other series shares the name: the reader's rule.
         AutoMetadata.pick("Flashpoint", listOf(CatalogCandidate(8, "Flashpoint (2011)", 2011))) shouldBe
-            AutoPick(8, AutoStatus.SUGGESTED)
+            AutoPick(8, AutoStatus.CONFIRMED)
     }
 
     @Test
@@ -66,11 +67,14 @@ class AutoMetadataTest {
     }
 
     @Test
-    fun `a work is done once, again with new chapters, and searched again a week after nothing was found`() {
+    fun `a work is done once, again with new chapters, a day after suggestions, a week after nothing found`() {
         AutoMetadata.due(work(1), null, now) shouldBe true
         AutoMetadata.due(work(1), state(1, AutoStatus.CONFIRMED), now) shouldBe false
         AutoMetadata.due(work(1, chapters = 11), state(1, AutoStatus.CONFIRMED), now) shouldBe true
-        AutoMetadata.due(work(1, chapters = 11), state(1, AutoStatus.SUGGESTED), now) shouldBe true
+        AutoMetadata.due(work(1, chapters = 11), state(1, AutoStatus.SUGGESTED, checkedAt = now), now) shouldBe true
+        // Left with suggestions: looked at again a day later, as the rules may now be sure of it.
+        AutoMetadata.due(work(1), state(1, AutoStatus.SUGGESTED, checkedAt = now - day / 2), now) shouldBe false
+        AutoMetadata.due(work(1), state(1, AutoStatus.SUGGESTED, checkedAt = now - day), now) shouldBe true
         AutoMetadata.due(work(1), state(1, AutoStatus.NOT_FOUND, checkedAt = now - 6 * day), now) shouldBe false
         AutoMetadata.due(work(1), state(1, AutoStatus.NOT_FOUND, checkedAt = now - 7 * day), now) shouldBe true
         AutoMetadata.due(work(1, chapters = 99), state(1, AutoStatus.LEFT), now) shouldBe false
