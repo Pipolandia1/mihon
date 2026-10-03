@@ -520,6 +520,119 @@ com o relógio do job injetado.
 Nenhum outro: `MainActivity`, notificações existentes, `LibraryUpdateJob`, leitor e Bubble Zoom
 ficam intactos. O cartão "Continuar lendo" do Stats está no pacote da feature.
 
+## 13. Arcos e eventos — H8 a H11
+
+### 13.1 O pedido (03/10/2026)
+
+"Adicione uma seção na Home com eventos/arcos recentes e de preferência baseado no que estou lendo,
+e eu posso acessar a página de um arco e ler todas as HQs dele em ordem vindo da minha fonte
+principal. E eu posso seguir um arco para me avisar quando lançar uma nova HQ daquele arco e também
+aparecer em Continuar lendo. Além disso deve ter um rastreador de quantos % eu li do arco e quantas
+HQs faltam."
+
+### 13.2 O que já existe (lido no código do Metron e do fork em 03/10/2026)
+
+- **Metron:** `/api/arc/?name=` (busca por nome), `/api/arc/<id>/` (nome, descrição, imagem) e
+  `/api/arc/<id>/issue_list/` — as edições do arco **ordenadas por data de capa, série e número**,
+  cada uma com a série (id, nome, ano), número, data de venda e capa, a mesma forma que o H6 já lê.
+  No Metron, "evento" também é um arco. A lista de edições **não** filtra por arco (não há `arc_id`):
+  seguir um arco é reler a lista dele.
+- **"O que estou lendo":** o detalhe de cada edição traz os arcos, e a Fase C do Stats já grava o arco
+  de cada capítulo com metadados (`ComicField.ARC`, por nome).
+- **Coleções do Stats** (arco, evento, ordem de leitura) são montadas à mão com capítulos da
+  biblioteca, e o Mergulhar as mostra. O arco do Metron é outra coisa: a lista completa, inclusive o
+  que não está na biblioteca. As duas convivem.
+- **Ler pela fonte principal:** o H4 acha a série nas fontes (principal primeiro), o
+  `UpdateMangaFromRemote` traz os capítulos de uma entrada fora da biblioteca (como abrir a página da
+  obra) e o `Alerts.chapterFor` acha a edição pelo número.
+- **Avisos:** H6 e H7 (lista da semana, acompanhamentos, job diário, "saiu" e "já disponível").
+- **O leitor não passa sozinho de uma série para outra** (nem com as coleções).
+
+### 13.3 Modelo (migração 23)
+
+```sql
+-- Um arco do catálogo, e quando foi pedido.
+CREATE TABLE start_arcs(
+    arc_key      TEXT NOT NULL PRIMARY KEY,  -- "metron:arc:123"
+    name         TEXT NOT NULL,
+    description  TEXT,
+    image_url    TEXT,
+    fetched_at   INTEGER NOT NULL
+);
+
+-- As edições do arco, na ordem do Metron.
+CREATE TABLE start_arc_issues(
+    arc_key      TEXT NOT NULL,
+    position     INTEGER NOT NULL,
+    issue_key    TEXT NOT NULL,              -- "metron:issue:456"
+    series_key   TEXT NOT NULL,
+    series_name  TEXT NOT NULL,
+    series_year  INTEGER,
+    number       TEXT NOT NULL,
+    cover_date   TEXT,
+    store_date   TEXT,
+    cover_url    TEXT,
+    PRIMARY KEY(arc_key, position)
+);
+```
+
+Onde cada série do arco foi achada já fica em `start_source_matches` (H4). Cache de 1 dia para arcos
+seguidos ou com edição saindo, 7 dias para os outros; fora do backup (o seguir vai no campo 8, e o
+lido é o dos próprios capítulos).
+
+### 13.4 O rastreador
+
+- **Total** = as edições do arco no Metron (uma por edição, sem variantes). **Lidas** = as edições cujo
+  capítulo está lido no Mihon — na entrada que o Início achou ou na obra da biblioteca que é a mesma
+  série (id do catálogo, ou nome e ano), seja qual for a fonte.
+- "8 de 12 · 67 % · faltam 4", com barra. Sem o total do Metron, nada de porcentagem (regra 3).
+- Edições que ainda não saíram contam no total e aparecem como "sai em 14/10"; as que nenhuma fonte
+  tem aparecem como "não achada nas suas fontes" e também contam: a porcentagem é do arco, não do que
+  a fonte tem.
+
+### 13.5 Passos
+
+**H8 — Página do arco e leitura em ordem.** Domínio `Arcs.kt` (puro): as edições em ordem, o estado
+de cada uma (lida · disponível em <fonte> · não achada · ainda não saiu), o progresso e a próxima a
+ler. Dados: migração 23 e `ArcRepository`. App: `MetronApi` (busca, detalhe e lista do arco);
+`ArcReading` — cada série do arco procurada uma vez pelo H4 (principal primeiro), os capítulos
+trazidos e as edições casadas pelo número, em fila e aparecendo aos poucos —; tela **"Arco"** (imagem,
+nome, descrição, barra, "Continuar o arco", a lista em ordem; tocar abre o leitor na edição). Porta
+provisória: os arcos de um lançamento (tela Lançamentos). Testes: ordem, estados, progresso com e sem
+total, edição lida em outra fonte conta, variantes, ainda não saiu. **Aceite:** "Continuar o arco"
+abre a próxima edição não lida, da fonte principal quando ela tem.
+
+**H9 — "Arcos e eventos" no Início.** Candidatos: (1) arcos seguidos em andamento; (2) arcos das
+edições lidas recentemente (o `ARC` dos metadados; nome → id pelo Metron, em cache); (3) arcos dos
+lançamentos da semana que importam (H6; o detalhe só das relevantes). Ordem: seguidos, depois os do
+que você lê (mais recente primeiro), depois os da semana. Cartão: imagem, nome, "8 de 12 · faltam 4"
+ou "#3 saiu esta semana", e o motivo ("Porque você lê Absolute Batman"). Bloco novo na ordem fixa
+depois de Lançamentos; com 9 tipos, o corte segue a regra do H6. Testes: candidatos, ordem, motivos,
+nada recusado.
+
+**H10 — Seguir um arco.** `FollowKind.ARC` ("metron:arc:123") pelo sino da página e do cartão. O job
+diário do H7 relê a lista de cada arco seguido (um pedido por arco por dia, até 10): edição nova à
+venda → "Absolute Batman #25 saiu · arco The Zoo"; depois o "já disponível · Ler agora" do H7.
+**Continuar lendo:** um arco seguido com próxima edição disponível aparece lá ("Arco The Zoo ·
+próximo: Absolute Batman #8 · 7 de 12"), ordenado pela última leitura junto com as obras; tocar abre a
+edição. Testes: edição nova do arco, nunca duas vezes, o arco no Continuar lendo sem repetir a obra
+que já está lá. Backup: o seguir vai no campo 8.
+
+**H11 — (opcional) Leitor: "próxima do arco".** Ao terminar uma edição aberta pelo arco, oferecer a
+próxima — de outra série. Exige mexer no leitor (`ReaderViewModel`/`ReaderActivity`, upstream): só
+com aprovação.
+
+### 13.6 Decisões em aberto (propostas padrão entre parênteses)
+
+14. **Ordem de leitura:** a do Metron (data de capa, série, número)? (sim; as listas de leitura
+    curadas do Metron ficam para depois)
+15. **Edição que nenhuma fonte tem** conta no total? (sim: a porcentagem é do arco)
+16. **Seguir ou ler um arco** põe as séries dele na biblioteca? (não: entradas fora dela, como no
+    H4/H5; nada é adicionado sozinho)
+17. **Arco seguido no Continuar lendo antes de começar?** (sim, como "Começar o arco", quando a
+    primeira edição está disponível)
+18. **H11, o leitor que passa para a próxima do arco?** (a decidir: mexe em arquivo upstream)
+
 ---
 
 ## Status
@@ -539,6 +652,10 @@ ficam intactos. O cartão "Continuar lendo" do Stats está no pacote da feature.
   `ReleaseFeed` (Metron, GCD de reserva), bloco "Lançamentos da semana" e tela "Lançamentos"
 - [x] H7 alertas e notificações — `Alerts` (domínio), `release_follows`/`release_notified` (migração 22),
   `ReleaseAlerts`, `ReleaseAlertJob`, `ReleaseNotifier`, sino e tela "Alertas", backup (campo 8)
+- [ ] H8 página do arco, leitura em ordem e rastreador (§13)
+- [ ] H9 "Arcos e eventos" no Início
+- [ ] H10 seguir um arco: avisos e Continuar lendo
+- [ ] H11 (opcional) leitor: próxima do arco
 
 ### Verificação do H1 (25/09/2026)
 
