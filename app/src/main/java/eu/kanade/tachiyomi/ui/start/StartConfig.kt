@@ -54,4 +54,10 @@ object StartConfig {
 
     /** How often the alerts' check runs on its own. */
     const val ALERT_CHECK_HOURS = 24L
+
+    /** How long an arc's issues are kept before Metron is asked again (H8). */
+    const val ARC_DAYS = 7L
+
+    /** Pages of an arc's issues read from Metron, 100 each: an event's crossovers fit. */
+    const val ARC_PAGES = 5
 }

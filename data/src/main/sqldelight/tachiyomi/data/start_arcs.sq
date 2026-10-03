@@ -1,0 +1,50 @@
+-- Story arcs and events of the catalogue the reader opened (docs/HOME_PLAN.md §13, H8): the arc, and
+-- its issues in the catalogue's order. A cache, never backed up: what was read is the chapters'.
+CREATE TABLE start_arcs(
+    arc_key TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    image_url TEXT,
+    fetched_at INTEGER NOT NULL
+);
+
+CREATE TABLE start_arc_issues(
+    arc_key TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    issue_key TEXT NOT NULL,
+    series_key TEXT NOT NULL,
+    series_name TEXT NOT NULL,
+    series_year INTEGER,
+    number TEXT NOT NULL,
+    cover_date TEXT,
+    store_date TEXT,
+    cover_url TEXT,
+    PRIMARY KEY(arc_key, position)
+);
+
+getArc:
+SELECT *
+FROM start_arcs
+WHERE arc_key = :arcKey;
+
+arcIssues:
+SELECT *
+FROM start_arc_issues
+WHERE arc_key = :arcKey
+ORDER BY position;
+
+upsertArc:
+INSERT OR REPLACE INTO start_arcs(arc_key, name, description, image_url, fetched_at)
+VALUES (:arcKey, :name, :description, :imageUrl, :fetchedAt);
+
+deleteArcIssues:
+DELETE FROM start_arc_issues
+WHERE arc_key = :arcKey;
+
+insertArcIssue:
+INSERT INTO start_arc_issues(
+    arc_key, position, issue_key, series_key, series_name, series_year, number, cover_date, store_date, cover_url
+)
+VALUES (
+    :arcKey, :position, :issueKey, :seriesKey, :seriesName, :seriesYear, :number, :coverDate, :storeDate, :coverUrl
+);

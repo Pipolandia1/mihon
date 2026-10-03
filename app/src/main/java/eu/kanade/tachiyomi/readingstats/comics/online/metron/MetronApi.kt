@@ -125,6 +125,18 @@ class MetronApi(
 
     suspend fun series(id: Long): MetronSeries = get("${MetronConfig.BASE_URL}series/$id/")
 
+    /** Story arcs and events whose name has [name] in it (H8). */
+    suspend fun arcs(name: String): List<MetronItem> {
+        val url = "${MetronConfig.BASE_URL}arc/".toHttpUrl().newBuilder().addQueryParameter("name", name).build()
+        return get<MetronPage<MetronItem>>(url.toString()).results
+    }
+
+    suspend fun arc(id: Long): MetronArc = get("${MetronConfig.BASE_URL}arc/$id/")
+
+    /** An arc's issues, in Metron's order (cover date, series, number), up to [maxPages] pages of 100. */
+    suspend fun arcIssues(id: Long, maxPages: Int): Pair<List<MetronIssueListItem>, Int> =
+        issuePages("${MetronConfig.BASE_URL}arc/$id/issue_list/", maxPages)
+
     /** One issue's details: its creators and characters, for following them (H7). */
     suspend fun issueDetail(id: Long): MetronIssue = get("${MetronConfig.BASE_URL}issue/$id/")
 

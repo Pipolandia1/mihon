@@ -100,6 +100,7 @@ fun StartScreen(
     onOpenRelease: (RelevantRelease) -> Unit,
     onOpenCalendar: () -> Unit,
     onOpenAlerts: () -> Unit,
+    onOpenArcs: () -> Unit,
     loadFollowOptions: suspend (ReleaseItem) -> List<FollowOption>,
     onSaveFollows: (List<FollowOption>) -> Unit,
 ) {
@@ -162,6 +163,10 @@ fun StartScreen(
                             AppBar.OverflowAction(
                                 title = stringResource(MR.strings.releases_alerts),
                                 onClick = onOpenAlerts,
+                            ),
+                            AppBar.OverflowAction(
+                                title = stringResource(MR.strings.arcs_title),
+                                onClick = onOpenArcs,
                             ),
                             AppBar.OverflowAction(
                                 title = stringResource(MR.strings.start_sources_title),

@@ -43,8 +43,8 @@ data class Notified(val release: ReleaseItem, val what: AlertWhat, val at: Long)
 
 data class OutAlert(val release: ReleaseItem, val follow: Follow)
 
-/** A chapter of an entry, by its number, for "já disponível". */
-data class ChapterRef(val id: Long, val number: Double)
+/** A chapter of an entry, by its number: for "já disponível" (H7), and an arc's progress (H8). */
+data class ChapterRef(val id: Long, val number: Double, val read: Boolean = false)
 
 interface AlertRepository {
     fun subscribeFollows(): Flow<List<Follow>>

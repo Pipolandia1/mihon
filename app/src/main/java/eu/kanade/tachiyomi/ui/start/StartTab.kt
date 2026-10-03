@@ -21,6 +21,7 @@ import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.readingstats.ComicLibraryScreen
 import eu.kanade.tachiyomi.ui.readingstats.ComicOnlineSettingsScreen
+import eu.kanade.tachiyomi.ui.start.arcs.ArcSearchScreen
 import eu.kanade.tachiyomi.ui.start.releases.AlertsScreen
 import eu.kanade.tachiyomi.ui.start.releases.ReleasesScreen
 import eu.kanade.tachiyomi.ui.start.sources.RecommendationSourcesScreen
@@ -88,6 +89,7 @@ data object StartTab : Tab {
             },
             onOpenCalendar = { navigator.push(ReleasesScreen()) },
             onOpenAlerts = { navigator.push(AlertsScreen()) },
+            onOpenArcs = { navigator.push(ArcSearchScreen()) },
             loadFollowOptions = viewModel::followOptions,
             onSaveFollows = viewModel::saveFollows,
         )

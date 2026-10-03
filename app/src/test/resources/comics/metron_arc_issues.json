@@ -1,0 +1,51 @@
+{
+  "count": 4,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 140001,
+      "series": { "id": 3001, "name": "Absolute Batman", "volume": 1, "year_began": 2024 },
+      "number": "1",
+      "issue": "Absolute Batman (2024) #1",
+      "cover_date": "2024-12-01",
+      "store_date": "2024-10-09",
+      "image": "https://static.metron.cloud/media/issue/2024/10/02/ab-1.jpg",
+      "cover_hash": "0011223344556677",
+      "modified": "2025-01-10T09:00:00.000000-05:00"
+    },
+    {
+      "id": 140002,
+      "series": { "id": 3001, "name": "Absolute Batman", "volume": 1, "year_began": 2024 },
+      "number": "2",
+      "issue": "Absolute Batman (2024) #2",
+      "cover_date": "2025-01-01",
+      "store_date": "2024-11-13",
+      "image": "https://static.metron.cloud/media/issue/2024/11/06/ab-2.jpg",
+      "cover_hash": "1122334455667788",
+      "modified": "2025-01-10T09:00:00.000000-05:00"
+    },
+    {
+      "id": 140050,
+      "series": null,
+      "number": "1",
+      "issue": "Unknown #1",
+      "cover_date": null,
+      "store_date": null,
+      "image": null,
+      "cover_hash": null,
+      "modified": "2025-01-10T09:00:00.000000-05:00"
+    },
+    {
+      "id": 140003,
+      "series": { "id": 3001, "name": "Absolute Batman", "volume": 1, "year_began": 2024 },
+      "number": "3",
+      "issue": "Absolute Batman (2024) #3",
+      "cover_date": "2025-02-01",
+      "store_date": "2024-12-11",
+      "image": "https://static.metron.cloud/media/issue/2024/12/04/ab-3.jpg",
+      "cover_hash": "2233445566778899",
+      "modified": "2025-01-10T09:00:00.000000-05:00"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+-- Story arcs and events the reader opened (docs/HOME_PLAN.md, H8).
+
+CREATE TABLE start_arcs(
+    arc_key TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    image_url TEXT,
+    fetched_at INTEGER NOT NULL
+);
+
+CREATE TABLE start_arc_issues(
+    arc_key TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    issue_key TEXT NOT NULL,
+    series_key TEXT NOT NULL,
+    series_name TEXT NOT NULL,
+    series_year INTEGER,
+    number TEXT NOT NULL,
+    cover_date TEXT,
+    store_date TEXT,
+    cover_url TEXT,
+    PRIMARY KEY(arc_key, position)
+);

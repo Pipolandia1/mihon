@@ -1421,4 +1421,23 @@
     <string name="releases_notifications_off">Os avisos estão desligados neste aparelho.</string>
     <string name="releases_notifications_allow">Permitir</string>
     <string name="releases_check_off">Nada verificado: os avisos estão desligados, e ficam guardados para quando forem ligados.</string>
+    <string name="arcs_title">Arcos e eventos</string>
+    <string name="arcs_search_hint">Nome do arco ou evento</string>
+    <string name="arcs_search">Procurar</string>
+    <string name="arcs_search_failed">O Metron não respondeu. Tente de novo mais tarde.</string>
+    <string name="arcs_none_found">Nenhum arco ou evento com esse nome no Metron.</string>
+    <string name="arcs_need_metron">Os arcos vêm do Metron: adicione o seu token em Metadados online.</string>
+    <string name="arc_failed_none">Não deu para abrir o arco: o Metron não respondeu.</string>
+    <string name="arc_failed_kept">O Metron não respondeu: mostrando o arco guardado.</string>
+    <string name="arc_progress">%1$d de %2$d · %3$d%% · faltam %4$d</string>
+    <string name="arc_read_all">Arco lido: %1$d de %2$d</string>
+    <string name="arc_searching">Procurando nas suas fontes: %1$d de %2$d séries</string>
+    <string name="arc_start">Começar o arco: %s</string>
+    <string name="arc_continue">Continuar o arco: %s</string>
+    <string name="arc_nothing_available">Nenhuma edição do arco disponível nas suas fontes ainda.</string>
+    <string name="arc_state_read">Lida</string>
+    <string name="arc_state_searching">Procurando…</string>
+    <string name="arc_state_not_found">Não achada nas suas fontes</string>
+    <string name="arc_state_not_out">Sai em %s</string>
+    <string name="arc_cover_date">capa: %s</string>
 </resources>

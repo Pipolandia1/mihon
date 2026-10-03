@@ -652,7 +652,8 @@ com aprovação.
   `ReleaseFeed` (Metron, GCD de reserva), bloco "Lançamentos da semana" e tela "Lançamentos"
 - [x] H7 alertas e notificações — `Alerts` (domínio), `release_follows`/`release_notified` (migração 22),
   `ReleaseAlerts`, `ReleaseAlertJob`, `ReleaseNotifier`, sino e tela "Alertas", backup (campo 8)
-- [ ] H8 página do arco, leitura em ordem e rastreador (§13)
+- [x] H8 página do arco, leitura em ordem e rastreador — `Arcs` (domínio), `start_arcs`/`start_arc_issues`
+  (migração 23), `ArcCatalog`, `ArcReading`, telas "Arcos e eventos" (busca) e "Arco"
 - [ ] H9 "Arcos e eventos" no Início
 - [ ] H10 seguir um arco: avisos e Continuar lendo
 - [ ] H11 (opcional) leitor: próxima do arco
@@ -1199,3 +1200,73 @@ do backup); tema claro; TalkBack; tablet.
 
 **Dados de teste mudados no emulador:** a permissão de notificação do Mihon dada (com o OK do
 usuário); Absolute Batman #24 aberto pelo "Ler agora" (está no Continuar lendo).
+
+### Verificação do H8 (03/10/2026)
+
+**Como ficou:**
+- **"Arcos e eventos"** (⋮ do Início): busca pelo nome no Metron (`arc/?name=`); tocar num resultado
+  abre a página do arco. Sem token do Metron, a tela diz que ele é preciso.
+- **O arco** (`ArcCatalog`): o detalhe e a lista de edições do Metron (`arc/{id}/issue_list/`, até 5
+  páginas), guardados em `start_arcs`/`start_arc_issues` (migração 23) por 7 dias. Abrir de novo nesse
+  prazo não pede nada; com o Metron fora do ar, mostra o guardado e avisa. A ordem é a do Metron (data
+  de capa, série, número); edição sem série fica de fora.
+- **De onde cada série é lida** (`ArcReading`): a série que você tem (na biblioteca ou já lida) fica
+  na entrada que é sua, sem busca; as outras são procuradas uma vez cada, em fila, pelo H4 (principal
+  primeiro), e aparecem aos poucos ("Procurando nas suas fontes: 5 de 11 séries"). Achada a série, os
+  capítulos vêm da fonte como ao abrir a página quando falta uma edição que já saiu. Nada vai para a
+  biblioteca.
+- **A edição é o capítulo com o número dela**; um one-shot (#1) é também o único capítulo da entrada
+  quando ele não tem número — as fontes guardam um one-shot como "Full", número -1.
+- **O rastreador** (`Arcs`, puro): "1 de 33 · 3% · faltam 32" e a barra; o total é o arco inteiro, com
+  as edições que ainda não saíram e as que nenhuma fonte tem (decisão 15). Os capítulos são lidos ao
+  vivo: ler uma edição move o arco sem recarregar a página.
+- **"Começar/Continuar o arco: <série> #N"** abre a primeira edição disponível não lida, na ordem do
+  arco; cada linha também abre a sua no leitor. Estados na linha: lida · em <fonte> · procurando… ·
+  não achada nas suas fontes · ainda não saiu.
+
+**Mudou em relação ao plano:**
+- **A porta provisória** é uma busca pelo nome (⋮ do Início), não "os arcos de um lançamento": a lista
+  de lançamentos do Metron não traz o arco de cada edição (seria um pedido de detalhe por lançamento),
+  e a busca serve para qualquer arco, não só para os da semana. O bloco do Início continua no H9.
+- O casamento do one-shot ("Full", -1) não estava no plano: apareceu no emulador (abaixo).
+
+**Testes na JVM:** `ArcsTest` (9: estado de cada edição pela entrada da série; progresso do arco
+inteiro, com edições que não saíram e não achadas; a próxima é a primeira não lida que abre, na
+ordem; séries sendo procuradas; edição que saiu e a entrada não tem; a edição pelo número; **o
+one-shot pelo único capítulo sem número**; arco vazio sem porcentagem; a ordem pela posição),
+`ArcRepositoryImplTest` (2, SQLite real: guardar e trocar as edições; migração 23), `MetronArcTest`
+(2, respostas escritas pelo formato do Metron: o arco; as edições na ordem, sem a que não tem série).
+Domínio 274, dados 59, app 359, todos passando; spotless limpo.
+
+**Emulador** (`tools/shots/home-h8-*.png`), Android 16, com o token do Metron:
+- ⋮ do Início → "Arcos e eventos" → "zoo": "Nenhum arco ou evento com esse nome no Metron" (o pedido
+  voltou 200, vazio); "absolute power": **Absolute Power** e Absolute Power (Superman / Batman);
+- **Absolute Power**: imagem, "33 edições", a descrição; "0 de 33 · 0% · faltam 33"; "Procurando nas
+  suas fontes: 5 de 11 séries" e as linhas passando de "Procurando…" para "em XOXO Comics" uma a uma; a
+  lista inteira na ordem do Metron (FCBD Special Edition, Ground Zero, Green Arrow #13, Absolute Power
+  #1 … Absolute Power #4) e "Dados: Metron (metron.cloud)." no fim; log "StartFeed arc Absolute Power:
+  33 issues from Metron";
+- **achado no aparelho:** Ground Zero #1 dizia "Não achada nas suas fontes" com a série achada no XOXO
+  — a entrada tinha um capítulo só, "Full", número -1. Corrigido em `Arcs.chapterOf`, com teste;
+  depois: "em XOXO Comics", e o botão passou a "Continuar o arco: Absolute Power: Ground Zero #1";
+- "Começar o arco: Green Arrow #13" abriu o leitor em **Green Arrow (2023) · Issue #13**; lida até a
+  página 25 e de volta: **"1 de 33 · 3% · faltam 32"**, a barra andou, Green Arrow #13 "Lida", o botão
+  "Continuar o arco: Absolute Power #1" — sem recarregar;
+- tocar na linha de Ground Zero abriu o leitor em **Absolute Power: Ground Zero · Full** (44 páginas);
+- reabrir o arco depois de reinstalar: nenhum pedido do arco ao Metron (o guardado), o progresso igual;
+  Green Arrow não foi procurada de novo (já é sua, lida); nenhum crash.
+
+**Limite visto (do H4, não do arco):** Batman (2016), Superman (2023), Wonder Woman (2023) e Green
+Lantern (2023) — 10 das 33 edições — ficaram "Não achada": a busca manda só o nome, e no XOXO "Batman"
+traz 36 títulos parecidos sem o certo ("Batman & Robin Eternal", …). Nomes genéricos são justamente as
+séries principais dos eventos. Proposta à parte: quando a busca pelo nome traz resultados mas nenhum
+casa, tentar de novo com o ano ("Batman 2016").
+
+**Não verificado no aparelho:** arco com série da biblioteca em outra fonte (o caminho do dono é o
+do H6/H7, coberto pelos testes); Metron fora do ar com o arco guardado; arco maior que 5 páginas
+(250 edições); tema claro; TalkBack; tablet.
+
+**Dados de teste mudados no emulador:** o arco Absolute Power guardado; entradas fora da biblioteca
+criadas pela busca (Ground Zero, Green Arrow (2023), Absolute Power, Origins, Task Force VII, Super
+Son) com capítulos; Green Arrow #13 lida (Green Arrow (2023) está no Continuar lendo) e Ground Zero
+aberto na página 1.

@@ -99,8 +99,18 @@ data class MetronIssueListItem(
     val id: Long,
     val series: MetronIssueSeries? = null,
     val number: String = "",
+    @SerialName("cover_date") val coverDate: String? = null,
     @SerialName("store_date") val storeDate: String? = null,
     /** The cover. */
+    val image: String? = null,
+)
+
+/** A story arc or event (the Início's arcs, H8). */
+@Serializable
+data class MetronArc(
+    val id: Long,
+    val name: String = "",
+    val desc: String? = null,
     val image: String? = null,
 )
 
