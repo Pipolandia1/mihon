@@ -533,6 +533,9 @@ restrição de uso não comercial nem a exigência de link em cada tela; campos 
   credenciais dos rastreadores). Autenticação `Authorization: Bearer <token>` (knox);
 - só por ação explícita, uma série por vez: "Buscar online" no editor da série envia **apenas o
   título e o ano** da série; nada da biblioteca nem da leitura; nada em segundo plano;
+  **mudou em 03/10/2026 (H13 da Home, `docs/HOME_PLAN.md` §14):** com "Buscar metadados sozinho"
+  ligado — o padrão —, o Metron é consultado sem toque para cada HQ da biblioteca ou lida, com o
+  mesmo título e ano; desligado, vale o que está acima;
 - o usuário escolhe a série certa na lista; o app lê os issues dela e casa com os capítulos pelo
   número (`number` do Metron contra o rótulo confirmado ou o nome do capítulo; a lista de issues
   não traz `alt_number`); só capítulos regulares casam — anual, especial e encadernado são séries

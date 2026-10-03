@@ -180,11 +180,12 @@ class ComicMetadataRepositoryImpl(
     }
 
     private fun metadata(mangaId: Long, rows: List<Comic_metadata>): ComicMetadata {
-        fun values(rows: List<Comic_metadata>) = rows
-            .groupBy { it.chapter_id to it.field_ }
+        // One confirmed value per field and scope; a suggestion per origin, each its own list (H13: two
+        // origins suggesting a field were read back as one list, mixed).
+        fun values(rows: List<Comic_metadata>, byOrigin: Boolean) = rows
+            .groupBy { Triple(it.chapter_id, it.field_, if (byOrigin) it.origin else null) }
             .mapNotNull { (key, group) ->
                 val field = ComicField.of(key.second) ?: return@mapNotNull null
-                // A field's values may come from different origins only across a re-fetch; the first wins.
                 MetadataValue(
                     field = field,
                     chapterId = key.first,
@@ -193,7 +194,7 @@ class ComicMetadataRepositoryImpl(
                 )
             }
         val (confirmed, suggested) = rows.partition { it.confirmed }
-        return ComicMetadata(mangaId, values(confirmed), values(suggested))
+        return ComicMetadata(mangaId, values(confirmed, byOrigin = false), values(suggested, byOrigin = true))
     }
 
     private companion object {

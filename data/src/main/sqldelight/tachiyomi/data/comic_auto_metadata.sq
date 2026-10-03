@@ -1,0 +1,19 @@
+-- Where automatic comic metadata stands for each work (docs/HOME_PLAN.md §14, H13): the catalogue's
+-- series chosen, or that none was, and how many chapters the work had then. Never backed up.
+CREATE TABLE comic_auto_metadata(
+    manga_id INTEGER NOT NULL PRIMARY KEY,
+    status INTEGER NOT NULL,
+    series_id INTEGER,
+    chapters INTEGER NOT NULL,
+    checked_at INTEGER NOT NULL,
+    FOREIGN KEY(manga_id) REFERENCES mangas (_id)
+    ON DELETE CASCADE
+);
+
+allStates:
+SELECT *
+FROM comic_auto_metadata;
+
+putState:
+INSERT OR REPLACE INTO comic_auto_metadata(manga_id, status, series_id, chapters, checked_at)
+VALUES (:mangaId, :status, :seriesId, :chapters, :checkedAt);

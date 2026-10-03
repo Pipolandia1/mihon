@@ -1,0 +1,11 @@
+-- Automatic comic metadata (docs/HOME_PLAN.md §14, H13).
+
+CREATE TABLE comic_auto_metadata(
+    manga_id INTEGER NOT NULL PRIMARY KEY,
+    status INTEGER NOT NULL,
+    series_id INTEGER,
+    chapters INTEGER NOT NULL,
+    checked_at INTEGER NOT NULL,
+    FOREIGN KEY(manga_id) REFERENCES mangas (_id)
+    ON DELETE CASCADE
+);

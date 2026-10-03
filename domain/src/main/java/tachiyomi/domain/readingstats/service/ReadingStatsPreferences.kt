@@ -28,6 +28,16 @@ class ReadingStatsPreferences(
     val gcdPassword: Preference<String> =
         preferenceStore.getString(Preference.privateKey("reading_stats_gcd_password"), "")
 
+    /**
+     * Whether comic metadata is fetched without a tap, for every work added to the library or read
+     * (H13). Asks Metron only, with the token above.
+     */
+    val autoMetadata: Preference<Boolean> = preferenceStore.getBoolean("reading_stats_auto_metadata", true)
+
+    /** When the last automatic run was, epoch ms; 0 before the first. */
+    val autoMetadataLastRunAt: Preference<Long> =
+        preferenceStore.getLong("reading_stats_auto_metadata_last_run_at", 0L)
+
     /** Whether the stats leave out reminders about series left unread for a while. */
     val hideStalledReminders: Preference<Boolean> =
         preferenceStore.getBoolean("reading_stats_hide_stalled", false)

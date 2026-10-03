@@ -633,6 +633,44 @@ com aprovação.
     primeira edição está disponível)
 18. **H11, o leitor que passa para a próxima do arco?** (a decidir: mexe em arquivo upstream)
 
+## 14. Metadados automáticos — H13
+
+### 14.1 O pedido (03/10/2026)
+
+"Também não quero ter que adicionar os metadados das HQs manualmente. Qualquer HQ que eu adicionar à
+biblioteca ou ler eu quero que o app pegue os dados automaticamente." Decisões tomadas com o usuário
+("faz os metadados"): aplicar direto só quando é certo; preencher a biblioteca que já existe aos
+poucos; buscar ao adicionar, ao abrir e uma vez por dia.
+
+### 14.2 Como funciona
+
+- **Quem:** toda obra da biblioteca, lida ou aberta (`subscribeWorks`: favorita, com capítulo lido ou
+  com sessão de leitura).
+- **Quando:** ao abrir o app (o Início é a primeira aba), uma vez por dia (WorkManager, com conexão),
+  e ~15 s depois de uma obra nova aparecer na biblioteca ou na leitura. Uma de cada vez; até 15 obras
+  por vez, a lida mais recentemente primeiro, depois a adicionada mais recentemente; o que sobra fica
+  para a próxima. Para quando o Metron recusa (cota) — a obra cortada no meio é refeita.
+- **Escolha da série** (`AutoMetadata.pick`, puro): busca no Metron por nome e ano (por nome só quando
+  o ano não acha), o `TitleMatch` do H4 entre os resultados, as séries de edições antes das
+  encadernadas. **Nome e ano iguais, uma série só → confirmado** onde nada estava confirmado. Um ano
+  de diferença, ou título sem ano → **sugestão** (a tela de metadados oferece "Aceitar"). Nenhuma, ou
+  duas empatadas → nada, e de novo em 7 dias.
+- **O que o leitor fez fica:** só campos sem nada confirmado são preenchidos; obra casada com o GCD à
+  mão recebe valores do Metron só de série certa (senão fica como está).
+- **Edições novas:** uma obra já feita é refeita quando tem mais capítulos do que na última vez (as
+  edições já buscadas vêm do cache em disco do Metron, sem pedido).
+- **Só o Metron**, com o token do usuário; o GCD continua só na busca à mão. Sem token, nada roda.
+- **Interruptor** "Buscar metadados sozinho" em Metadados online (ligado por padrão), com o total
+  feito e a hora da última busca. Os textos de privacidade dizem o que é enviado (nome e ano).
+- **Estado** por obra em `comic_auto_metadata` (migração 24): status, série, nº de capítulos, quando.
+  Fora do backup: depois de restaurar, é refeito.
+
+### 14.3 Achado no caminho
+
+As sugestões de origens diferentes para o mesmo campo (Metron e ComicInfo, por exemplo) eram lidas
+de volta como uma lista só, misturada (`ComicMetadataRepositoryImpl.metadata` agrupava por campo, sem
+a origem). Corrigido: uma sugestão por origem.
+
 ---
 
 ## Status
@@ -660,6 +698,8 @@ com aprovação.
 - [ ] H11 (opcional) leitor: próxima do arco
 - [x] H12 busca nas fontes com o ano — `SourceResolver` busca de novo "Batman (2016" quando o nome sozinho
   não acha a série entre os resultados
+- [x] H13 metadados automáticos — `AutoMetadata` (domínio), `comic_auto_metadata` (migração 24),
+  `AutoMetadataFetcher`, `AutoMetadataJob`, interruptor em Metadados online (§14)
 
 ### Verificação do H1 (25/09/2026)
 
@@ -1381,4 +1421,52 @@ passaram de "Não achada nas suas fontes" para **"em XOXO Comics"**. Nenhum cras
 **Não verificado:** o Read Comics Online no emulador (Cloudflare); uma série cujo ano no catálogo e no
 título da fonte diferem em um (a segunda busca usa o ano do catálogo; o `TitleMatch` aceita ±1, mas a
 busca por texto não).
+
+### Verificação do H13 (03/10/2026)
+
+**Como ficou:** como em §14.2. Arquivos: `AutoMetadata.kt` (domínio, puro), `AutoMetadataRepository`
++ `comic_auto_metadata.sq`/`24.sqm`/`AutoMetadataRepositoryImpl` (dados), `AutoMetadataFetcher`,
+`AutoMetadataJob` + `AutoMetadataScheduler` (app; o Início chama `keepUp()`), interruptor e resumo em
+`ComicOnlineSettingsScreen`, preferências `autoMetadata` e `autoMetadataLastRunAt`, textos de
+introdução e privacidade reescritos (base e pt-BR). Nenhum arquivo do Mihon original mudou.
+
+**Testes na JVM:** `AutoMetadataTest` (8: nome e ano iguais → confirmado; um ano de diferença ou
+título sem ano → sugestão; nenhuma ou duas empatadas → nada; edições antes da encadernada de mesmo nome
+e ano; título do catálogo sem o ano recebe o ano; quando refazer — nunca feita, capítulos novos,
+não achada há 7 dias, deixada como está; a ordem — lida, depois adicionada; só sugestões do catálogo em
+campos sem nada confirmado), `AutoMetadataRepositoryImplTest` (2: estado guardado, trocado, apagado
+com a obra; migração 24), `ComicMetadataRepositoryImplTest` +1 (duas origens sugerindo o mesmo campo
+ficam duas). Domínio 295, dados 64, app 359, todos passando; spotless limpo.
+
+**Emulador** (com o token do Metron; logs "ComicAuto"):
+- primeira abertura: duas rodadas (a diária, que o WorkManager roda ao agendar, e a "logo"), em fila:
+  **26 obras** → confirmadas **Green Arrow (2023), Absolute Batman (2024-), Flashpoint (2011),
+  Batman (2025-), Wolverine (2024-)**; sugestão **Absolute Power: Ground Zero** e **Flashpoint: The
+  World of Flashpoint** (títulos sem ano); não achadas as 19 sintéticas ("Teste - …", "Bubble Zoom
+  Test", "Stats ComicInfo Test", "Absolute Batman 17"). ~7 min no total: 20 pedidos por minuto, um
+  por edição (Green Arrow, 32 capítulos, ~1 min);
+- no banco: centenas de valores confirmados com origem Metron por obra (Green Arrow 1031, Absolute
+  Batman 796, Wolverine 745, Batman (2025-) 369); **Flashpoint (2011), casado com o GCD à mão,
+  manteve os 187 valores do GCD** e ganhou 28 do Metron só onde estava vazio (o id do Metron, o arco
+  "Flashpoint"…); arcos confirmados: Green Arrow → "Absolute Power", Flashpoint → "Flashpoint";
+- **efeito no Início, sem nada mais:** "Leia isso agora" passou a recomendar Flashpoint: The World of
+  Flashpoint "Você leu 6 edições com Aquaman / com Cyborg" (personagens que vieram do Metron), e
+  "Arcos e eventos" ganhou **Flashpoint — "3 de 63 · faltam 60"**, vindo dos metadados do que foi lido
+  (log "1 from reading -> [Absolute Power, Flashpoint]") — o caminho do H9 que o emulador não tinha
+  como mostrar;
+- reaberto o app: "0 due" em 29 ms — nada pedido de novo;
+- **obra nova:** aberta Absolute Power: Task Force VII #1 pela página do arco → "new works [577], a run
+  soon" → 15 s depois "Absolute Power: Task Force VII SUGGESTED" (3,4 s); nenhum crash.
+
+**Não verificado no aparelho:** a tela "Metadados online" (tem o campo do token: não é aberta nem
+fotografada por aqui) — o interruptor e a linha "Busca automática: … · última em …" ficam para o
+celular; a rodada diária sozinha depois de 24 h; a cota diária do Metron estourando no meio
+(coberto: a obra cortada não guarda a contagem de capítulos e é refeita); a obra adicionada à
+biblioteca sem ser aberta (o mesmo gatilho: a lista de obras muda).
+
+**Para decidir com o uso:** títulos sem ano (comuns no XOXO: "Absolute Power: Task Force VII") ficam
+como sugestão mesmo quando o nome é único no Metron; dá para confirmar também esses.
+
+**Dados de teste mudados no emulador:** metadados do Metron confirmados nas 5 obras acima e sugeridos
+nas 3 sem ano; estado de 27 obras em `comic_auto_metadata`; Task Force VII #1 aberta.
 

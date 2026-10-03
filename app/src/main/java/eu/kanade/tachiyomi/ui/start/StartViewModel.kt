@@ -11,6 +11,7 @@ import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import eu.kanade.tachiyomi.readingstats.ContinueItem
 import eu.kanade.tachiyomi.readingstats.ContinueReadingSource
+import eu.kanade.tachiyomi.readingstats.comics.online.AutoMetadataScheduler
 import eu.kanade.tachiyomi.releases.FollowOption
 import eu.kanade.tachiyomi.releases.ReleaseFeed
 import eu.kanade.tachiyomi.releases.ReleaseFollowing
@@ -57,6 +58,7 @@ class StartViewModel(
     private val releaseFeed: ReleaseFeed,
     private val opener: ReleaseOpener,
     private val following: ReleaseFollowing,
+    private val autoMetadata: AutoMetadataScheduler,
 ) : ViewModel() {
 
     // When each part first arrived, for the timing the plan asks to be measured, not guessed.
@@ -103,6 +105,8 @@ class StartViewModel(
         viewModelScope.launchIO { releaseFeed.refresh(ReleaseWeek.of(LocalDate.now())) }
         // The alerts' daily check while something is followed (H7), again after a restore.
         viewModelScope.launchIO { following.keepScheduled() }
+        // Comic metadata without a tap (H13): a run now, daily, and for each work added or opened.
+        viewModelScope.launchIO { autoMetadata.keepUp() }
         // The catalogue and the sources are asked in the background, after the library, and again
         // when the switch or the order of sources changes; leaving the Início cancels it.
         viewModelScope.launchIO {

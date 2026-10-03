@@ -76,6 +76,35 @@ class ComicMetadataRepositoryImplTest {
     }
 
     @Test
+    fun `two origins suggesting the same field stay two suggestions, each its own list`() = runTest {
+        db.insertManga(1)
+        db.insertChapter(10, mangaId = 1)
+        metadata.replaceSuggestions(
+            1,
+            MetadataOrigin.COMIC_INFO,
+            listOf(value(ComicField.WRITER, "Snyder", chapterId = 10, origin = MetadataOrigin.COMIC_INFO)),
+        )
+        metadata.replaceSuggestions(
+            1,
+            MetadataOrigin.METRON,
+            listOf(
+                value(
+                    ComicField.WRITER,
+                    "Scott Snyder",
+                    "Nick Dragotta",
+                    chapterId = 10,
+                    origin = MetadataOrigin.METRON,
+                ),
+            ),
+        )
+
+        metadata.get(1).suggested.associate { it.origin to it.values } shouldBe mapOf(
+            MetadataOrigin.COMIC_INFO to listOf("Snyder"),
+            MetadataOrigin.METRON to listOf("Scott Snyder", "Nick Dragotta"),
+        )
+    }
+
+    @Test
     fun `the library has favorites with their chapters, confirmed metadata and last reading`() = runTest {
         db.insertManga(1, status = 2, dateAdded = 50)
         db.insertManga(2)
