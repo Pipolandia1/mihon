@@ -47,6 +47,8 @@ fun LazyListScope.arcsSection(
     onOpenArc: (Arc) -> Unit,
     onOpenArcs: () -> Unit,
     onTurnDown: (Arc) -> Unit,
+    followed: (arcKey: String) -> Boolean,
+    onBell: (Arc) -> Unit,
 ) {
     item(key = "arcs-title") {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -64,15 +66,23 @@ fun LazyListScope.arcsSection(
             contentPadding = PaddingValues(horizontal = MaterialTheme.padding.medium),
             horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
         ) {
-            items(block.picks, key = { it.arc.key }) { pick -> ArcCard(pick, onOpenArc, onTurnDown) }
+            items(block.picks, key = { it.arc.key }) { pick ->
+                ArcCard(pick, followed(pick.arc.key), onOpenArc, onTurnDown, onBell)
+            }
         }
     }
 }
 
-/** An arc: tapped, its page opens; held, a way to turn it down. */
+/** An arc: tapped, its page opens; held, a way to turn it down; its bell follows it (H10). */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ArcCard(pick: ArcPick, onOpenArc: (Arc) -> Unit, onTurnDown: (Arc) -> Unit) {
+private fun ArcCard(
+    pick: ArcPick,
+    followed: Boolean,
+    onOpenArc: (Arc) -> Unit,
+    onTurnDown: (Arc) -> Unit,
+    onBell: (Arc) -> Unit,
+) {
     val progress = pick.progress
     var menu by remember { mutableStateOf(false) }
     Box {
@@ -82,7 +92,14 @@ private fun ArcCard(pick: ArcPick, onOpenArc: (Arc) -> Unit, onTurnDown: (Arc) -
                 .combinedClickable(onClick = { onOpenArc(pick.arc) }, onLongClick = { menu = true }),
         ) {
             Row(modifier = Modifier.padding(MaterialTheme.padding.small)) {
-                MangaCover.Book(data = pick.arc.imageUrl, modifier = Modifier.height(ArcCoverHeight))
+                Box {
+                    MangaCover.Book(data = pick.arc.imageUrl, modifier = Modifier.height(ArcCoverHeight))
+                    FollowBell(
+                        followed = followed,
+                        onClick = { onBell(pick.arc) },
+                        modifier = Modifier.align(Alignment.TopEnd),
+                    )
+                }
                 Column(
                     modifier = Modifier
                         .weight(1f)

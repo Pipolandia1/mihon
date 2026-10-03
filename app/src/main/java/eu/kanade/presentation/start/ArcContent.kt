@@ -33,11 +33,14 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.AppBar
+import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.tachiyomi.ui.start.arcs.ArcModel
 import eu.kanade.tachiyomi.ui.start.arcs.ArcSearchModel
 import mihon.icons.materialsymbols.MaterialSymbols
+import mihon.icons.materialsymbols.rounded.Notifications
 import mihon.icons.materialsymbols.rounded.Search
+import mihon.icons.materialsymbols.roundedfilled.Notifications
 import tachiyomi.domain.start.ArcIssueState
 import tachiyomi.domain.start.ArcIssueView
 import tachiyomi.domain.start.ArcProgress
@@ -57,10 +60,39 @@ import java.util.Locale
  * every issue in order with where it is read from.
  */
 @Composable
-fun ArcContent(state: ArcModel.State, name: String, navigateUp: () -> Unit, onOpen: (ArcIssueView) -> Unit) {
+fun ArcContent(
+    state: ArcModel.State,
+    name: String,
+    navigateUp: () -> Unit,
+    onToggleFollow: () -> Unit,
+    onOpen: (ArcIssueView) -> Unit,
+) {
     Scaffold(
         topBar = { scrollBehavior ->
-            AppBar(title = state.arc?.name ?: name, navigateUp = navigateUp, scrollBehavior = scrollBehavior)
+            AppBar(
+                title = state.arc?.name ?: name,
+                navigateUp = navigateUp,
+                actions = {
+                    if (state.arc != null) {
+                        AppBarActions(
+                            listOf(
+                                AppBar.Action(
+                                    title = stringResource(
+                                        if (state.followed) MR.strings.arc_unfollow else MR.strings.arc_follow,
+                                    ),
+                                    icon = if (state.followed) {
+                                        MaterialSymbols.RoundedFilled.Notifications
+                                    } else {
+                                        MaterialSymbols.Rounded.Notifications
+                                    },
+                                    onClick = onToggleFollow,
+                                ),
+                            ),
+                        )
+                    }
+                },
+                scrollBehavior = scrollBehavior,
+            )
         },
     ) { contentPadding ->
         val arc = state.arc

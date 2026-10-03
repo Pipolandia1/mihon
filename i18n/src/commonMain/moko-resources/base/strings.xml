@@ -1602,4 +1602,10 @@
     <string name="start_arc_out">%s is out this week</string>
     <string name="start_arc_not_interested">Not interested in this arc</string>
     <string name="start_arc_feedback_done">The arc %s will no longer be suggested</string>
+    <string name="releases_notification_out_arc">%1$s is out · arc %2$s</string>
+    <string name="releases_follow_arc">Arc</string>
+    <string name="arc_follow">Follow the arc: tell me when a new issue is out</string>
+    <string name="arc_unfollow">Stop following the arc</string>
+    <string name="start_continue_arc">Arc %s</string>
+    <string name="start_continue_arc_next">next: %1$s · %2$d of %3$d</string>
 </resources>

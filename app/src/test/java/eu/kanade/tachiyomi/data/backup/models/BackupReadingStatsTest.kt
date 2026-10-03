@@ -177,14 +177,16 @@ class BackupReadingStatsTest {
         val series =
             Follow(FollowKind.SERIES, "metron:series:3001", "Absolute Batman", "Absolute Batman", 2024, null, 5)
         val creator = Follow(FollowKind.CREATOR, "metron:creator:7", "Scott Snyder", createdAt = 6)
-        val stats = BackupReadingStats(releaseFollows = listOf(series, creator).map(BackupReleaseFollow::of))
+        // An arc followed (H10) goes the same way, by its key in the catalogue.
+        val arc = Follow(FollowKind.ARC, "metron:arc:2470", "Absolute Power", createdAt = 7)
+        val stats = BackupReadingStats(releaseFollows = listOf(series, creator, arc).map(BackupReleaseFollow::of))
 
         val decoded = ProtoBuf.decodeFromByteArray(
             BackupReadingStats.serializer(),
             ProtoBuf.encodeToByteArray(BackupReadingStats.serializer(), stats),
         )
 
-        decoded.releaseFollows.map { it.toFollow() } shouldBe listOf(series, creator)
+        decoded.releaseFollows.map { it.toFollow() } shouldBe listOf(series, creator, arc)
     }
 
     @Test

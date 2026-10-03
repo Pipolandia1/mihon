@@ -1448,4 +1448,10 @@
     <string name="start_arc_out">%s saiu esta semana</string>
     <string name="start_arc_not_interested">Não tenho interesse neste arco</string>
     <string name="start_arc_feedback_done">O arco %s não será mais sugerido</string>
+    <string name="releases_notification_out_arc">%1$s saiu · arco %2$s</string>
+    <string name="releases_follow_arc">Arco</string>
+    <string name="arc_follow">Seguir o arco: avisar quando sair uma edição nova</string>
+    <string name="arc_unfollow">Deixar de seguir o arco</string>
+    <string name="start_continue_arc">Arco %s</string>
+    <string name="start_continue_arc_next">próximo: %1$s · %2$d de %3$d</string>
 </resources>

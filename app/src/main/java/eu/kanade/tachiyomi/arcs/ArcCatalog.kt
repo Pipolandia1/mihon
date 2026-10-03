@@ -36,11 +36,14 @@ class ArcCatalog(
     suspend fun search(name: String): List<CatalogName> =
         withIOContext { metron.arcs(name.trim()) }.map { CatalogName(it.id, it.name) }
 
-    /** The arc, from what is kept while it is recent, else from Metron; null when neither has it. */
-    suspend fun arc(key: String): Loaded? {
+    /**
+     * The arc, from what is kept while it is younger than [keepMs], else from Metron; null when neither
+     * has it. A followed arc is kept a day (H10), so its new issues are known the day they are listed.
+     */
+    suspend fun arc(key: String, keepMs: Long = StartConfig.ARC_DAYS * DAY_MS): Loaded? {
         val kept = repository.getArc(key)
         val now = System.currentTimeMillis()
-        if (kept != null && now - kept.first.fetchedAt < StartConfig.ARC_DAYS * DAY_MS) {
+        if (kept != null && now - kept.first.fetchedAt < keepMs) {
             return Loaded(kept.first, kept.second)
         }
         val id = key.removePrefix(ARC_KEY).toLongOrNull() ?: return kept?.let { Loaded(it.first, it.second) }

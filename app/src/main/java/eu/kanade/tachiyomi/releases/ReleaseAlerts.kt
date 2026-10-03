@@ -4,6 +4,7 @@ import android.os.SystemClock
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import eu.kanade.tachiyomi.arcs.ArcCatalog
 import eu.kanade.tachiyomi.readingstats.comics.online.metron.MetronApi
 import eu.kanade.tachiyomi.readingstats.comics.online.metron.MetronNamed
 import eu.kanade.tachiyomi.ui.start.StartConfig
@@ -32,7 +33,9 @@ import tachiyomi.domain.start.ReleaseRepository
 import tachiyomi.domain.start.ReleaseWeek
 import tachiyomi.domain.start.Releases
 import tachiyomi.domain.start.StartRepository
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * The alerts' check (docs/HOME_PLAN.md §8.3, H7), run by [ReleaseAlertJob] once a day and by
@@ -57,6 +60,7 @@ class ReleaseAlerts(
     private val finder: SourceFinder,
     private val updateManga: UpdateMangaFromRemote,
     private val notifier: ReleaseNotifier,
+    private val arcs: ArcCatalog,
 ) {
 
     /** What a check told; [notificationsOff] when it could tell nothing and so checked nothing. */
@@ -83,15 +87,21 @@ class ReleaseAlerts(
             val week = ReleaseWeek.of(today)
             feed.refresh(week)
             val (entityItems, entityReleases) = entityReleases(follows, week)
-            val items = releases.getWeek(week)?.items.orEmpty() + entityReleases
+            val (arcItems, arcReleases) = arcReleases(follows, today)
+            val items = releases.getWeek(week)?.items.orEmpty() + entityReleases + arcReleases
             val told = alerts.notified(nowMs - TOLD_WINDOW_MS).filter {
                 it.what == AlertWhat.OUT
             }.map { it.release.key }
             val own = startRepository.subscribeWorks().first().filter { it.inLibrary || it.chaptersRead > 0 }
 
-            val out = Alerts.out(items, follows, entityItems, told.toSet(), today)
+            val out = Alerts.out(items, follows, entityItems + arcItems, told.toSet(), today)
             out.forEach { alert ->
-                notifier.out(alert.release, Releases.ownerOf(alert.release, own)?.mangaId)
+                val owner = Releases.ownerOf(alert.release, own)?.mangaId
+                if (alert.follow.kind == FollowKind.ARC) {
+                    notifier.outInArc(alert.release, alert.follow.label, owner)
+                } else {
+                    notifier.out(alert.release, owner)
+                }
                 alerts.markNotified(Notified(alert.release, AlertWhat.OUT, nowMs))
             }
 
@@ -145,6 +155,31 @@ class ReleaseAlerts(
                     logcat(LogPriority.WARN, e) { "StartFeed alerts: no issues of ${follow.label} from Metron" }
                 }
             }
+        return found to items
+    }
+
+    /**
+     * The new issues of each arc followed (H10): its list read again once a day, the issues on sale
+     * since it was followed; follow key → release keys, and the releases themselves.
+     */
+    private suspend fun arcReleases(
+        follows: List<Follow>,
+        today: LocalDate,
+    ): Pair<Map<String, Set<String>>, List<ReleaseItem>> {
+        val found = mutableMapOf<String, Set<String>>()
+        val items = mutableListOf<ReleaseItem>()
+        follows.filter { it.kind == FollowKind.ARC }
+            .take(StartConfig.ALERT_ARC_FOLLOWS)
+            .forEach { follow ->
+                val arc = arcs.arc(follow.key, StartConfig.ARC_FOLLOWED_KEEP_MS) ?: return@forEach
+                val followedOn = Instant.ofEpochMilli(follow.createdAt).atZone(ZoneId.systemDefault()).toLocalDate()
+                val new = Alerts.arcReleases(arc.issues, followedOn, today)
+                found[follow.key] = new.map { it.key }.toSet()
+                items += new
+            }
+        if (found.isNotEmpty()) {
+            logcat(LogPriority.INFO) { "StartFeed alerts: arcs ${found.mapValues { it.value.size }} new issues" }
+        }
         return found to items
     }
 

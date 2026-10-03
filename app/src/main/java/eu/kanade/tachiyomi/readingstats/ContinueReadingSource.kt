@@ -94,6 +94,7 @@ class ContinueReadingSource(
             resumePage = if (pick.resuming) chapter.lastPageRead.toInt() + 1 else null,
             totalPages = if (pick.resuming) repository.getChapterProgress(chapter.id)?.totalPages else null,
             newChapter = pick.newSinceRead,
+            lastReadAt = entry.readAt?.time ?: 0L,
         )
     }
 }
@@ -112,4 +113,6 @@ data class ContinueItem(
     val totalPages: Int?,
     /** The chapter arrived after the work was last read: a new issue. */
     val newChapter: Boolean = false,
+    /** When the work was last read, epoch ms: followed arcs go among the works by it (H10). */
+    val lastReadAt: Long = 0L,
 )

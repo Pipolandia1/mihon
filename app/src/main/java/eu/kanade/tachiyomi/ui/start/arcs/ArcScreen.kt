@@ -19,6 +19,7 @@ import dev.zacsweers.metrox.viewmodel.metroViewModel
 import eu.kanade.presentation.start.ArcContent
 import eu.kanade.presentation.util.Screen
 import eu.kanade.tachiyomi.arcs.ArcCatalog
+import eu.kanade.tachiyomi.arcs.ArcFollowing
 import eu.kanade.tachiyomi.arcs.ArcReading
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -57,6 +58,7 @@ class ArcScreen(private val arcKey: String, private val name: String) : Screen()
             state = state,
             name = name,
             navigateUp = navigator::pop,
+            onToggleFollow = model::toggleFollow,
             onOpen = { view ->
                 val mangaId = view.mangaId
                 val chapterId = view.chapterId
@@ -74,6 +76,7 @@ class ArcScreen(private val arcKey: String, private val name: String) : Screen()
 class ArcModel(
     private val catalog: ArcCatalog,
     private val reading: ArcReading,
+    private val following: ArcFollowing,
 ) : ViewModel() {
 
     private val loaded = MutableStateFlow<ArcCatalog.Loaded?>(null)
@@ -88,7 +91,13 @@ class ArcModel(
         .distinctUntilChanged()
         .flatMapLatest { reading.chapters(it) }
 
-    val state: StateFlow<State> = combine(loaded, loading, series, chapters) { loaded, loading, series, chapters ->
+    val state: StateFlow<State> = combine(
+        loaded,
+        loading,
+        series,
+        chapters,
+        following.followed,
+    ) { loaded, loading, series, chapters, followed ->
         if (loaded == null) return@combine State(loading = loading, available = catalog.available)
         val views = Arcs.view(loaded.issues, series, chapters, LocalDate.now())
         State(
@@ -97,8 +106,15 @@ class ArcModel(
             views = views,
             progress = Arcs.progress(views, series),
             failed = loaded.failed,
+            followed = loaded.arc.key in followed,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), State())
+
+    /** The bell (H10): follows the arc, or lets go of it. */
+    fun toggleFollow() {
+        val arc = state.value.arc ?: return
+        viewModelScope.launchIO { following.toggle(arc) }
+    }
 
     /**
      * Opens [key] once: the arc, and then its series looked for one after the other. Another arc
@@ -129,6 +145,8 @@ class ArcModel(
         val failed: Boolean = false,
         /** Whether Metron can be asked at all (a token). */
         val available: Boolean = true,
+        /** Whether the reader follows the arc (H10). */
+        val followed: Boolean = false,
     )
 
     private companion object {

@@ -47,6 +47,17 @@ class ReleaseNotifier(
         )
     }
 
+    /** "Absolute Batman #25 saiu · arco The Zoo": a new issue of an arc followed (H10). */
+    fun outInArc(release: ReleaseItem, arcName: String, mangaId: Long?) {
+        post(
+            id = idOf(release, OUT),
+            title = context.stringResource(MR.strings.releases_notification_out_arc, title(release), arcName),
+            text = null,
+            intent = mangaId?.let(::mangaIntent) ?: launchIntent(),
+            action = null,
+        )
+    }
+
     /** "Absolute Batman #24 já está disponível", with "Ler agora" opening the chapter. */
     fun available(release: ReleaseItem, mangaId: Long, chapterId: Long, sourceName: String) {
         val read = readerIntent(mangaId, chapterId)

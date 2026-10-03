@@ -72,4 +72,10 @@ object StartConfig {
 
     /** Arcs tried beyond the ones shown, for those read to the end or that Metron does not answer for. */
     const val ARC_SPARE = 3
+
+    /** Followed arcs whose issues the alerts' check reads again, once a day each (H10). */
+    const val ALERT_ARC_FOLLOWS = 10
+
+    /** How long a followed arc's issues are kept before Metron is asked again: a day. */
+    const val ARC_FOLLOWED_KEEP_MS = 24L * 60 * 60 * 1000
 }

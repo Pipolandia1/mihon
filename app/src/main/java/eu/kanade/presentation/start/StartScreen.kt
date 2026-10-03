@@ -56,15 +56,18 @@ import tachiyomi.domain.readingstats.comics.ComicLibrary
 import tachiyomi.domain.readingstats.comics.EntryProgress
 import tachiyomi.domain.start.Alerts
 import tachiyomi.domain.start.Arc
+import tachiyomi.domain.start.ArcNext
 import tachiyomi.domain.start.ArcsBlock
 import tachiyomi.domain.start.BacklogBlock
 import tachiyomi.domain.start.BacklogShelf
 import tachiyomi.domain.start.BecauseYouLikedBlock
 import tachiyomi.domain.start.ByTimeBlock
 import tachiyomi.domain.start.ContinueBlock
+import tachiyomi.domain.start.Continuing
 import tachiyomi.domain.start.CreatorsBlock
 import tachiyomi.domain.start.EntityKind
 import tachiyomi.domain.start.FeedbackVerdict
+import tachiyomi.domain.start.FollowKind
 import tachiyomi.domain.start.NearFinishBlock
 import tachiyomi.domain.start.ReadNowBlock
 import tachiyomi.domain.start.ReadingTime
@@ -106,6 +109,7 @@ fun StartScreen(
     onOpenArc: (Arc) -> Unit,
     onArcFeedback: (arcKey: String) -> Unit,
     onUndoArcFeedback: (arcKey: String) -> Unit,
+    onToggleArcFollow: (Arc) -> Unit,
     loadFollowOptions: suspend (ReleaseItem) -> List<FollowOption>,
     onSaveFollows: (List<FollowOption>) -> Unit,
 ) {
@@ -230,7 +234,14 @@ fun StartScreen(
                     }
                     is BacklogBlock -> backlogSection(block, onOpenManga)
                     is ReleasesBlock -> releasesSection(block, bells, onOpenRelease, onOpenCalendar)
-                    is ArcsBlock -> arcsSection(block, onOpenArc, onOpenArcs, turnDownArc)
+                    is ArcsBlock -> arcsSection(
+                        block = block,
+                        onOpenArc = onOpenArc,
+                        onOpenArcs = onOpenArcs,
+                        onTurnDown = turnDownArc,
+                        followed = { key -> state.follows.any { it.kind == FollowKind.ARC && it.key == key } },
+                        onBell = onToggleArcFollow,
+                    )
                     is BecauseYouLikedBlock -> becauseYouLikedSection(block, shelfActions)
                     is CreatorsBlock -> creatorsSection(block, shelfActions, giveEntityFeedback)
                 }
@@ -252,18 +263,106 @@ private fun LazyListScope.continueSection(
     onOpenLibrary: () -> Unit,
 ) {
     item(key = "continue-title") { SectionTitle(stringResource(MR.strings.reading_stats_continue_reading)) }
-    val first = state.continueReading.firstOrNull()
+    // Before the followed arcs are known, the works alone: "Continuar lendo" is there from the first frame.
+    val rows = state.continuing.ifEmpty { state.continueReading.map { Continuing.OfWork(it, it.lastReadAt) } }
+    val first = rows.firstOrNull()
     if (first == null) {
         item(key = "continue-empty") { NothingInProgress(onOpenLibrary) }
         return
     }
-    item(key = "continue-${first.mangaId}") {
-        ContinueHighlight(first, state.feed?.remaining?.get(first.mangaId), onOpenChapter)
+    item(key = keyOf(first)) {
+        when (first) {
+            is Continuing.OfWork -> ContinueHighlight(
+                first.work,
+                state.feed?.remaining?.get(first.work.mangaId),
+                onOpenChapter,
+            )
+            is Continuing.OfArc -> ArcContinueHighlight(first.arc, onOpenChapter)
+        }
     }
-    state.continueReading.drop(1).forEach { item ->
-        item(key = "continue-${item.mangaId}") { ContinueRow(item, onOpenChapter) }
+    rows.drop(1).forEach { row ->
+        item(key = keyOf(row)) {
+            when (row) {
+                is Continuing.OfWork -> ContinueRow(row.work, onOpenChapter)
+                is Continuing.OfArc -> ArcContinueRow(row.arc, onOpenChapter)
+            }
+        }
     }
 }
+
+private fun keyOf(row: Continuing<ContinueItem>) = when (row) {
+    is Continuing.OfWork -> "continue-${row.work.mangaId}"
+    is Continuing.OfArc -> "continue-arc-${row.arc.arc.key}"
+}
+
+/** A followed arc to continue (H10): large, at its next issue, with how much of the arc is read. */
+@Composable
+private fun ArcContinueHighlight(next: ArcNext, onOpenChapter: (Long, Long) -> Unit) {
+    val mangaId = next.next.mangaId ?: return
+    val chapterId = next.next.chapterId ?: return
+    val progress = next.progress
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = MaterialTheme.padding.medium),
+        onClick = { onOpenChapter(mangaId, chapterId) },
+    ) {
+        Row(
+            modifier = Modifier.padding(MaterialTheme.padding.medium),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MangaCover.Book(
+                modifier = Modifier.height(HighlightCoverHeight),
+                data = next.arc.imageUrl,
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = MaterialTheme.padding.medium),
+                verticalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
+            ) {
+                Text(
+                    text = stringResource(MR.strings.start_continue_arc, next.arc.name),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Secondary(arcNextText(next))
+                if (progress.total > 0) {
+                    LinearProgressIndicator(
+                        progress = { progress.read.toFloat() / progress.total },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Button(onClick = { onOpenChapter(mangaId, chapterId) }) {
+                    Text(stringResource(MR.strings.start_continue))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ArcContinueRow(next: ArcNext, onOpenChapter: (Long, Long) -> Unit) {
+    val mangaId = next.next.mangaId ?: return
+    val chapterId = next.next.chapterId ?: return
+    SeriesRow(
+        cover = next.arc.imageUrl,
+        title = stringResource(MR.strings.start_continue_arc, next.arc.name),
+        lines = listOf(arcNextText(next)),
+        onClick = { onOpenChapter(mangaId, chapterId) },
+    )
+}
+
+/** "próximo: Absolute Batman #8 · 7 de 12". */
+@Composable
+private fun arcNextText(next: ArcNext) = stringResource(
+    MR.strings.start_continue_arc_next,
+    "${next.next.issue.seriesName} #${next.next.issue.number}",
+    next.progress.read,
+    next.progress.total,
+)
 
 @Composable
 internal fun SectionTitle(text: String) {

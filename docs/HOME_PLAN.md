@@ -696,7 +696,8 @@ a origem). Corrigido: uma sugestão por origem.
   (migração 23), `ArcCatalog`, `ArcReading`, telas "Arcos e eventos" (busca) e "Arco"
 - [x] H9 "Arcos e eventos" no Início — `ArcShelf` (domínio), `ArcShelfSource`, bloco depois de Lançamentos,
   "Não tenho interesse neste arco" (`FeedbackSubject.ARC`)
-- [ ] H10 seguir um arco: avisos e Continuar lendo
+- [x] H10 seguir um arco: avisos e Continuar lendo — `FollowKind.ARC`, `Alerts.arcReleases`, `ArcContinue`
+  (domínio), `ArcFollowing`, sino na página e no cartão do arco, o arco no Continuar lendo
 - [ ] H11 (opcional) leitor: próxima do arco
 - [x] H12 busca nas fontes com o ano — `SourceResolver` busca de novo "Batman (2016" quando o nome sozinho
   não acha a série entre os resultados
@@ -1481,4 +1482,56 @@ de agora — as que ficaram como sugestão pela regra antiga passam a confirmada
 provável, sem capítulos novos, não pede nada. Testes: `AutoMetadataTest` ajustado (sem ano →
 confirmado; sugestão revista depois de um dia, não antes). Emulador: aberta Absolute Power: Origins #1
 (título sem ano) → "new works [576]" → **"Absolute Power: Origins" CONFIRMED** (1,6 s); nenhum crash.
+
+### Verificação do H10 (03/10/2026)
+
+**Como ficou:**
+- **Seguir:** o sino da página do arco (barra de cima) e o do cartão do arco no Início seguem e deixam
+  de seguir; o seguir é um acompanhamento como os do H7 (`FollowKind.ARC`, chave "metron:arc:N", o
+  nome do arco), aparece em Alertas ("Absolute Power · Arco", com ✕), agenda e cancela a checagem
+  diária como os outros, e vai no backup (campo 8) como está.
+- **Aviso de edição nova** (`ReleaseAlerts` + `Alerts.arcReleases`): a checagem relê a lista de cada
+  arco seguido (até 10; guardada um dia, `ArcCatalog.arc(key, keepMs)`) e avisa as edições **à venda
+  desde o dia em que o arco foi seguido** até hoje — as de antes já estavam lá quando ele foi seguido,
+  e um arco de 33 edições não vira 33 avisos. "Absolute Batman #25 saiu · arco The Zoo"; uma vez só,
+  como as outras (`release_notified`), mesmo que uma série seguida cubra a mesma edição; depois o "já
+  disponível · Ler agora" do H7, sem mudança.
+- **Continuar lendo** (`ArcFollowing.continuing` + `ArcContinue`): cada arco seguido com uma edição para
+  abrir aparece como "Arco Absolute Power · próximo: Absolute Power: Ground Zero #1 · 1 de 33" (o
+  cartão grande quando é o primeiro, com a barra e Continuar; senão uma linha), na posição da última
+  leitura numa obra do arco — ou de quando foi seguido, se nada foi lido (decisão 17). A obra cujo
+  capítulo a continuar é a próxima edição de um arco vira a linha do arco (a mesma edição não aparece
+  duas vezes), e o arco fica no lugar dela quando ela foi lida mais recentemente. As séries do arco
+  são achadas como na página (H8), uma vez por sessão; até lá, as obras aparecem sozinhas.
+
+**Mudou em relação ao plano:** "edição nova" é a à venda depois de seguir (o plano dizia "edição nova à
+venda"); o arco que toma a linha de uma obra herda a posição dela (achado no emulador, abaixo).
+
+**Testes na JVM:** `ArcFollowTest` (7: edições novas desde o dia de seguir até hoje, sem data não
+conta; o arco cobre as suas, cada uma avisada uma vez mesmo com uma série seguida; o próximo e a
+última leitura; seguido sem começar fica na data de seguir, sem nada para abrir não aparece; os arcos
+entre as obras pela leitura, sem a mesma edição duas vezes; o arco no lugar da obra mais recente;
+ordem e tamanho da lista), `BackupReadingStatsTest` (o arco seguido numa ida e volta). Domínio 302,
+dados 64, app 359, todos passando; spotless limpo.
+
+**Emulador** (`tools/shots/h10-*.png`):
+- página do arco Absolute Power: sino vazio → tocado → **cheio**; log "1 follows, daily check
+  scheduled"; a checagem que o WorkManager rodou ao agendar: "arcs {metron:arc:1606=0} new issues",
+  out [] (as 33 saíram em 2024);
+- Início: depois das séries do arco achadas (~1 min na primeira vez, com a FCBD passando pelas
+  fontes fora do ar), **"Arco Absolute Power · próximo: Absolute Power: Ground Zero #1 · 1 de 33"** no
+  lugar da linha de Ground Zero (mesmo capítulo); tocar abriu o leitor em Absolute Power: Ground Zero;
+- **achado:** aberto o Ground Zero pelo arco, a linha do arco ficou no fim — a última leitura do arco
+  contava só edições lidas até o fim. Corrigido em `ArcContinue.merge` (o arco herda a posição da obra
+  que ele substitui, quando mais recente), com teste; depois: o arco como **cartão grande no topo**;
+- Alertas: "O que você acompanha (1) · Absolute Power · Arco"; "Verificar agora" → "Nada novo.";
+- cartão do arco no Início com o sino cheio; tocado → vazio, "0 follows, daily check cancelled", e o
+  Continuar lendo voltou a Ground Zero no topo; nenhum crash.
+
+**Não verificado no aparelho:** o aviso de uma edição nova de um arco seguido (nenhum arco do emulador
+tem edição saindo agora; coberto pelos testes, e o aviso em si é o do H7 com outro título); a
+restauração de um arco seguido (coberta pelo teste do backup).
+
+**Dados de teste mudados no emulador:** Absolute Power seguido e deixado de seguir; Ground Zero aberto
+de novo pelo arco.
 

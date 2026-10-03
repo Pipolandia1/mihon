@@ -146,13 +146,14 @@ private fun OptionRow(option: FollowOption, onChecked: (Boolean) -> Unit) {
 private fun optionTitle(follow: Follow) = when (follow.kind) {
     FollowKind.ISSUE -> stringResource(MR.strings.releases_follow_issue)
     FollowKind.SERIES -> stringResource(MR.strings.releases_follow_series)
-    FollowKind.CREATOR, FollowKind.CHARACTER -> follow.label
+    FollowKind.CREATOR, FollowKind.CHARACTER, FollowKind.ARC -> follow.label
 }
 
 @Composable
 private fun optionDetail(option: FollowOption) = when (option.follow.kind) {
     FollowKind.ISSUE, FollowKind.SERIES -> option.follow.label
     FollowKind.CHARACTER -> stringResource(MR.strings.releases_follow_character)
+    FollowKind.ARC -> stringResource(MR.strings.releases_follow_arc)
     FollowKind.CREATOR -> when (option.role) {
         "Writer", "Story" -> stringResource(MR.strings.releases_follow_writer)
         else -> stringResource(MR.strings.releases_follow_artist)
@@ -281,6 +282,7 @@ private fun kindText(kind: FollowKind) = stringResource(
         FollowKind.SERIES -> MR.strings.releases_follow_series
         FollowKind.CHARACTER -> MR.strings.releases_follow_character
         FollowKind.CREATOR -> MR.strings.releases_follow_creator
+        FollowKind.ARC -> MR.strings.releases_follow_arc
     },
 )
 

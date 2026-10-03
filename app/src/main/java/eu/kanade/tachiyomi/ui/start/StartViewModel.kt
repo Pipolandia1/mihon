@@ -9,6 +9,7 @@ import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
+import eu.kanade.tachiyomi.arcs.ArcFollowing
 import eu.kanade.tachiyomi.readingstats.ContinueItem
 import eu.kanade.tachiyomi.readingstats.ContinueReadingSource
 import eu.kanade.tachiyomi.readingstats.comics.online.AutoMetadataScheduler
@@ -19,6 +20,7 @@ import eu.kanade.tachiyomi.releases.ReleaseOpener
 import eu.kanade.tachiyomi.ui.start.catalog.CatalogDiscovery
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -32,6 +34,9 @@ import kotlinx.coroutines.launch
 import logcat.LogPriority
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.domain.start.Arc
+import tachiyomi.domain.start.ArcContinue
+import tachiyomi.domain.start.Continuing
 import tachiyomi.domain.start.EntityKey
 import tachiyomi.domain.start.EntityKind
 import tachiyomi.domain.start.Feedback
@@ -59,6 +64,7 @@ class StartViewModel(
     private val opener: ReleaseOpener,
     private val following: ReleaseFollowing,
     private val autoMetadata: AutoMetadataScheduler,
+    private val arcFollowing: ArcFollowing,
 ) : ViewModel() {
 
     // When each part first arrived, for the timing the plan asks to be measured, not guessed.
@@ -91,13 +97,32 @@ class StartViewModel(
         .map<StartFeedResult, StartFeedResult?> { it }
         .onStart { emit(null) }
 
+    // The followed arcs at their next issue (H10); none until known, so the works never wait for them.
+    private val continueArcs = arcFollowing.continuing()
+        .onStart { emit(emptyList()) }
+        .catch { logcat(LogPriority.ERROR, it) { "StartFeed arcs to continue failed" } }
+
     val state: StateFlow<State> = combine(
         continueReading,
         feed,
         discovery.state,
         following.follows,
-    ) { continueItems, feed, catalog, follows ->
-        State(loading = false, continueReading = continueItems, feed = feed, catalog = catalog, follows = follows)
+        continueArcs,
+    ) { continueItems, feed, catalog, follows, arcs ->
+        val continuing = ArcContinue.merge(
+            works = continueItems.map { Continuing.OfWork(it, it.lastReadAt) },
+            chapterOf = { it.chapterId },
+            arcs = arcs,
+            limit = StartConfig.CONTINUE_READING_COUNT,
+        )
+        State(
+            loading = false,
+            continueReading = continueItems,
+            continuing = continuing,
+            feed = feed,
+            catalog = catalog,
+            follows = follows,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(StartConfig.STOP_TIMEOUT_MS), State())
 
     init {
@@ -165,6 +190,11 @@ class StartViewModel(
         viewModelScope.launchIO { startRepository.removeFeedback(subjectOf(kind), EntityKey.normalize(name)) }
     }
 
+    /** The bell of an arc's card (H10): follows it, or lets go of it. */
+    fun toggleArcFollow(arc: Arc) {
+        viewModelScope.launchIO { arcFollowing.toggle(arc) }
+    }
+
     /** "Não tenho interesse neste arco" (H9): the arc stays off the Início until undone. */
     fun setArcFeedback(arcKey: String) {
         val now = Clock.System.now().toEpochMilliseconds()
@@ -197,6 +227,8 @@ class StartViewModel(
         val loading: Boolean = true,
         /** The first is the one to continue; the rest are other works in progress. */
         val continueReading: List<ContinueItem> = emptyList(),
+        /** "Continuar lendo" as shown: the works and the followed arcs, the first highlighted (H10). */
+        val continuing: List<Continuing<ContinueItem>> = emptyList(),
         /** The other blocks; null until the library has been read. */
         val feed: StartFeedResult? = null,
         /** Where discovery beyond the library stands (H5). */

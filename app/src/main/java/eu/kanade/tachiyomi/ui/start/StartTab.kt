@@ -94,6 +94,7 @@ data object StartTab : Tab {
             onOpenArc = { navigator.push(ArcScreen(it.key, it.name)) },
             onArcFeedback = viewModel::setArcFeedback,
             onUndoArcFeedback = viewModel::undoArcFeedback,
+            onToggleArcFollow = viewModel::toggleArcFollow,
             loadFollowOptions = viewModel::followOptions,
             onSaveFollows = viewModel::saveFollows,
         )

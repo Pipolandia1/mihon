@@ -3,12 +3,13 @@ package tachiyomi.domain.start
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
 
-/** What a follow is of: one issue, every issue of a series, or a character's or a creator's. */
+/** What a follow is of: one issue, every issue of a series, a character's or a creator's, or an arc's (H10). */
 enum class FollowKind(val id: Long) {
     ISSUE(0),
     SERIES(1),
     CHARACTER(2),
     CREATOR(3),
+    ARC(4),
     ;
 
     companion object {
@@ -19,8 +20,9 @@ enum class FollowKind(val id: Long) {
 /**
  * Something the reader follows (docs/HOME_PLAN.md §8.3, H7). [key]: the issue's or the series'
  * release key ("metron:issue:1", "metron:series:10", "gcd:series:5"), or the catalogue's id of the
- * character or creator ("metron:character:5", "metron:creator:7"). An issue or a series keeps its
- * name and year, and an issue its number, to be found in the library and the sources.
+ * character, creator or arc ("metron:character:5", "metron:creator:7", "metron:arc:2470", H10). An
+ * issue or a series keeps its name and year, and an issue its number, to be found in the library and
+ * the sources.
  */
 data class Follow(
     val kind: FollowKind,
@@ -66,13 +68,13 @@ object Alerts {
 
     /**
      * Whether [follow] covers [item]. A series by its key, or by name and year when the lists differ
-     * (a follow made on Metron's list, the week on the GCD's); a character or a creator by the
+     * (a follow made on Metron's list, the week on the GCD's); a character, a creator or an arc by the
      * releases the catalogue lists for them ([entityItems]: follow key → release keys).
      */
     fun covers(follow: Follow, item: ReleaseItem, entityItems: Map<String, Set<String>>): Boolean = when (follow.kind) {
         FollowKind.ISSUE -> item.key == follow.key
         FollowKind.SERIES -> item.seriesKey == follow.key || sameSeries(follow, item)
-        FollowKind.CHARACTER, FollowKind.CREATOR -> item.key in entityItems[follow.key].orEmpty()
+        FollowKind.CHARACTER, FollowKind.CREATOR, FollowKind.ARC -> item.key in entityItems[follow.key].orEmpty()
     }
 
     /** Whether a follow covers [item] at all: the bell shows it. */
@@ -106,6 +108,17 @@ object Alerts {
             .map { it.release }
             .distinctBy { it.key }
     }
+
+    /**
+     * The issues of a followed arc that are new to the reader (H10): on sale from the day it was
+     * [followedOn] to [today]. The ones out before were there when the reader chose to follow it; an
+     * issue without a sale date cannot be told new.
+     */
+    fun arcReleases(issues: List<ArcIssue>, followedOn: LocalDate, today: LocalDate): List<ReleaseItem> =
+        issues.filter { issue ->
+            val date = issue.storeDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return@filter false
+            date in followedOn..today
+        }.map { it.asRelease() }
 
     /** The chapter that is [release]'s issue, by its number; null when none is, or it has no number. */
     fun chapterFor(release: ReleaseItem, chapters: List<ChapterRef>): ChapterRef? {
