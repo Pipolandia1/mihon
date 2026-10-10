@@ -68,6 +68,12 @@ sha256 `5fe9e4f5…c931ea79`. Without it the app builds, but Bubble Zoom has no 
 Prefer `./gradlew :app:compileDebugKotlin` for a fast check. Only run a full
 `assembleDebug` when you are about to install and test on the emulator.
 
+**Fork signing key (S2 of `docs/DESKTOP_PLAN.md`):** debug builds are signed with the fork's own key
+when `keystore.properties` is at the repo root (gitignored; on the second PC it points at
+`D:/android-build-tools/signing/mihon-fork.jks`). Google's Android OAuth client for sync is registered
+with that key's SHA-1, so a build signed with any other key installs only after uninstalling, and its
+Google sign-in fails. Never regenerate the key; copy it to a new PC (docs/SYNC_GOOGLE_SETUP.md §6).
+
 There is **no `standard` product flavor** in current Mihon — `app/src` has only `debug`,
 `main` and `test`. Telemetry and the updater are opt-in Gradle properties
 (`-Pinclude-telemetry`, `-Penable-updater`), off by default, so a plain debug build needs

@@ -22,6 +22,7 @@ import mihon.icons.materialsymbols.rounded.NewReleases
 import mihon.icons.materialsymbols.rounded.QueryStats
 import mihon.icons.materialsymbols.rounded.Settings
 import mihon.icons.materialsymbols.rounded.Storage
+import mihon.icons.materialsymbols.rounded.Sync
 import mihon.icons.materialsymbols.rounded.VolunteerActivism
 import tachiyomi.core.common.Constants
 import tachiyomi.i18n.MR
@@ -45,6 +46,7 @@ fun MoreScreen(
     onClickCategories: () -> Unit,
     onClickStats: () -> Unit,
     onClickDataAndStorage: () -> Unit,
+    onClickSync: () -> Unit,
     onClickSettings: () -> Unit,
     onClickSupport: () -> Unit,
     onClickAbout: () -> Unit,
@@ -149,6 +151,13 @@ fun MoreScreen(
                     title = stringResource(MR.strings.label_data_storage),
                     icon = MaterialSymbols.Rounded.Storage,
                     onPreferenceClick = onClickDataAndStorage,
+                )
+            }
+            item {
+                TextPreferenceWidget(
+                    title = stringResource(MR.strings.sync_title),
+                    icon = MaterialSymbols.Rounded.Sync,
+                    onPreferenceClick = onClickSync,
                 )
             }
 

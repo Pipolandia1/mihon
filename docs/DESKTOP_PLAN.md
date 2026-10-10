@@ -567,11 +567,10 @@ backup ficam como estão. O desktop compila os fontes compartilhados sem alterá
 - [x] S1 motor da sincronização — `domain/…/sync/` (`SyncSnapshot`, `SyncEntity`, `SyncMerge`, `SyncProgress`,
   `SyncChanges`, `SyncRepository`), `data/…/sync/` (`SyncTriggers`, `SyncSnapshotReader`, `SyncSnapshotWriter`,
   `SyncRepositoryImpl`, `SyncSnapshotCodec`, `SyncValues`), `sync_state.sq`, migração 25
-- [ ] S2 Google Drive no celular (com a chave do fork) — **em andamento**: chave do fork, `DriveFiles`,
-  `DriveSync`, `SyncPreferences`/`SyncLog`, `GoogleDriveAuth`, `SyncRunner`, `SyncScheduler`, tela
-  Sincronização em Mais, gatilhos no `ReaderStatsRecorder` e no Início; testes na JVM passando. Falta: o
-  projeto no Google Cloud (docs/SYNC_GOOGLE_SETUP.md), a conta no emulador e a ida e volta emulador ↔
-  celular
+- [x] S2 Google Drive no celular — chave do fork, `DriveFiles` e `DriveSync` (dados, compartilhados com o
+  PC), `SyncPreferences`/`SyncLog`, `GoogleDriveAuth`, `SyncRunner`, `SyncScheduler`, tela Sincronização em
+  Mais, gatilhos no `ReaderStatsRecorder` e no Início; roteiro `docs/SYNC_GOOGLE_SETUP.md` e política
+  `docs/SYNC_PRIVACY.md`
 - [ ] D0 fundação do app do PC: módulo `desktop`, `i18n` com `jvm()`, janela
 - [ ] D1 núcleo no PC e biblioteca de um backup
 - [ ] S3 sincronização no PC — **marco 1: continuidade**
@@ -641,3 +640,56 @@ que é quando existe um segundo aparelho e o Drive).
 
 **Dados de teste no emulador:** onboarding feito (pasta `/storage/emulated/0/Mihon`); a obra "Sync Test" na
 fonte local, fora da biblioteca, com o capítulo 1 lido; os gatilhos versão 1 instalados no banco do app.
+
+### Verificação do S2 (10/10/2026)
+
+**Como ficou:**
+- **Chave do fork:** `mihon-fork.jks` fora do repositório (`D:\android-build-tools\signing\`), senha só no
+  `keystore.properties` (ignorado pelo git; `*.jks` e `*.keystore` também). O APK debug sai assinado com
+  ela (SHA-1 `88:93:4E:…:42:B6`), a mesma cadastrada no cliente Android do Google.
+- **Google Cloud** (feito pelo usuário com `docs/SYNC_GOOGLE_SETUP.md`): projeto "Mihon Sync", Drive API,
+  escopo só `drive.appdata`, clientes Android e de computador. Para sair de "Teste", o Google exige página
+  inicial e política de privacidade: a política é `docs/SYNC_PRIVACY.md`, publicada no GitHub.
+- **Drive** (`DriveFiles`, no módulo de dados, para o PC usar o mesmo): quatro chamadas REST com OkHttp, sem a
+  biblioteca do Google. 401 vira `Unauthorized` e um token novo é pedido uma vez.
+- **O ciclo** (`DriveSync`): baixa, mescla e escreve aqui, e sobe só se o arquivo mudar. Antes de subir,
+  confere a versão do arquivo; se outro aparelho escreveu no meio, recomeça (até 3 vezes, depois desiste sem
+  sobrescrever). Duas cópias criadas ao mesmo tempo são mescladas numa só.
+- **No Android:** login pelo `AuthorizationClient` (`GoogleDriveAuth`, sem client id no código); o
+  `SyncRunner` faz o backup completo antes da primeira sincronização
+  (`autobackup/mihon_before_sync_<data>.tachibk`), liga os gatilhos e guarda o registro das últimas 20. O
+  `SyncScheduler` agrupa os pedidos: ao abrir (Início, 3 s) e ao terminar de ler (última página ou fechar o
+  leitor, 10 s, pelo `ReaderStatsRecorder`).
+- **Tela Sincronização** (Mais, depois de Dados e armazenamento): conectar; antes da primeira, o resumo do
+  que muda aqui e do que vai para o Drive, e só aplica com o toque; depois, conta, última sincronização,
+  "Sincronizar agora", "Desconectar" e o registro.
+
+**Mudou em relação ao plano:** o item fica na aba Mais (arquivo upstream já tocado no H1), e não na lista
+de Configurações, que nunca tinha sido tocada. A sincronização ao ir para segundo plano saiu (decisão 3).
+
+**Testes na JVM:** `DriveFilesTest` (5, contra respostas no formato do Drive), `DriveSyncTest` (5: o
+primeiro cria e o segundo recebe; outro aparelho escreve no meio → recomeça; duas cópias viram uma; desiste
+em vez de sobrescrever; a prévia não escreve nada), `SyncLogTest` (2). Domínio 312 e dados 90, todos
+passando; spotless limpo. O teste "outro aparelho escreve no meio" passou de 1 min uma vez, com o build do
+APK e o emulador disputando a memória; sozinho leva 1,8 s.
+
+**Emulador e celular** (`tools/shots/s2-*.png`), com a biblioteca real do usuário (backup do celular):
+- backup restaurado no emulador: 75 obras na biblioteca, 304 capítulos lidos, 299 no histórico, 6
+  categorias, 7 sessões;
+- conectar: o Google reconheceu o app (pacote + chave) e pediu a conta; o usuário autorizou;
+- primeira sincronização (16:50): backup de 182 KB antes; **11.174 registros** enviados em 5,4 s, nada
+  mudou no emulador;
+- ao reabrir o app (16:51): sincronizou sozinho em 3 s, "nada novo";
+- marcador no #1 de *Absolute Batman: Ark M Special* + "Sincronizar agora" (16:52): **1** registro enviado;
+- celular: reinstalado com a chave do fork, backup restaurado, conectado e sincronizado; o emulador depois
+  disso não achou nada novo (o celular tinha o mesmo backup);
+- **ida e volta:** o usuário tirou o marcador no celular e sincronizou; o emulador (17:01) recebeu
+  `CHAPTER changed=1`, o marcador ficou 0, com a hora do celular (17:00:41).
+
+**Não verificado no aparelho:** a sincronização ao terminar um capítulo no leitor (no emulador só há a
+fonte local de teste, que entraria nos dados reais; fica para o uso normal no celular, conferindo o
+registro da tela); a escrita concorrente de dois aparelhos (coberta pelo teste); o app publicado "Em
+produção" (o usuário configurou; se ficou em "Teste", o Google pede para conectar de novo a cada 7 dias).
+
+**Dados no emulador:** a biblioteca real do usuário, conectada à conta dele e sincronizando; a obra de teste
+"Sync Test" ficou só como arquivos na pasta `local/`, fora do banco.

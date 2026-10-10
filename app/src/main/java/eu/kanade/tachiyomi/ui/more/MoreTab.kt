@@ -32,6 +32,7 @@ import eu.kanade.tachiyomi.ui.start.MoreBrowseScreen
 import eu.kanade.tachiyomi.ui.start.MoreUpdatesScreen
 import eu.kanade.tachiyomi.ui.start.StartNavigation
 import eu.kanade.tachiyomi.ui.stats.StatsScreen
+import eu.kanade.tachiyomi.ui.sync.SyncScreen
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -80,6 +81,7 @@ data object MoreTab : Tab {
             onClickCategories = { navigator.push(CategoryScreen()) },
             onClickStats = { navigator.push(StatsScreen()) },
             onClickDataAndStorage = { navigator.push(SettingsScreen(SettingsScreen.Destination.DataAndStorage)) },
+            onClickSync = { navigator.push(SyncScreen()) },
             onClickSettings = { navigator.push(SettingsScreen()) },
             onClickSupport = { navigator.push(SupportUsScreen()) },
             onClickAbout = { navigator.push(SettingsScreen(SettingsScreen.Destination.About)) },

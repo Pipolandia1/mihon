@@ -227,6 +227,9 @@ dependencies {
 
     // Bubble Zoom's on-device detector. The reader never sees this type: it talks to BubbleDetector.
     implementation(libs.onnxruntime.android)
+
+    // Sync between devices: the Google sign-in that grants the app its hidden Drive folder (docs/DESKTOP_PLAN.md §3.4).
+    implementation(libs.play.services.auth)
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.animation)

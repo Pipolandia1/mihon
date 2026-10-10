@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.readingstats
 
 import dev.zacsweers.metro.Inject
 import eu.kanade.tachiyomi.source.model.Page
+import eu.kanade.tachiyomi.sync.SyncScheduler
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +25,7 @@ import tachiyomi.domain.readingstats.model.LegacyProgress
 import tachiyomi.domain.readingstats.repository.ReadingStatsRepository
 import tachiyomi.domain.readingstats.service.ReadingStatsPreferences
 import tachiyomi.domain.readingstats.tracker.ReadingSessionTracker
+import tachiyomi.domain.sync.SyncReason
 import java.util.UUID
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -39,6 +41,7 @@ import kotlin.time.Instant
 class ReaderStatsRecorder(
     private val repository: ReadingStatsRepository,
     private val preferences: ReadingStatsPreferences,
+    private val sync: SyncScheduler,
 ) {
     private val clock: Clock = Clock.System
     private val tracker = ReadingSessionTracker(
@@ -169,6 +172,8 @@ class ReaderStatsRecorder(
                 if (tracker.chapterId != page.ref.chapterId) open(page, event.at)
                 tracker.setPageReady(event.at, true)
                 tracker.pageShown(event.at, page.index)
+                // Finishing a chapter is when its read state should reach the other devices (S2).
+                if (page.index == page.totalPages - 1) sync.request(SyncReason.READING)
             }
             is Event.Interaction -> tracker.interaction(event.at)
             is Event.Foreground -> tracker.setForeground(event.at, event.inForeground)
@@ -178,6 +183,7 @@ class ReaderStatsRecorder(
                 tracker.close(event.at)
                 save()
                 events.close()
+                sync.request(SyncReason.READING)
             }
         }
     }

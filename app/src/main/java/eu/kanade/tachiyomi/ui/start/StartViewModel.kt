@@ -17,6 +17,7 @@ import eu.kanade.tachiyomi.releases.FollowOption
 import eu.kanade.tachiyomi.releases.ReleaseFeed
 import eu.kanade.tachiyomi.releases.ReleaseFollowing
 import eu.kanade.tachiyomi.releases.ReleaseOpener
+import eu.kanade.tachiyomi.sync.SyncScheduler
 import eu.kanade.tachiyomi.ui.start.catalog.CatalogDiscovery
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -48,6 +49,7 @@ import tachiyomi.domain.start.ReleaseWeek
 import tachiyomi.domain.start.RelevantRelease
 import tachiyomi.domain.start.StartFeedResult
 import tachiyomi.domain.start.StartRepository
+import tachiyomi.domain.sync.SyncReason
 import java.time.LocalDate
 import kotlin.time.Clock
 
@@ -65,6 +67,7 @@ class StartViewModel(
     private val following: ReleaseFollowing,
     private val autoMetadata: AutoMetadataScheduler,
     private val arcFollowing: ArcFollowing,
+    private val sync: SyncScheduler,
 ) : ViewModel() {
 
     // When each part first arrived, for the timing the plan asks to be measured, not guessed.
@@ -132,6 +135,8 @@ class StartViewModel(
         viewModelScope.launchIO { following.keepScheduled() }
         // Comic metadata without a tap (H13): a run now, daily, and for each work added or opened.
         viewModelScope.launchIO { autoMetadata.keepUp() }
+        // What the other devices read since this one last synced (docs/DESKTOP_PLAN.md §3.4, S2).
+        sync.request(SyncReason.APP_OPEN, SyncScheduler.APP_OPEN_DELAY)
         // The catalogue and the sources are asked in the background, after the library, and again
         // when the switch or the order of sources changes; leaving the Início cancels it.
         viewModelScope.launchIO {
