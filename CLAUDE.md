@@ -35,8 +35,8 @@ Read `docs/BUBBLE_ZOOM_STATUS.md` to learn what is already done.
 |---|---|
 | OS | Windows, Claude Code native, Bash tool backed by Git Bash |
 | Repo | `D:/mihon` |
-| Android SDK | `D:/Android/Sdk` (`ANDROID_HOME`) |
-| JDK | `D:/Java/jdk-21.0.12.1+1` (`JAVA_HOME`) — Temurin **21**, per `.github/.java-version` |
+| Android SDK | `ANDROID_HOME` — `D:/Android/Sdk` on the first PC, `D:/android-build-tools/android-sdk` on the second |
+| JDK | Temurin **21.0.12.1+1**, per `.github/.java-version` — `D:/Java/jdk-21.0.12.1+1` on the first PC, `D:/android-build-tools/jdk/jdk-21.0.12.1+1` on the second |
 | Build output | `D:/mihon/build` — configuration cache is on, so a no-op incremental build takes ~4s |
 | Emulator AVD | `mihon_test` |
 | Screenshots | `tools/shots/` (gitignored) |
@@ -52,6 +52,18 @@ adb devices          # expect "emulator-5554   device"
 
 If no device is attached, stop and tell the user to run `tools/start-emulator.ps1` in a
 second terminal. Do not try to work around it.
+
+**Second PC:** the global `JAVA_HOME` there is JDK 17, kept for another project. Point Gradle at
+21 per command — `export JAVA_HOME=D:/android-build-tools/jdk/jdk-21.0.12.1+1` in Bash — instead of
+changing it globally. The emulator there runs on WHPX (Hyper-V is on), not the AEHD driver.
+D: there is a spinning disk, and an emulator on it stalls until Android kills apps at startup, so
+the AVD lives on the SSD at `C:/Android/avd/mihon_test.avd` and the SDK's
+`system-images/android-36/google_apis/x86_64` is a junction to `C:/Android/system-images/…`.
+
+**Fresh clone:** the detector is gitignored. Put the 11 MB int8 model at
+`app/src/main/assets/comic_detector.onnx` — it is `detector-v4-s_int8.onnx` from
+[ogkalu/comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector),
+sha256 `5fe9e4f5…c931ea79`. Without it the app builds, but Bubble Zoom has no detector.
 
 Prefer `./gradlew :app:compileDebugKotlin` for a fast check. Only run a full
 `assembleDebug` when you are about to install and test on the emulator.
